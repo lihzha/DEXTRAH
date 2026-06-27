@@ -718,3 +718,41 @@
   `nvidia-smi` reported nonzero GPU utilization. Next expected durable
   checkpoint is the epoch-5 completion around `global_step=502k`; the L40
   periodic eval monitor should then trigger the `500k` checkpoint eval.
+
+## 2026-06-27T05:57:00Z 500k Periodic Eval Evidence
+
+- A100 job `29537920` reached the next durable checkpoint:
+  `epoch=0005-test_mean_score=0.000.ckpt` and `latest.ckpt` were saved at
+  `2026-06-27T05:25:53Z` with validation loss `0.008938116021454334`.
+  Training continued into epoch 6; at the post-eval check it was at
+  `global_step=517974`, job elapsed `02:08:50`, with submitter PID `2013382`
+  still alive.
+- The L40 periodic eval monitor behaved correctly. It logged
+  `threshold_seen threshold=500000 step=501664`, waited for the old checkpoint
+  mtime to become fresh, then submitted eval job `1052572` from snapshot
+  `step_0504041.ckpt`.
+- Eval job `1052572` completed successfully on `pool0-00013` in `00:25:09`.
+  Local fetched artifacts are under
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0504041/`.
+- Metrics: `episode_success_rate=0.0`, `episodes_completed=3`,
+  `steps_completed=7200`, `num_steps_requested=2400`, `reward_mean=3.012600833872954`.
+  All episodes ran the full long horizon with no `done` and no lift
+  (`max_lift_height` around `6.5e-7`, `6.4e-7`, and `5.2e-8`).
+- Eval/train input audit from metrics remains clean:
+  `obs_schema={scene_rgb:[3,256,256], wrist_rgb:[3,256,256], robot_state:24}`,
+  `phase_progress_in_policy=false`, and
+  `privileged_object_state_in_policy=false`.
+- Visual inspection:
+  - rollout:
+    `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0504041/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`
+    is 1280x720, 2400 frames, 40 seconds.
+  - observation debug images are 512x284 scene+wrist pairs; the scene camera
+    sees the bin/object/table with essentially no background, and the wrist
+    camera stream is live.
+  - observation grid:
+    `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0504041/obs_ep000_grid.png`.
+- Behavioral finding: the 500k checkpoint is still not closed-loop useful. The
+  policy sometimes issues hard close commands (`gripper=-1`) but then settles
+  into tiny pose deltas without reaching or lifting the object. This looks like
+  continued undertraining/closed-loop weakness rather than a camera/schema or
+  eval-horizon bug.
