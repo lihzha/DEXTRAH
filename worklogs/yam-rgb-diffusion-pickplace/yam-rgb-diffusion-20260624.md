@@ -846,3 +846,44 @@
   ledger still ends at `step_0504041.ckpt` / job `1052572`, so no below-
   threshold eval was launched. Continue monitoring for a fresh post-600k
   checkpoint and the next L40 eval videos.
+
+## 2026-06-27T11:49:00Z 634k Periodic Eval Evidence
+
+- The trainer crossed the 600k threshold at `global_step=600426`. The L40
+  monitor correctly waited for a fresh checkpoint newer than that crossing.
+  A100 job `29541424` then wrote `epoch=0007-test_mean_score=0.000.ckpt` and
+  `latest.ckpt` at `2026-06-27T11:15:10Z` / `2026-06-27T11:15:11Z`.
+  Validation row: `global_step=633753`, `epoch=7`,
+  `val_loss=0.008767523802816868`.
+- The L40 periodic monitor submitted eval job `1054027` from snapshot
+  `step_0634735.ckpt` at `2026-06-27T11:17:29Z`; it ran on `pool0-00011` and
+  completed successfully. Artifacts were fetched to
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0634735`.
+- Opened latest visualization artifacts:
+  rollout
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0634735/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`,
+  scene/wrist observation clip
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0634735/videos/yam-pickplace-rgb-dp-eval-step-0-scene-wrist-obs.mp4`,
+  and observation grid
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0634735/obs_ep000_grid.png`.
+  The rollout is `1280x720`, `60 FPS`, `2400` frames, and `40.0s`; the
+  generated observation clip is `512x284`, `4 FPS`, `36` frames, and `9.0s`.
+- Metrics remain unsuccessful: `episode_success_rate=0.0`,
+  `episodes_completed=3`, `steps_completed=7200`, `num_steps_requested=2400`,
+  and no object lift (`max_lift_height` about `6.5e-7`, `6.4e-7`, and
+  `5.2e-8`). Reward mean is `2.958997673889001`, worse than the 504k eval.
+  The policy observation schema is unchanged and clean:
+  `scene_rgb=[3,256,256]`, `wrist_rgb=[3,256,256]`, `robot_state=24`,
+  `phase_progress_in_policy=false`, and
+  `privileged_object_state_in_policy=false`.
+- Visual inspection of the scene/wrist grid shows the camera setup remains
+  appropriate: the table/object/bin fill the scene camera with essentially no
+  background, and the wrist stream is live. The failure is behavioral: the
+  object stays stationary and actions settle into small corrections; episode 0
+  and 1 finish with open gripper widths around `0.186 m`, episode 2 closes to
+  about `0.108 m`, but none lift.
+- A100 job `29541424` timed out after unsaved rows up to `global_step=642113`.
+  The submitter launched replacement job `29544942` at
+  `2026-06-27T11:38:03Z` on `batch-block7-01718`; verified fresh training rows
+  restarted from the durable `633753` checkpoint (`global_step=633802+`).
+  Continue monitoring toward the 700k threshold.
