@@ -820,3 +820,29 @@
 - This confirms the patched submitter latest-row accounting is doing the right
   thing for timeout/relaunch cycles. Continue monitoring job `29541424` toward
   the next durable checkpoint and the eventual fresh post-`600000` eval.
+
+## 2026-06-27T09:39:00Z Latest Eval Video Open And 590k Checkpoint
+
+- Responded to the latest artifact request by opening the newest completed L40
+  eval artifacts through `viz-open`. No eval newer than the `step_0504041`
+  snapshot exists yet. Viewer URLs:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0504041/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`,
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0504041/videos/yam-pickplace-rgb-dp-eval-step-0-scene-wrist-obs.mp4`,
+  and
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0504041/obs_ep000_grid.png`.
+- Rechecked the artifacts: the rollout video is `1280x720`, `60 FPS`,
+  `2400` frames, and `40.0s`; the generated scene/wrist observation clip is
+  `512x284`, `4 FPS`, `36` frames, and `9.0s`. Metrics remain the expected
+  504k failure case: `episode_success_rate=0.0` over 3 long-horizon episodes,
+  with no object lift and no premature truncation.
+- A100 job `29541424` wrote the next durable checkpoint while monitoring.
+  `latest.ckpt` and `epoch=0006-test_mean_score=0.000.ckpt` were refreshed at
+  `2026-06-27T09:34:24Z` / `2026-06-27T09:34:25Z` with size `1606332835`
+  bytes. The validation row is `global_step=589913`, `epoch=6`,
+  `val_loss=0.008642744272947311`; training continued into epoch 7 and was at
+  about `global_step=590846` at the inspection check.
+- The checkpoint is still below the next periodic eval threshold (`600000`).
+  The L40 eval monitor PID `3139751` remains alive and the submitted-eval
+  ledger still ends at `step_0504041.ckpt` / job `1052572`, so no below-
+  threshold eval was launched. Continue monitoring for a fresh post-600k
+  checkpoint and the next L40 eval videos.
