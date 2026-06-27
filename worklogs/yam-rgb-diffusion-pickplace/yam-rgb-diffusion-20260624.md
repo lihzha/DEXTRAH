@@ -803,3 +803,20 @@
   the current allocation's remaining wall time. It is unlikely to finish epoch
   7 before timeout, so the expected healthy behavior is a timeout/relaunch from
   the fresh `546074` checkpoint.
+
+## 2026-06-27T07:47:35Z A100 Timeout And Resume From 546k
+
+- A100 job `29537920` timed out after writing unsaved epoch-7 rows up to
+  `global_step=559289`. The submitter stayed alive and appended:
+  `job_done job_id=29537920 state=TIMEOUT previous_step=460542
+  new_step=559289`.
+- The submitter launched replacement job `29541424` at
+  `2026-06-27T07:45:52Z`; it is running on `batch-block5-01628`.
+- Verified the replacement resumed from the durable epoch-6 checkpoint, not the
+  unsaved timeout tail: the newest training rows restarted at
+  `global_step=546108..546127`, with latest validation still
+  `global_step=546074`, `val_loss=0.010338570922613144`, and checkpoint mtime
+  `2026-06-27T07:11:34Z`.
+- This confirms the patched submitter latest-row accounting is doing the right
+  thing for timeout/relaunch cycles. Continue monitoring job `29541424` toward
+  the next durable checkpoint and the eventual fresh post-`600000` eval.
