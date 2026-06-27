@@ -12365,3 +12365,19 @@ Smoke follow-up:
 - Continue monitoring A100 job `29534729` through either a fresh post-500k
   checkpoint and corresponding l401 eval submission, or a wall-time timeout and
   submitter relaunch from the latest durable checkpoint.
+
+## 2026-06-26 20:31 PDT - A100 Timeout And Resume From 458k
+
+- A100 job `29534729` hit the short-partition wall limit. The submitter log
+  recorded `job_done job_id=29534729 state=TIMEOUT previous_step=388534
+  new_step=471700` and launched replacement A100 job `29537791` at
+  `2026-06-27T03:29:42Z`.
+- The latest durable checkpoint at timeout remained `global_step=458395` with
+  mtime `2026-06-27T02:57:56Z`; the apparent `471700` step was an unsaved log
+  tail from the timed-out allocation. I verified the replacement job resumed
+  correctly by inspecting the appended training rows, which restarted from
+  `global_step=458483+` with the same latest validation record at `458395`.
+- Next step is to monitor job `29537791` toward the `500000` threshold. If it
+  reaches the threshold, the l401 monitor should again wait for a fresh
+  checkpoint newer than the threshold crossing before submitting the next
+  long-horizon eval.
