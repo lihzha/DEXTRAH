@@ -693,3 +693,28 @@
 - Added `SBATCH_EXCLUDE` support to the long-train submitter and recorded it in
   `long_train_submitter_config.json`. Next step is to deploy this patch,
   stop the old submitter/job, and relaunch excluding `batch-block7-03023`.
+
+## 2026-06-27T03:58:30Z Long-Run Relaunch On Healthy A100 Node
+
+- Local commit `68157edd` (`Harden YAM RGB long train submitter`) was pushed.
+  The A100 checkout cannot fetch `origin` over SSH, so the exact submitter-file
+  diff from that commit was applied to the existing detached remote worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-long-ef0d3b59`
+  and validated with `bash -n`.
+- Stopped the inherited submitter `3167244` and cancelled slow job `29537791`
+  on `batch-block7-03023`. The final appended training row before cancellation
+  was `global_step=460542`, but the durable checkpoint remains epoch 5
+  `latest.ckpt` at `global_step=458395`.
+- Started replacement submitter PID `2013382`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z/submitter/a100_submitter_restart_20260627T035330Z.log`.
+  It submitted resumed A100 job `29537920` with
+  `SBATCH_EXCLUDE=batch-block7-03023`; the job landed on
+  `batch-block5-02014`.
+- The restart correctly appended fresh rows from the checkpoint
+  (`global_step=458395`, `458396`) after the older unsaved `460542` row,
+  confirming the latest-row progress accounting is required for this run.
+- First healthy-node throughput check at about 4.5 minutes showed tail steps
+  `459350..459379`, about `7.38` steps/sec over the measured JSON window, and
+  `nvidia-smi` reported nonzero GPU utilization. Next expected durable
+  checkpoint is the epoch-5 completion around `global_step=502k`; the L40
+  periodic eval monitor should then trigger the `500k` checkpoint eval.
