@@ -951,3 +951,14 @@
   than the unsaved timeout tail: recent rows are `global_step=721999+` through
   `722624` at the inspection check, with latest validation still
   `global_step=721432`. Continue monitoring toward the 800k threshold.
+
+## 2026-06-27T17:07:00Z 765k Checkpoint Before 800k Threshold
+
+- A100 job `29547249` wrote a new durable checkpoint at
+  `2026-06-27T17:03:40Z`. Validation row: `global_step=765271`, `epoch=8`,
+  `val_loss=0.00920216552913189`. Training continued into epoch 9 and was at
+  about `global_step=766031` at inspection.
+- This checkpoint is below the next periodic eval threshold (`800000`). The
+  L40 monitor and submitted-eval ledger remained unchanged, ending at
+  `step_0721648.ckpt` / job `1054936`; no below-threshold eval was launched.
+  Continue monitoring toward the next fresh post-800k eval.
