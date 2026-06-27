@@ -887,3 +887,16 @@
   `2026-06-27T11:38:03Z` on `batch-block7-01718`; verified fresh training rows
   restarted from the durable `633753` checkpoint (`global_step=633802+`).
   Continue monitoring toward the 700k threshold.
+
+## 2026-06-27T13:23:00Z 677k Checkpoint Before 700k Threshold
+
+- A100 job `29544942` wrote the next durable checkpoint at
+  `2026-06-27T13:19:56Z` / `2026-06-27T13:19:57Z`. The validation row is
+  `global_step=677592`, `epoch=7`, `val_loss=0.009714050218462944`.
+  Training continued into epoch 8 and was at about `global_step=677987` at
+  the inspection check.
+- This checkpoint is below the next periodic eval threshold (`700000`). The
+  L40 monitor and submitted-eval ledger remained unchanged, ending at
+  `step_0634735.ckpt` / job `1054027`, so it did not launch a below-threshold
+  eval. Continue monitoring job `29544942` toward the 700k threshold and the
+  next fresh post-threshold eval.
