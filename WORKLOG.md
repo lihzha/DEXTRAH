@@ -12349,3 +12349,19 @@ Smoke follow-up:
   still `414555`. The l401 periodic eval monitor PID `3139751` remains alive
   and has not launched the 500k eval yet because it is waiting for a fresh
   checkpoint after the next threshold.
+
+## 2026-06-26 19:58 PDT - 458k Checkpoint Before 500k Threshold
+
+- The active A100 trainer `29534729` wrote the next durable checkpoint at
+  `global_step=458395` with checkpoint mtime `2026-06-27T02:57:56Z`.
+  Validation loss is `0.009109152480959892`, slightly worse than the current
+  best `414555` checkpoint (`0.009068747982382774`) but still finite and in the
+  same band. The training log continued past the checkpoint to about
+  `global_step=459168`.
+- This checkpoint is still below the next periodic eval threshold (`500000`).
+  The l401 monitor PID `3139751` remains alive and the submitted-evals record
+  still contains only the existing snapshots at about `109k`, `240k`, `327k`,
+  and `416k`, so it did not incorrectly launch a below-threshold eval.
+- Continue monitoring A100 job `29534729` through either a fresh post-500k
+  checkpoint and corresponding l401 eval submission, or a wall-time timeout and
+  submitter relaunch from the latest durable checkpoint.
