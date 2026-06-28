@@ -1101,3 +1101,38 @@
   `threshold_seen threshold=900000 step=929034` and is waiting for a checkpoint
   fresher than `2026-06-28T01:20:26Z`. A100 job `29555517` continues running
   from the durable `896789` checkpoint.
+
+## 2026-06-28T10:45:00Z Batch-80 Resume And 949k Eval Evidence
+
+- Per user request, killed the previous training run and restarted with
+  `BATCH_SIZE=80`, selected from the batch-fit probe as the best speed/throughput
+  balance before the larger batches showed poor first-step latency.
+- Active run:
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z`,
+  launched from remote worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-bs80-c83ec722`
+  at source commit `c83ec7223c6cf7386fc9140a40ab237e74f0ee7d`.
+- A100 job `29558234` reached an unsaved tail of `global_step=950862` and
+  timed out. The durable checkpoint remained the epoch-10 validation checkpoint
+  at `global_step=949395`, `val_loss=0.006550335790961981`, mtime
+  `2026-06-28T09:47:40Z`.
+- Verified the submitter stayed alive and submitted replacement A100 job
+  `29562154` at `2026-06-28T10:27:50Z` with `resume=true` from step `950862`.
+  The new job loaded `official_dp_train/checkpoints/latest.ckpt` with
+  `training.resume=true` and is running on `batch-block4-2136`.
+- L40 eval job `1070887` completed the periodic eval snapshot
+  `step_0949452.ckpt` with `NUM_STEPS=4800`, `VIDEO_LENGTH=4800`,
+  `ACTION_CHUNK_STEPS=8`, and `NUM_EPISODES=3`.
+- Eval result: `episode_success_rate=0.0`, `episodes_completed=3`,
+  `steps_completed=14400`. Per-episode `max_success=0.0`; max lift was
+  effectively zero (`6.52e-07`, `6.41e-07`, and `5.22e-08` m). First strong
+  close occurred at steps `3665`, `4441`, and `49` for episodes 0, 1, and 2.
+- Fetched artifacts locally under
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z_step0949452`.
+  Opened the main rollout video and generated/opened
+  `videos/scene_wrist_debug_obs.mp4` with `viz-open`.
+- Visual inspection: the scene camera remains table-dominant with bin/object
+  clearly visible and little background. The failure is policy behavior, not
+  scene-camera visibility: the gripper drifts/approaches weakly, closes late in
+  two episodes, and never lifts the object. Continue long training at batch 80
+  and let the periodic monitor evaluate later fresh checkpoints.
