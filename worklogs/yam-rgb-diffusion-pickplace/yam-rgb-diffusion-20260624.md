@@ -1076,3 +1076,28 @@
   observed through `896887` during the verification check. Continue monitoring
   for a fresh checkpoint after the 900k threshold, which should trigger the
   next L40 eval.
+
+## 2026-06-28T03:31:00Z Extended Periodic Eval Horizon
+
+- User requested a longer eval total step count. Updated
+  `cluster/submit_yam_rgb_dp_checkpoint_eval_monitor_l401.sh` and
+  `cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh` to default
+  `NUM_STEPS=4800` and `VIDEO_LENGTH=4800` instead of `2400`.
+- Added periodic monitor resume-from-ledger logic so restarting the L40 monitor
+  initializes `evals` and `next_threshold` from
+  `submitted_periodic_evals.tsv`; this prevents restarting at the 100k
+  threshold after monitor replacement.
+- Commit `896d0076` pushed. The L40 checkout could not fetch from GitHub due
+  to `Permission denied (publickey)`, so the commit diff for only the two eval
+  scripts was applied via `git apply` in the existing remote worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-long-ef0d3b59`.
+- Stopped old L40 monitor PID `3139751` and started patched monitor PID
+  `215236`, logging to
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_monitor/monitor_hdr_896d0076_long_eval.log`.
+  The new config confirms `num_steps=4800`, `video_length=4800`, and
+  `code_commit=896d0076`.
+- Verified the patched monitor resumed with `submitted_evals=8`,
+  `last_submitted_step=809686`, `next_threshold=900000`, then latched
+  `threshold_seen threshold=900000 step=929034` and is waiting for a checkpoint
+  fresher than `2026-06-28T01:20:26Z`. A100 job `29555517` continues running
+  from the durable `896789` checkpoint.
