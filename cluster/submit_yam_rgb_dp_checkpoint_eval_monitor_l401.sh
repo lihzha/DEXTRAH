@@ -25,8 +25,8 @@ CODE_COMMIT="${CODE_COMMIT:-}"
 CHECKPOINT_FRESH_AFTER_THRESHOLD="${CHECKPOINT_FRESH_AFTER_THRESHOLD:-True}"
 
 NUM_EPISODES="${NUM_EPISODES:-3}"
-NUM_STEPS="${NUM_STEPS:-2400}"
-VIDEO_LENGTH="${VIDEO_LENGTH:-2400}"
+NUM_STEPS="${NUM_STEPS:-4800}"
+VIDEO_LENGTH="${VIDEO_LENGTH:-4800}"
 ACTION_CHUNK_STEPS="${ACTION_CHUNK_STEPS:-8}"
 DEBUG_OBS_INTERVAL="${DEBUG_OBS_INTERVAL:-120}"
 DEBUG_OBS_MAX_FRAMES="${DEBUG_OBS_MAX_FRAMES:-120}"
@@ -129,6 +129,16 @@ checkpoint_mtime() {
 
 evals=0
 next_threshold="$EVAL_EVERY_STEPS"
+if [ -s "$SUBMITTED_TSV" ]; then
+  evals="$(awk 'NF {n++} END {print n + 0}' "$SUBMITTED_TSV")"
+  last_submitted_step="$(
+    awk -F '\t' 'NF >= 3 && $3 ~ /^[0-9]+$/ {if ($3 > max_step) max_step = $3} END {print max_step + 0}' "$SUBMITTED_TSV"
+  )"
+  while [ "$next_threshold" -le "$last_submitted_step" ]; do
+    next_threshold=$((next_threshold + EVAL_EVERY_STEPS))
+  done
+  echo "resume_eval_monitor submitted_evals=$evals last_submitted_step=$last_submitted_step next_threshold=$next_threshold"
+fi
 threshold_seen_at=0
 threshold_seen_step=-1
 while true; do
