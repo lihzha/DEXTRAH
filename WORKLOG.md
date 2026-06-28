@@ -12473,3 +12473,57 @@ Smoke follow-up:
   the batch-80 run until the training reaches the next meaningful threshold
   near `1M`; otherwise the current monitor script would treat the copied
   `940628` checkpoint as already past its first threshold and launch too early.
+
+## 2026-06-28 02:17 PDT - Batch-80 Eval/Diagnostic Loop
+
+- The batch-80 run is still active as A100 job `29558234` on
+  `batch-block7-03147`, with submitter PID `1324811`. At
+  `2026-06-28T09:10Z-09:17Z` it was around `global_step=948054`,
+  `epoch=10`, and about `0.77` updates/s (`61` samples/s). The durable
+  checkpoint is still the fresh batch-80 epoch-9 checkpoint at
+  `global_step=945011`, with `val_loss=0.007583726197481155`, slightly better
+  than the old run's previous best around `0.00763`.
+- I ran a manual long-horizon L40 eval on that `945011` checkpoint:
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_manual_eval_step0945011_retry2_20260628T081857Z`.
+  The first attempt failed because the clean Git-bundled worktree did not
+  contain the generated/LFS YAM USD; I copied
+  `dextrah_lab/assets/yam/yam_mjcf_usd/` from the materialized canonical
+  checkout into the clean L40/A100 worktree and reran successfully.
+- The successful manual eval completed `3` episodes with `4800` steps each, but
+  achieved `0/3` success. The videos and debug observation grid show a valid
+  camera setup with the table/bin/object visible and no background mismatch, but
+  the policy approaches and then closes very late. In the metrics trace,
+  first strong close occurred at steps `3729`, `4561`, and `3473`; max lift was
+  effectively zero in all three episodes.
+- I fetched and opened the artifacts locally:
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_manual_eval_step0945011_retry2_20260628T081857Z/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`,
+  `videos/scene_wrist_debug_obs.mp4`, `debug_obs_grid.png`, and
+  `inspect_frames/main_rollout_grid.png`.
+- To separate action-schema bugs from model/generalization issues, I launched
+  A100 diagnostic job `29561303`
+  (`yam_rgb_dp_offline_diag_bs80_latest_20260628T091502Z`) against the same
+  checkpoint and the resolved training manifest
+  `/results/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_mmap_phasegrip2_trimstart_20260626T042729Z/manifest.json`.
+  It completed successfully in `00:01:03`. Offline coherence is strong:
+  `pose_l2_ratio_mean=0.9921`, `xyz_l2_ratio_mean=1.0040`,
+  `gripper_sign_match_fraction=0.9933`, and close-regime predicted gripper
+  mean `-0.9766` against label `-1.0`. This rules out the basic action scale,
+  gripper sign, and offline checkpoint decoding path.
+- I verified the env/action conventions match the shard converter:
+  gripper `+1` maps to open joint position `-0.0475`, `-1` maps to closed
+  `0.0`, and both data and env use pose action scales
+  `(0.055, 0.055, 0.045, 0.22, 0.22, 0.25)`.
+- I started the L40 periodic eval monitor for the batch-80 run as PID `427029`:
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_20260628T091727Z`.
+  It is waiting for a checkpoint newer than its initial threshold sighting at
+  `global_step=948074`, so it will not re-evaluate the stale `945011`
+  checkpoint. It will submit 4800-step, 3-episode, quality-rendered evals with
+  scene/wrist debug observations every `100000` training steps after fresh
+  checkpoints.
+- Current interpretation: batch size `80` remains the best speed/performance
+  production choice from the probe, but the closed-loop failure after a good
+  offline coherence diagnostic suggests either the current checkpoint is still
+  undertrained for visual closed-loop recovery, or the eval distribution/contact
+  support exposes state drift not represented enough in the demonstrations.
+  Continue training and use fresh periodic eval videos before changing the
+  dataset or controller.
