@@ -12583,3 +12583,28 @@ Smoke follow-up:
 - Next step: continue monitoring A100 job `29563415` until it writes the next
   durable checkpoint, then inspect the next periodic L40 eval before changing
   the dataset, rollout controller, or training recipe.
+
+## 2026-06-28 06:58 PDT - Slow A100 Nodes Excluded For Batch-80 Resume
+
+- After restarting from the step-953778 checkpoint, A100 job `29563415` landed
+  on `batch-block7-01961` and advanced only about `17-25` updates/min in the
+  early window. That was too slow to reliably finish the next epoch checkpoint
+  before walltime, so I stopped its submitter/job and relaunched.
+- Restart job `29563506` landed on `batch-block7-00123` and advanced only about
+  `10-12` updates/min. Restart job `29563514` landed on `batch-block7-00066`,
+  which had `7/8` GPUs allocated and other active user jobs; it was similarly
+  slow. These were restart tests from the same durable checkpoint, so only
+  small unsaved tails were discarded.
+- A broad synthetic exclude expression `batch-block7-[00000-00999,...]` was
+  rejected by Slurm because it included non-existent hostnames. I then generated
+  an exclude list from actual `polar3` block7 nodes with `sinfo -N -h -p polar3`
+  and `scontrol show hostlist`.
+- Current A100 submitter is PID `1897104`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/submitter/a100_submitter_bs80_restart4_no_block7_actual_20260628T134724Z.log`.
+  It submitted job `29563529` on `batch-block1-2092` in `batch_singlenode`,
+  with all actual `batch-block7-*` polar3 nodes excluded in
+  `long_train_submitter_config.json`.
+- The block1 job is acceptable so far: over a `307 s` window it advanced
+  `173` optimizer steps, about `33.8` updates/min. That is below the best prior
+  windows but fast enough to reach the next durable checkpoint within the
+  allocation. Keep job `29563529` running and monitor for the next checkpoint.
