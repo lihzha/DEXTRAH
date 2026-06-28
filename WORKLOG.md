@@ -12445,3 +12445,31 @@ Smoke follow-up:
   and passes both explicitly to each Slurm job. Next step: commit/push the
   launcher patch, update the A100 remote worktree, and launch a batch-80 resume
   from the `940628` checkpoint.
+
+## 2026-06-27 23:41 PDT - Batch-80 Resume Launched And Requeued Off Slow Node
+
+- Committed and pushed the launcher/worklog patch as `c83ec722`. Because A100
+  cannot fetch GitHub from the login host, I transferred the branch delta as a
+  Git bundle and created a clean A100 worktree at
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-bs80-c83ec722`.
+- Launched batch-80 run
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z`
+  with submitter PID `1324811`, A100 job `29558234`, `BATCH_SIZE=80`,
+  `VAL_BATCH_SIZE=80`, `MAX_TRAIN_STEPS=2000000`, and init/normalizer
+  checkpoint
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z/official_dp_train/checkpoints/latest.ckpt`.
+  The wrapper command confirmed `training.resume=true` and the first row resumed
+  at `global_step=940629`.
+- The initial allocation on `batch-block7-00770` was too slow, around
+  `0.16` updates/s, so I requeued job `29558234` and added
+  `batch-block7-00770` to the exclusion list alongside the earlier slow nodes.
+  The job restarted on `batch-block7-03147`.
+- Current accepted speed on `batch-block7-03147` is about `0.67-0.68`
+  updates/s over the recent window, or roughly `54` samples/s at batch 80. This
+  is in the same sample-throughput band as the best probes while using a more
+  standard diffusion-policy image batch size than `32`/`40`.
+- I stopped the stale local monitor that was still watching the cancelled
+  batch-8 run. I am intentionally delaying the L40 periodic eval monitor for
+  the batch-80 run until the training reaches the next meaningful threshold
+  near `1M`; otherwise the current monitor script would treat the copied
+  `940628` checkpoint as already past its first threshold and launch too early.
