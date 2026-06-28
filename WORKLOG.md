@@ -12643,3 +12643,50 @@ Smoke follow-up:
 - Next step: continue training to the next checkpoints; the next L40 eval should
   occur after the monitor sees the `970000` threshold and a fresh post-threshold
   checkpoint.
+
+## 2026-06-28 14:25 PDT - Batch-80 Relaunch And Step-971355 Eval
+
+- Per user request to stop the current run and use the best performance/speed
+  batch size, I kept the batch size at `80`. Larger/suspect placements were not
+  worth using because the live cluster behavior was dominated by node placement:
+  good non-block7 A100 nodes reached about `49-50` updates/min, while slow
+  shared block7 nodes dropped to about `10-25` updates/min.
+- A100 job `29566007` crossed the `970000` eval threshold and saved the next
+  durable checkpoint at `global_step=971312`, `epoch=12`,
+  `val_loss=0.007157564163208008`. After that save, the remaining walltime was
+  not enough to reach the next checkpoint interval, so I intentionally cancelled
+  `29566007` to avoid wasting unsaved tail progress. The submitter recorded
+  `new_step=971455` and relaunched job `29569354` on
+  `batch-block5-03631`.
+- Current A100 job `29569354` is running with `BATCH_SIZE=80` and
+  `VAL_BATCH_SIZE=80`, resumed from the step-971k checkpoint. Its early startup
+  window was slow, then recovered; recent windows are roughly `40-50`
+  updates/min. Latest checked state: `global_step=973479`, `epoch=12`,
+  `train_loss=0.0016684698639437556`, recent rate about `43.5` updates/min,
+  and checkpoint mtime still `2026-06-28T20:28:18Z`.
+- L40 periodic eval monitor PID `431671` submitted job `1073827` for snapshot
+  `step_0971355` on `pool0-00041`. It completed successfully with Slurm
+  `COMPLETED`/`0:0` after `00:48:29`.
+- Step-971355 eval completed `3` episodes x `4800` steps with
+  `episode_success_rate=0.0`, `episodes_completed=3`, and `steps_completed=14400`.
+  Per-episode max lift remained numerical noise: `6.52e-07`, `6.41e-07`, and
+  `5.22e-08` m. Final gripper widths were `0.1862`, `0.1863`, and `0.1078` m.
+  Policy inputs remain correct for the requested non-privileged setup:
+  `phase_progress_in_policy=False`, `privileged_object_state_in_policy=False`,
+  `obs_schema={robot_state: 24, scene_rgb: [3,256,256], wrist_rgb: [3,256,256]}`.
+- Fetched and opened final artifacts:
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z_step0971355/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`
+  and
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z_step0971355/videos/scene_wrist_debug_obs.mp4`.
+  Contact sheets are in `inspect_frames/main_rollout_grid.png` and
+  `inspect_frames/debug_obs_grid.png`.
+- Visual diagnosis is unchanged from prior evals: scene camera and wrist
+  observations expose the object/bin well enough, but the policy keeps the
+  gripper at the right/table edge and only closes late or far from the object.
+  This checkpoint still looks like diffusion policy convergence/closed-loop
+  behavior, not an eval horizon, camera visibility, privileged-state, or
+  phase-feature mismatch.
+- Next step: keep job `29569354` until its next durable checkpoint, then cancel
+  and let the submitter relaunch if the remaining walltime cannot reach another
+  checkpoint. Continue periodic L40 evals at the next fresh `980000`-threshold
+  checkpoint.
