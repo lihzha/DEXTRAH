@@ -12405,3 +12405,25 @@ Smoke follow-up:
   improved to about `4` steps/sec (`897188` to `897460` in roughly 67 seconds).
   Continue monitoring for a fresh epoch checkpoint above the 900k threshold,
   which should trigger the new 4800-step l401 eval.
+
+## 2026-06-27 22:36 PDT - YAM RGB Batch-Size Fit Probe
+
+- In response to the batch-size question, I launched a separate A100 smoke
+  sweep using the same YAM RGB DP config, manifest, two RGB cameras, 256x256
+  images, robot state dimension 24, DDPM inference setting, and one validation
+  batch. These probes used independent run directories under
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/`
+  and did not modify the active long-training run.
+- Completed batch sizes: `16`, `24`, `32`, `40`, `48`, `64`, `80`, `96`,
+  `112`, `128`, `160`, `192`, `256`, `384`, and `512`. Jobs:
+  `29556886`, `29556923`, `29556937`, `29556949`, `29556973`, `29556989`,
+  `29557005`, `29557019`, `29557034`, `29557276`, `29557366`, `29557406`,
+  `29557505`, `29557579`, and `29557606`.
+- No OOM ceiling was found up to `BATCH_SIZE=512`. The final results table is
+  at
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_batch_fit_probe_20260628T0439Z/results.tsv`.
+- Practical recommendation: do not train at `512` despite fit; the `512` smoke
+  took about `68 s` for the first train step and is throughput-poor. For a real
+  restart, test throughput/convergence at `64` or `80` first, possibly `96`.
+  Any real batch-size increase should be paired with an explicit LR/schedule
+  decision rather than changing the active run midstream.
