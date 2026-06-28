@@ -12381,3 +12381,27 @@ Smoke follow-up:
   reaches the threshold, the l401 monitor should again wait for a fresh
   checkpoint newer than the threshold crossing before submitting the next
   long-horizon eval.
+
+## 2026-06-27 21:22 PDT - A100 Slow-Node Requeue
+
+- The long YAM RGB DP trainer was running as A100 job `29555517` on
+  `batch-block7-03335`, resumed from the durable `896789` checkpoint after the
+  previous allocation timed out with an unsaved `929034` log tail. The job was
+  only around `global_step=898398` after about `01:16` of wall time, while the
+  checkpoint mtime remained `2026-06-28T01:20:26Z`.
+- Node inspection showed the job was on a crowded shared node and progressing
+  much slower than earlier allocations. The l401 eval monitor was correctly
+  waiting for a fresh post-900k checkpoint instead of launching from the stale
+  pre-threshold checkpoint.
+- Plan: use Slurm `scontrol update` to add `batch-block7-03335` to the
+  excluded node list and `scontrol requeue 29555517`, preserving the existing
+  submitter supervision while restarting from the latest durable checkpoint.
+- Slurm required the node exclusion update while the job was pending, so I used
+  `scontrol requeuehold 29555517`, updated `ExcNodeList` to
+  `batch-block7-03023,batch-block7-03335`, and released the job. It restarted
+  on `batch-block5-03415` with `Restarts=1`.
+- The restart resumed from the same durable `896789` checkpoint. Fresh rows
+  appended from about `global_step=896937` onward, and the early observed rate
+  improved to about `4` steps/sec (`897188` to `897460` in roughly 67 seconds).
+  Continue monitoring for a fresh epoch checkpoint above the 900k threshold,
+  which should trigger the new 4800-step l401 eval.
