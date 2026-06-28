@@ -12690,3 +12690,24 @@ Smoke follow-up:
   and let the submitter relaunch if the remaining walltime cannot reach another
   checkpoint. Continue periodic L40 evals at the next fresh `980000`-threshold
   checkpoint.
+
+## 2026-06-28 16:12 PDT - Batch-80 Step-975695 Checkpoint And Relaunch
+
+- A100 job `29569354` reached the next durable checkpoint at
+  `global_step=975695`, `epoch=12`, `val_loss=0.008131732232868671`; this is
+  worse than both the step-971312 checkpoint and the current best step-949395
+  `val_loss=0.006550335790961981`.
+- Because `29569354` had slowed to roughly `35-38` updates/min and could not
+  reliably reach the next fresh `980000` eval checkpoint before walltime, I
+  cancelled it after the checkpoint write. The submitter recorded
+  `new_step=975921` and relaunched job `29572548` on `batch-block5-01178`.
+- Job `29572548` was too slow after startup, only about `27` updates/min with
+  `249` unsaved steps, so I cancelled it. The submitter recorded
+  `new_step=975956` and relaunched job `29572607`, again on
+  `batch-block5-01178`.
+- The reused node recovered on the second launch: job `29572607` was running at
+  about `44.0` updates/min over a 10-minute window, with latest checked state
+  `global_step=976204`, `epoch=12`,
+  `train_loss=0.0034877911675721407`, and checkpoint mtime still
+  `2026-06-28T22:37:38Z`. Keep this job running toward the next fresh
+  `980000`-threshold checkpoint/eval unless the throughput degrades again.
