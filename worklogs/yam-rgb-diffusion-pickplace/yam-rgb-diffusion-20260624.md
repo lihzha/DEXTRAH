@@ -1056,3 +1056,23 @@
   with no active eval job. This is expected because the checkpoint was saved
   before the raw training step crossed `900000`. Continue monitoring for the
   next fresh checkpoint after crossing 900k.
+
+## 2026-06-28T03:16:00Z A100 Timeout After 900k But Before Fresh Checkpoint
+
+- A100 job `29552222` crossed the raw `900000` step threshold and reached an
+  unsaved tail of `global_step=929034`, `epoch=10`, but timed out before
+  writing a checkpoint newer than the `896789` validation checkpoint.
+- The L40 eval monitor correctly saw `threshold=900000` at
+  `threshold_seen_step=901588` and then held in
+  `waiting_for_fresh_checkpoint` because `latest.ckpt` mtime remained
+  `2026-06-28T01:20:26Z`, older than the threshold-seen time. Therefore there
+  is still no newer eval than row `8` / `step_0809686`.
+- The A100 submitter stayed alive and recorded
+  `job_done job_id=29552222 state=TIMEOUT previous_step=877881 new_step=929034`,
+  then launched replacement job `29555517` at `2026-06-28T03:06:17Z` on
+  `batch-block7-03335`.
+- Verified job `29555517` resumed from the durable `896789` checkpoint, not the
+  unsaved 929k tail: the new rows restarted at `global_step=896789+` and were
+  observed through `896887` during the verification check. Continue monitoring
+  for a fresh checkpoint after the 900k threshold, which should trigger the
+  next L40 eval.
