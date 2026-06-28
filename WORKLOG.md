@@ -12527,3 +12527,15 @@ Smoke follow-up:
   support exposes state drift not represented enough in the demonstrations.
   Continue training and use fresh periodic eval videos before changing the
   dataset or controller.
+
+## 2026-06-28 02:25 PDT - Eval Monitor Interval Tightened
+
+- The `100k`-step monitor interval was too sparse for the current batch-80
+  update rate, so I stopped l401 monitor PID `427029` before it had submitted
+  any eval jobs.
+- I started replacement l401 monitor PID `431671`:
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z`.
+  It uses the same 4800-step, 3-episode, quality-rendered eval settings, but
+  with `EVAL_EVERY_STEPS=10000` and `MAX_CONCURRENT_EVALS=1`. It observed
+  `global_step=948452` with stale checkpoint mtime `2026-06-28T08:12:46Z` and
+  is waiting for the next fresh checkpoint before submitting.
