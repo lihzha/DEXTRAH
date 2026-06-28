@@ -12427,3 +12427,21 @@ Smoke follow-up:
   restart, test throughput/convergence at `64` or `80` first, possibly `96`.
   Any real batch-size increase should be paired with an explicit LR/schedule
   decision rather than changing the active run midstream.
+
+## 2026-06-27 23:24 PDT - Stop Current Run And Prepare Batch-80 Restart
+
+- At user request, I stopped the active long-training run before changing batch
+  size. A100 job `29555517` was cancelled after reaching a durable latest
+  checkpoint at `global_step=940628`; the unsaved training tail had reached
+  about `945021`. The attached l401 4800-step eval retry job `1066519` and
+  restarted eval monitor PID `305182` were also cancelled.
+- Batch probe timing shows the memory ceiling is above the useful range:
+  `512` fits but is far too slow, `112+` falls off badly, and the practical
+  region is `80`/`96`. I selected `BATCH_SIZE=80` and `VAL_BATCH_SIZE=80` as the
+  restart point because it gives high sample throughput while keeping the
+  optimizer regime less aggressive than `96`.
+- I patched `cluster/submit_yam_rgb_dp_long_train_a100.sh` so the long-train
+  submitter records `batch_size` and `val_batch_size` in its JSON run record
+  and passes both explicitly to each Slurm job. Next step: commit/push the
+  launcher patch, update the A100 remote worktree, and launch a batch-80 resume
+  from the `940628` checkpoint.

@@ -14,6 +14,8 @@ TARGET_TRAIN_STEPS="${TARGET_TRAIN_STEPS:-2000000}"
 NUM_EPOCHS="${NUM_EPOCHS:-50}"
 MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-$TARGET_TRAIN_STEPS}"
 TOPK_CHECKPOINTS="${TOPK_CHECKPOINTS:-50}"
+BATCH_SIZE="${BATCH_SIZE:-8}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-$BATCH_SIZE}"
 MAX_SUBMISSIONS="${MAX_SUBMISSIONS:-128}"
 POLL_SECONDS="${POLL_SECONDS:-60}"
 JOB_NAME="${JOB_NAME:-yam_rgb_dp_train}"
@@ -56,6 +58,8 @@ payload = {
     "max_train_steps": int("$MAX_TRAIN_STEPS"),
     "num_epochs": int("$NUM_EPOCHS"),
     "topk_checkpoints": int("$TOPK_CHECKPOINTS"),
+    "batch_size": int("$BATCH_SIZE"),
+    "val_batch_size": int("$VAL_BATCH_SIZE"),
     "wrapper": "$WRAPPER",
     "max_submissions": int("$MAX_SUBMISSIONS"),
     "poll_seconds": int("$POLL_SECONDS"),
@@ -150,7 +154,7 @@ submit_train_job() {
     set +e
     out="$(
       sbatch "${sbatch_args[@]}" \
-        --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",RUN_NAME="$RUN_NAME",MANIFEST="$MANIFEST",INIT_CHECKPOINT="$init_arg",RESUME="$resume",NUM_EPOCHS="$NUM_EPOCHS",MAX_TRAIN_STEPS="$MAX_TRAIN_STEPS",TOPK_CHECKPOINTS="$TOPK_CHECKPOINTS" \
+        --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",RUN_NAME="$RUN_NAME",MANIFEST="$MANIFEST",INIT_CHECKPOINT="$init_arg",RESUME="$resume",NUM_EPOCHS="$NUM_EPOCHS",MAX_TRAIN_STEPS="$MAX_TRAIN_STEPS",TOPK_CHECKPOINTS="$TOPK_CHECKPOINTS",BATCH_SIZE="$BATCH_SIZE",VAL_BATCH_SIZE="$VAL_BATCH_SIZE" \
         "$WRAPPER" \
         2>"$err"
     )"
