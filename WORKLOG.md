@@ -12608,3 +12608,38 @@ Smoke follow-up:
   `173` optimizer steps, about `33.8` updates/min. That is below the best prior
   windows but fast enough to reach the next durable checkpoint within the
   allocation. Keep job `29563529` running and monitor for the next checkpoint.
+
+## 2026-06-28 10:57 PDT - Batch-80 Step-962649 Eval Still Fails
+
+- A100 job `29563529` produced the next durable checkpoints:
+  `global_step=958161`, `val_loss=0.007648724131286144`, then
+  `global_step=962545`, `val_loss=0.0070200515910983086`. The latter improved
+  over the step-953778/958161 losses but remains worse than the current best
+  step-949395 `val_loss=0.006550335790961981`.
+- The L40 periodic monitor observed the `960000` threshold at
+  `global_step=960114`, waited for a fresh checkpoint, then submitted eval job
+  `1072758` for snapshot `step_0962649` on `pool0-00041`.
+- Eval `step0962649` completed `3` episodes x `4800` steps with
+  `episode_success_rate=0.0`. Per-episode max lift remained numerical noise:
+  `6.52e-07`, `6.41e-07`, and `5.22e-08` m. First close/strong-close occurred
+  at steps `4017`, `None`, and `3353`, so this checkpoint stays open even
+  longer than the previous step-953778 eval.
+- Fetched and opened:
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z_step0962649/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`
+  and
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z_step0962649/videos/scene_wrist_debug_obs.mp4`.
+  Contact sheets are in `inspect_frames/main_rollout_grid.png` and
+  `inspect_frames/debug_obs_grid.png`.
+- Visual inspection: the object/bin are clearly visible in the scene camera,
+  but the gripper mostly drifts at the right edge and never reaches a useful
+  pregrasp. Wrist observations intermittently see background/floor because the
+  gripper is off-table, but this is still a closed-loop behavior failure rather
+  than a scene-camera visibility failure.
+- After saving the step-962545 checkpoint, job `29563529` was cancelled to avoid
+  wasting its remaining short walltime on an unsaved partial epoch. The active
+  A100 submitter PID `1897104` relaunched job `29566007` on `batch-block4-0052`
+  with block7 nodes excluded. It resumed from the step-962545 checkpoint and
+  was healthy at about `50.5` updates/min around `global_step=964243`.
+- Next step: continue training to the next checkpoints; the next L40 eval should
+  occur after the monitor sees the `970000` threshold and a fresh post-threshold
+  checkpoint.
