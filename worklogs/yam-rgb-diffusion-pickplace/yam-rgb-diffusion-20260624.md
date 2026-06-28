@@ -1041,3 +1041,18 @@
 - L40 eval ledger remains unchanged at row `8`, latest `step_0809686`, because
   no post-900k checkpoint exists yet. Continue monitoring toward the 900k
   threshold from job `29552222`.
+
+## 2026-06-28T01:25:00Z A100 Checkpoint Below 900k Threshold
+
+- A100 job `29552222` remains running on `batch-block7-03039`; live training
+  reached `global_step=897394`, `epoch=10`.
+- New checkpoint files: `latest.ckpt` at `2026-06-28T01:20:26Z` and
+  `epoch=0009-test_mean_score=0.000.ckpt` at `2026-06-28T01:20:27Z`, both
+  `1606332835` bytes.
+- Validation for this checkpoint: `global_step=896789`, `epoch=9`,
+  `val_loss=0.009697936475276947`. This remains worse than the 809k best
+  validation loss (`0.007627719081938267`).
+- The L40 eval ledger is still unchanged at row `8`, latest `step_0809686`,
+  with no active eval job. This is expected because the checkpoint was saved
+  before the raw training step crossed `900000`. Continue monitoring for the
+  next fresh checkpoint after crossing 900k.
