@@ -12539,3 +12539,47 @@ Smoke follow-up:
   with `EVAL_EVERY_STEPS=10000` and `MAX_CONCURRENT_EVALS=1`. It observed
   `global_step=948452` with stale checkpoint mtime `2026-06-28T08:12:46Z` and
   is waiting for the next fresh checkpoint before submitting.
+
+## 2026-06-28 06:31 PDT - Batch-80 Step-953778 Eval And A100 Restart
+
+- The batch-80 A100 job `29558234` timed out after an unsaved tail at roughly
+  `global_step=950862`; the durable checkpoint remained at `949395`. The
+  submitter resumed correctly as job `29562154`, which produced a fresh
+  checkpoint at `global_step=953778`, `epoch=10`, `val_loss=0.007356798276305199`.
+  This was worse than the current best `0.006550335790961981` at step `949395`,
+  so the training is not yet converged.
+- L40 monitor PID `431671` submitted eval job `1071639` for snapshot
+  `step_0953778`. It completed `3` episodes at `4800` steps each with
+  `episode_success_rate=0.0`. Per-episode max lift was numerical noise:
+  `6.52e-07`, `6.41e-07`, and `5.22e-08` m. First strong close happened very
+  late at steps `3225`, `3897`, and `2881`.
+- Fetched artifacts locally under
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z_step0953778`.
+  Opened the main rollout and side-by-side scene/wrist observation videos with
+  `viz-open`; the served paths are:
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z_step0953778/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`
+  and
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z_step0953778/videos/scene_wrist_debug_obs.mp4`.
+  I also created contact sheets at `inspect_frames/main_rollout_grid.png` and
+  `inspect_frames/debug_obs_grid.png`.
+- Visual inspection: the scene camera still shows the bin and object clearly
+  with little background, but the gripper only enters from the right edge and
+  never reaches a useful pregrasp before closing. The wrist stream sees some
+  background/floor when the gripper is off-table, but the dominant failure is
+  closed-loop behavior: tiny approach motions and late close, not object/bin
+  visibility or an action sign mismatch.
+- After the step-953778 checkpoint, job `29562154` was in a poor walltime
+  window: it had advanced the logs to about `global_step=955782`, but would
+  likely hit the A100 4-hour limit before completing the next epoch/checkpoint.
+  I cancelled it intentionally and let the long-train submitter relaunch from
+  the durable checkpoint. The replacement is A100 job `29563415` on `polar3`
+  (`batch-block7-01961`), submitted at `2026-06-28T13:28:04Z`, with
+  `training.resume=true`, `BATCH_SIZE=80`, `VAL_BATCH_SIZE=80`, and
+  `policy.num_inference_steps=100`.
+- The periodic eval monitor is still active as l401 PID `431671`. Its ledger is
+  `submitted_periodic_evals.tsv`; it has submitted the step `949452` and
+  `953778` evals and should wait for the next fresh checkpoint/threshold before
+  launching another quality-rendered 4800-step evaluation.
+- Next step: continue monitoring A100 job `29563415` until it writes the next
+  durable checkpoint, then inspect the next periodic L40 eval before changing
+  the dataset, rollout controller, or training recipe.
