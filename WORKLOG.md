@@ -12819,3 +12819,10 @@ Smoke follow-up:
 - Relaunch submitter PID `3503126`, log
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/submitter/a100_submitter_bs80_restart11_fresh_exclude_block5_block7_20260629T095431Z.log`,
   submitted A100 job `29587438` on `batch-block4-2007`.
+- Job `29587438` crossed the `1000000` threshold and saved a fresh checkpoint
+  at `global_step=1001995`, `epoch=14`, `val_loss=0.009177609346807003`, with
+  checkpoint mtime `2026-06-29T11:26:21Z`. The validation loss regressed
+  relative to `997612` and remains worse than the best `949395` checkpoint.
+- The L40 monitor submitted periodic eval job `1077657` for snapshot
+  `step_1002071`, using checkpoint snapshot
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/periodic_eval_snapshots/step_1002071.ckpt`.
