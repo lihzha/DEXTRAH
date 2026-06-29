@@ -12886,3 +12886,30 @@ Smoke follow-up:
   and wrist capture recovered after the expected first black frame; episode 0
   advanced through step `800` at roughly `5` control steps/s. Projected total
   runtime is approximately eight hours. No device-loss or traceback is present.
+
+## 2026-06-29T22:24:36Z 48k Eval Memory-Safe Relaunch
+
+- Cancelled initial 48k eval job `1078993` after identifying that Gym's
+  1280x720 `RecordVideo` path buffers captured frames in process memory. A
+  48,000-frame video would require roughly `132.7` GB for RGB frames alone,
+  before the simulator and policy footprint, which is unsafe on the 160 GB
+  L40S node.
+- Runtime evidence confirmed the risk: job `1078993` reached
+  `MaxRSS=37373312K` after only `00:06:12`, while the frame buffer was still
+  early in episode 0. It was cancelled cleanly before an OOM or lost long-run
+  compute. Its partial artifacts remain isolated under the original run name.
+- Launched replacement L40S job `1078994` on `pool0-00012`, still using
+  `NUM_EPISODES=3`, `NUM_STEPS=48000`, quality rendering, 100 diffusion steps,
+  action chunks of 8, and the same immutable step-1006379 checkpoint.
+- New run directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_pickplace_rgb_dp_bs80_step1006379_eval_horizon48000_fullobs_20260629T222237Z`.
+- The high-resolution Gym rollout is capped at the already validated
+  `VIDEO_LENGTH=4800`, keeping its frame buffer bounded. Full-horizon visual
+  coverage now comes from policy-input diagnostics with
+  `DEBUG_OBS_INTERVAL=120` and `DEBUG_OBS_MAX_FRAMES=1206`: 402 scene/wrist
+  frames per episode, expected to encode to about 50 seconds per episode at
+  8 FPS, with resets near 50 and 100 seconds rather than 5 and 10 seconds.
+- Startup verification: job `1078994` advanced through step `200`, wrote
+  frames at steps `0`, `1`, `120`, and `240`, and showed no device loss or
+  traceback. Early `MaxRSS` was `26956448K`; memory will be checked again after
+  the 4,800-frame Gym video closes to verify that it plateaus.
