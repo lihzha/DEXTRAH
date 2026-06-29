@@ -12913,3 +12913,40 @@ Smoke follow-up:
   frames at steps `0`, `1`, `120`, and `240`, and showed no device loss or
   traceback. Early `MaxRSS` was `26956448K`; memory will be checked again after
   the 4,800-frame Gym video closes to verify that it plateaus.
+
+## 2026-06-29T23:03:09Z Parallel 48k Evaluation Batch
+
+- Job `1078994` validated the memory-safe recording settings: it reached the
+  4,800-frame video boundary at `MaxRSS=44047184K`, advanced beyond step
+  `10800` with RSS unchanged, encoded a valid 1280x720, 60 FPS, 4,800-frame
+  rollout, and continued without device loss. Visual inspection showed valid
+  table/bin/object rendering and the gripper drifting in from camera-right.
+- The sequential three-episode protocol would still require about eight hours
+  at the measured `~5` steps/s. Following the robotics evaluation-batch
+  guidance, launched three ordinary, non-array, one-episode jobs concurrently
+  at seeds `42`, `43`, and `44`. This preserves three 48,000-step trials,
+  removes resets from each trial's video, broadens scene randomization across
+  seeds, and reduces expected wall time to about 2.7 hours.
+- Sweep manifest:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_pickplace_rgb_dp_bs80_step1006379_eval_horizon48000_parallel_20260629T230140Z/parallel_eval_manifest.tsv`.
+
+| Seed | Job | Run name | Startup result | Decision |
+| --- | --- | --- | --- | --- |
+| 42 | `1078995` | `yam_pickplace_rgb_dp_bs80_step1006379_eval_horizon48000_parallel_20260629T230140Z_seed42` | checkpoint loaded; valid cameras; reached step 1 | keep |
+| 43 | `1078996` | `yam_pickplace_rgb_dp_bs80_step1006379_eval_horizon48000_parallel_20260629T230140Z_seed43` | checkpoint loaded; valid cameras; reached step 1 | keep |
+| 44 | `1078997` | `yam_pickplace_rgb_dp_bs80_step1006379_eval_horizon48000_parallel_20260629T230140Z_seed44` | checkpoint loaded; valid cameras; reached step 1 | keep |
+
+- Each job uses source commit
+  `c83ec7223c6cf7386fc9140a40ab237e74f0ee7d`, immutable checkpoint
+  `step_1006379.ckpt`, `NUM_EPISODES=1`, `NUM_STEPS=48000`,
+  `VIDEO_LENGTH=4800`, `DEBUG_OBS_INTERVAL=120`,
+  `DEBUG_OBS_MAX_FRAMES=402`, quality rendering, 256x256 scene/wrist policy
+  observations, 100 diffusion inference steps, and action chunks of 8.
+- Cancelled sequential job `1078994` after all three replacements were running.
+  Its valid partial artifacts remain isolated under
+  `yam_pickplace_rgb_dp_bs80_step1006379_eval_horizon48000_fullobs_20260629T222237Z`;
+  no result from that cancelled run will be included in final metrics.
+- Completion criteria: each seed writes `metrics.json` with 48,000 completed
+  steps, a valid quality rollout MP4, and 402 scene/wrist diagnostic PNGs; then
+  aggregate success/lift/gripper behavior across seeds, fetch artifacts,
+  encode the three full-horizon diagnostics, and inspect/open all videos.
