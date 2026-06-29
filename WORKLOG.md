@@ -12766,3 +12766,10 @@ Smoke follow-up:
   `45.6` updates/min over 5 minutes, `46.0` updates/min over 10 minutes, and
   `43.7` updates/min over 20 minutes. Continue this job toward the next
   checkpoint instead of recycling further.
+- Job `29579905` stayed healthy through the checkpoint boundary, reaching
+  `984460` at about `49.2` updates/min over the recent 5-minute window. It
+  then saved a fresh durable checkpoint at `global_step=984461`, `epoch=12`,
+  `val_loss=0.008638909086585045`, with latest checkpoint mtime
+  `2026-06-29T04:31:18Z`. This is worse than the current best
+  `global_step=949395`, `val_loss=0.006550335790961981`, but the allocation has
+  enough remaining walltime for another checkpoint, so keep it running.
