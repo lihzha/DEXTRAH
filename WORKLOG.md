@@ -12795,3 +12795,16 @@ Smoke follow-up:
 - The L40 monitor submitted periodic eval job `1076781` for snapshot
   `step_0993294` using checkpoint snapshot
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/periodic_eval_snapshots/step_0993294.ckpt`.
+- Eval `1076781` completed `3` episodes x `4800` steps with
+  `episode_success_rate=0.0`, `steps_completed=14400`, and
+  `reward_mean=2.9507907014754085`. Per-episode max lift stayed at numerical
+  noise (`6.52e-07`, `6.41e-07`, `5.22e-08` m), with final gripper widths
+  `0.1863`, `0.1863`, and `0.1078` m. Policy inputs remain non-privileged:
+  `phase_progress_in_policy=false`, `privileged_object_state_in_policy=false`.
+- Fetched and opened the step-993294 eval artifacts locally:
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z_step0993294/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`,
+  `videos/scene_wrist_debug_obs.mp4`, `inspect_frames/main_rollout_grid.png`,
+  and `inspect_frames/debug_obs_grid.png`. Visual diagnosis is unchanged:
+  scene/wrist observations are valid and object/bin are visible, but the policy
+  makes tiny motions, remains off to the side, and never reaches or lifts the
+  object.
