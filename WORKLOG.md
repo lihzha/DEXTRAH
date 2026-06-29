@@ -12826,3 +12826,35 @@ Smoke follow-up:
 - The L40 monitor submitted periodic eval job `1077657` for snapshot
   `step_1002071`, using checkpoint snapshot
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/periodic_eval_snapshots/step_1002071.ckpt`.
+
+## 2026-06-29T21:57:53Z Step-1002071 Eval Failure And A100 Resume
+
+- L40 eval job `1077657` completed `3` episodes x `4800` steps with
+  `episode_success_rate=0.0`, `steps_completed=14400`, and
+  `reward_mean=2.8486861361894342`. Per-episode max lift remained numerical
+  noise (`6.52e-07`, `6.41e-07`, and `5.22e-08` m), and final gripper widths
+  remained near open (`0.1862824`, `0.1862986`, and `0.1862821` m).
+- Policy inputs in the eval remain non-privileged:
+  `phase_progress_in_policy=false` and
+  `privileged_object_state_in_policy=false`. Fetched and opened the main
+  rollout, scene/wrist observation video, and inspection grids locally. Both
+  camera streams are valid, but behavior is unchanged: small off-target arm
+  motion, no reach, no grasp, and no lift.
+- Across the seven completed batch-80 periodic evals through `step_1002071`,
+  the policy has `0/21` successful episodes over `100800` environment steps.
+- A100 job `29587438` timed out after an unsaved tail at
+  `global_step=1008541`, `epoch=16`. Its durable checkpoint is
+  `global_step=1006379`, `epoch=15`, `val_loss=0.008458542637526989`, mtime
+  `2026-06-29T12:57:50Z`; the best validation checkpoint remains
+  `global_step=949395`, `val_loss=0.006550335790961981`.
+- The old submitter exhausted eight retries with
+  `sbatch: Invalid node name specified` because its exact block5/block7 node
+  exclusion list had become stale. Regenerated the list from live `sinfo` and
+  launched submitter PID `307413`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/submitter/a100_submitter_bs80_restart12_fresh_exclude_block5_block7_20260629T215512Z.log`.
+- Replacement A100 job `29607027` is running on `batch-block1-0075`. Its log
+  confirms batch size `80`, `256x256` scene/wrist inputs, `100` diffusion
+  inference steps, the `2000000`-step target, and resume from
+  `official_dp_train/checkpoints/latest.ckpt`. Fresh rows restarted at the
+  durable checkpoint (`global_step=1006379`) and advanced through at least
+  `1006382`, confirming a real resume rather than another stalled launch.
