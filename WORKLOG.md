@@ -12773,3 +12773,17 @@ Smoke follow-up:
   `2026-06-29T04:31:18Z`. This is worse than the current best
   `global_step=949395`, `val_loss=0.006550335790961981`, but the allocation has
   enough remaining walltime for another checkpoint, so keep it running.
+- The same job saved the next durable checkpoint at `global_step=988845`,
+  `epoch=13`, `val_loss=0.007824643515050411`, checkpoint mtime
+  `2026-06-29T06:20:24Z`. This improves over the `984461` and `980078`
+  checkpoints but is still worse than the best `949395` validation loss.
+- With only about 15 minutes of walltime left after the `988845` checkpoint, I
+  cancelled `29579905` to avoid wasting an unsaved tail. The old submitter then
+  hit `sbatch: Invalid node name specified` on its stale exclude list, so I
+  killed it and relaunched with a freshly regenerated exact exclude list from
+  the current eligible A100 partitions.
+- Relaunch submitter PID `3160806`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/submitter/a100_submitter_bs80_restart10_fresh_exclude_block5_block7_20260629T062620Z.log`,
+  submitted A100 job `29583721` on `batch-block4-2045`. Startup sample is
+  healthy enough to keep: `46.0` updates/min over the last 5 minutes at
+  `global_step=989201`.
