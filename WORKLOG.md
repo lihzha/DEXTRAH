@@ -12711,3 +12711,54 @@ Smoke follow-up:
   `train_loss=0.0034877911675721407`, and checkpoint mtime still
   `2026-06-28T22:37:38Z`. Keep this job running toward the next fresh
   `980000`-threshold checkpoint/eval unless the throughput degrades again.
+
+## 2026-06-28 19:35 PDT - Current Job Killed And Batch-80 Relaunched
+
+- Per user request, I killed the active A100 training allocation
+  `29578900` on `batch-block5-03611`. It had only reached an unsaved log tail
+  around `global_step=982000`; the durable checkpoint remains
+  `global_step=980078`, `epoch=12`, `val_loss=0.008365923538804054`, with
+  checkpoint mtime `2026-06-29T01:22:46Z`.
+- I kept `BATCH_SIZE=80` and `VAL_BATCH_SIZE=80` as the best practical
+  performance/speed setting. The earlier batch sweep found that much larger
+  batches fit memory but were throughput-poor, and live long-run throughput has
+  been dominated by node placement rather than batch-size OOM.
+- No matching batch-80 submitter process was alive after the cancellation. I
+  relaunched the long-train submitter as PID `2856428` with log
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/submitter/a100_submitter_bs80_restart6_exclude_03611_20260629T023405Z.log`.
+- The relaunched A100 job is `29579762` on `batch-block5-03587`, submitted with
+  `training.resume=true`, `dataloader.batch_size=80`,
+  `val_dataloader.batch_size=80`, `policy.num_inference_steps=100`, and an
+  updated exact `SBATCH_EXCLUDE` list that includes the just-killed slow node
+  `batch-block5-03611`.
+- Startup verification: Slurm log confirms the correct batch and resume
+  settings and loads
+  `/results/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/official_dp_train/checkpoints/latest.ckpt`.
+  Because the previous job left unsaved log rows past the durable checkpoint,
+  fresh progress should be judged after the restart has advanced beyond that
+  discarded tail.
+- After startup, `29579762` on `batch-block5-03587` only reached about
+  `21.2` updates/min, so I killed it and added `batch-block5-03587` to the
+  exclude list. The old submitter briefly launched `29579772` on
+  `batch-block5-03666`; I adopted that job with submitter PID `2863815`, then
+  killed it too after a longer sample showed about `22.6` updates/min.
+- I relaunched again with `batch-block5-03611`, `batch-block5-03587`, and
+  `batch-block5-03666` excluded. Current submitter PID is `2867163`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/submitter/a100_submitter_bs80_restart8_exclude_slow_block5_20260629T024246Z.log`,
+  and current A100 job is `29579856` on `batch-block5-00305`.
+- Job `29579856` on `batch-block5-00305` was also slow, roughly `24`
+  updates/min by current-run runtime. I killed it and switched from individual
+  block5 exclusions to an exact Slurm node list containing all live
+  `batch-block5-*` and existing `batch-block7-*` exclusions. This avoids the
+  invalid compressed-hostlist problem while steering away from the slow block5
+  placements.
+- Relaunched submitter PID `2874759`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/submitter/a100_submitter_bs80_restart9_exclude_block5_block7_20260629T024758Z.log`.
+  The exact exclude list has `1233` nodes, and the new A100 job is `29579905`
+  on `batch-block4-0052`, the same block that previously ran batch-80 near the
+  desired `~50` updates/min range.
+- Longer sample for `29579905`: after the cold-start/resume segment, recent
+  throughput recovered to `42.4` updates/min over 5 minutes and `40.4`
+  updates/min over 10 minutes, with latest `global_step=980569`. This is below
+  the best prior block4 window but fast enough to reach the next durable
+  checkpoint inside the remaining allocation, so I am keeping it running.
