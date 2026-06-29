@@ -12808,3 +12808,14 @@ Smoke follow-up:
   scene/wrist observations are valid and object/bin are visible, but the policy
   makes tiny motions, remains off to the side, and never reaches or lifts the
   object.
+- A100 job `29583721` continued to the next durable checkpoint at
+  `global_step=997612`, `epoch=14`, `val_loss=0.008171155117452145`, mtime
+  `2026-06-29T09:39:49Z`. This is an improvement over `993228` but still worse
+  than the current best `949395` validation loss.
+- With only about 25 minutes left in the A100 allocation after the `997612`
+  checkpoint, I cancelled `29583721`. Its submitter again hit a stale
+  `SBATCH_EXCLUDE` invalid-node error, so I killed it and relaunched with a
+  freshly generated exact block5/block7 exclude list.
+- Relaunch submitter PID `3503126`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/submitter/a100_submitter_bs80_restart11_fresh_exclude_block5_block7_20260629T095431Z.log`,
+  submitted A100 job `29587438` on `batch-block4-2007`.
