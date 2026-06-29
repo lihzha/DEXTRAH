@@ -12858,3 +12858,31 @@ Smoke follow-up:
   `official_dp_train/checkpoints/latest.ckpt`. Fresh rows restarted at the
   durable checkpoint (`global_step=1006379`) and advanced through at least
   `1006382`, confirming a real resume rather than another stalled launch.
+
+## 2026-06-29T22:20:32Z Step-1006379 48k-Horizon Eval Launch
+
+- Per user request, launched a 10x-longer closed-loop evaluation of the newest
+  durable batch-80 checkpoint. At launch, training had raw rows through
+  `global_step=1007120`, but the newest complete checkpoint remained
+  `global_step=1006379`, `epoch=15`, `val_loss=0.008458542637526989`.
+- Copied the checkpoint to the immutable manual-eval snapshot
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/manual_eval_snapshots/step_1006379.ckpt`.
+  Snapshot size is `1606332835` bytes and SHA-256 is
+  `e7f7f9e3361494531bcd32fc8d96a0e80f746447c06d70fc9f5bf48cdcdd2e29`.
+- L40S job `1078993` is running on `pool0-00012` in `batch_long` with a
+  12-hour limit. Run directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_pickplace_rgb_dp_bs80_step1006379_eval_horizon48000_20260629T221615Z`.
+- Resolved eval settings: `NUM_EPISODES=3`, `NUM_STEPS=48000`,
+  `VIDEO_LENGTH=48000`, `ACTION_CHUNK_STEPS=8`,
+  `NUM_INFERENCE_STEPS=100`, `IMAGE_HEIGHT=IMAGE_WIDTH=256`,
+  `RENDERING_MODE=quality`, and source commit
+  `c83ec7223c6cf7386fc9140a40ab237e74f0ee7d`.
+- Diagnostic sampling is `DEBUG_OBS_INTERVAL=1200` and
+  `DEBUG_OBS_MAX_FRAMES=126`, giving 42 scene/wrist frames per episode so all
+  three 48k-step episodes are represented without the previous global-frame
+  truncation. The main rollout will contain the full first 48k-step episode.
+- Startup evidence is healthy: checkpoint and policy loaded with
+  `n_obs_steps=1`; Isaac configured each episode for `800.03` seconds; scene
+  and wrist capture recovered after the expected first black frame; episode 0
+  advanced through step `800` at roughly `5` control steps/s. Projected total
+  runtime is approximately eight hours. No device-loss or traceback is present.
