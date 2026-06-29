@@ -12787,3 +12787,11 @@ Smoke follow-up:
   submitted A100 job `29583721` on `batch-block4-2045`. Startup sample is
   healthy enough to keep: `46.0` updates/min over the last 5 minutes at
   `global_step=989201`.
+- Job `29583721` crossed the `990000` eval threshold and then saved a fresh
+  checkpoint at `global_step=993228`, `epoch=13`,
+  `val_loss=0.008619879372417927`, with mtime `2026-06-29T08:04:58Z`.
+  Throughput stayed good enough for continued training, around `42.6`
+  updates/min over the preceding hour at the checkpoint check.
+- The L40 monitor submitted periodic eval job `1076781` for snapshot
+  `step_0993294` using checkpoint snapshot
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/periodic_eval_snapshots/step_0993294.ckpt`.
