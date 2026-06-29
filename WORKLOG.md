@@ -12762,3 +12762,7 @@ Smoke follow-up:
   updates/min over 10 minutes, with latest `global_step=980569`. This is below
   the best prior block4 window but fast enough to reach the next durable
   checkpoint inside the remaining allocation, so I am keeping it running.
+- Follow-up sample at `global_step=981086` confirmed the placement is healthy:
+  `45.6` updates/min over 5 minutes, `46.0` updates/min over 10 minutes, and
+  `43.7` updates/min over 20 minutes. Continue this job toward the next
+  checkpoint instead of recycling further.
