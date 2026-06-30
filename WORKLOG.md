@@ -13193,3 +13193,41 @@ Smoke follow-up:
   is compounding approach/grasp-pose error. Continue the scheduled 500 epochs;
   preserve and evaluate epoch 400, then final epoch 499/500 with quality video
   if the performance gate succeeds.
+
+## 2026-06-30T07:25:00Z Exact Single-Trajectory RGB Overfit Pass
+
+- A renderer audit found that the earlier closed-loop jobs used performance
+  rendering against quality-rendered training data. The first nominal quality
+  eval also accepted unresolved RTX frames (scene/wrist MAE `12.64/16.13`).
+  Commits `708b17eb` and `5137a4a6` add viewer-aware initial render warm-up;
+  the final exact video run reached MAE `3.31/4.66` and zero robot-state error.
+- A second evaluation bug terminated episodes as soon as the legacy held-at-goal
+  metric stayed true for `0.1 s`, before the demonstration's release. Commit
+  `d657f972` allows this legacy success termination to be disabled while keeping
+  settled-bin success as the external metric.
+- A100 job `29633278` completed 500 epochs / 5,000 optimizer steps in `01:17:55`.
+  The final scheduled checkpoint is epoch 475 because checkpoint cadence was 25
+  epochs. Final loss was `0.005827`; the staged checkpoint is
+  `results/dextrah/dp_bc/checkpoints/yam_rgb_exact_singletraj_controller_native_bs80_500ep_20260630T053150Z/latest.ckpt`.
+- Final fixed-row offline EMA diagnostic `29634762` reported pose MSE
+  `8.7447e-05`, median `1.9183e-05`, pose cosine `0.99464`, and gripper-sign
+  agreement `1.0`. Raw-model diagnostic `29635053` was slightly better at pose
+  MSE `6.3394e-05`; commit `a4d81e61` adds explicit raw/EMA evaluator selection.
+- Chunk-8 policy eval reached the bin while holding but overshot before release.
+  Four-sample averaging also overshot, and chunk 4 stalled after grasp. Receding
+  horizon control with `action_chunk_steps=1` removed the accumulated open-loop
+  error. Direct policy job `1079068` succeeded at step 704 with `0.15687 m` max
+  lift and final object pose `(-0.21974, 0.21300, 0.03596) m`.
+- Recorded direct policy job `1079075` independently succeeded at step 735 over
+  all 794 dynamics steps, with `0.15783 m` max lift, final object pose
+  `(-0.16299, 0.13101, 0.04496) m`, and `0.6167 s` final settled-bin time.
+  It recorded all scene/wrist RGB observations and a 794-frame 1024x1024
+  quality-rendered overview without resets.
+- Local inspected artifacts:
+  `cluster_results/l401/yam_rgb_exact_overfit_ep0475_quality_c1_success_video_20260630T0715Z/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`,
+  `videos/scene_wrist_policy_observations_60fps.mp4`, and
+  `exact_observation_parity.png` under the same run directory.
+- Production blocker exposed by visual inspection: green/yellow task markers
+  are visible in both policy RGB streams. Remove those render-only privileged
+  cues before regenerating the sim-to-real dataset or training a deployable
+  policy.
