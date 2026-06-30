@@ -29,9 +29,21 @@ DOME_TEXTURE_EXTS = (".hdr", ".exr", ".jpg", ".jpeg", ".png")
 
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--checkpoint", type=str, required=True)
+parser.add_argument("--checkpoint", type=str, default="")
 parser.add_argument("--diffusion_policy_root", type=str, default=None)
 parser.add_argument("--task", type=str, default="Dextrah-Single-YAM-Single-Object-Policy-Grasp")
+parser.add_argument("--control_mode", choices=("policy", "dataset_actions"), default="policy")
+parser.add_argument(
+    "--exact_policy_shard",
+    type=str,
+    default="",
+    help=(
+        "Optional one-trajectory policy shard. Reconstructs its recorded object asset, bin, appearance, camera, "
+        "and first robot/object dynamics state before every episode."
+    ),
+)
+parser.add_argument("--exact_render_width", type=int, default=1024)
+parser.add_argument("--exact_render_height", type=int, default=1024)
 parser.add_argument("--num_episodes", type=int, default=20)
 parser.add_argument("--num_steps", type=int, default=720)
 parser.add_argument("--seed", type=int, default=42)
@@ -150,6 +162,180 @@ def _rng_uniform(rng: np.random.Generator, values: tuple[float, float] | list[fl
 def _random_color(rng: np.random.Generator, values: tuple[float, float] | list[float]) -> tuple[float, float, float]:
     lo, hi = _range_pair(values, name="yam_policy_material_value_range")
     return tuple(float(v) for v in rng.uniform(lo, hi, size=3))
+
+
+def _replay_random_color(rng: np.random.Generator, values: tuple[float, float]) -> tuple[float, float, float]:
+    """Match the HSV-biased color sampler used by RGB data collection."""
+    lo, hi = _range_pair(values, name="exact_material_value_range")
+    hue = float(rng.uniform(0.0, 1.0))
+    sat = float(rng.uniform(0.12, 0.42))
+    val = float(rng.uniform(lo, hi))
+    chroma = val * sat
+    x = chroma * (1.0 - abs((hue * 6.0) % 2.0 - 1.0))
+    m = val - chroma
+    sector = int(hue * 6.0) % 6
+    rgb = (
+        (chroma, x, 0.0),
+        (x, chroma, 0.0),
+        (0.0, chroma, x),
+        (0.0, x, chroma),
+        (x, 0.0, chroma),
+        (chroma, 0.0, x),
+    )[sector]
+    return tuple(float(np.clip(channel + m, 0.0, 1.0)) for channel in rgb)
+
+
+def _replay_jitter_color(
+    rng: np.random.Generator,
+    base: tuple[float, float, float],
+    jitter: float,
+) -> tuple[float, float, float]:
+    return tuple(float(np.clip(channel + rng.uniform(-jitter, jitter), 0.05, 0.95)) for channel in base)
+
+
+def _resolve_recorded_path(value: str | Path, *, parent: Path) -> Path:
+    path = Path(str(value)).expanduser()
+    return path if path.is_absolute() else (parent / path).resolve()
+
+
+def _policy_shard_array(shard: Path, key: str, *, mmap: bool = False) -> np.ndarray:
+    if shard.is_dir():
+        return np.load(shard / f"{key}.npy", mmap_mode="r" if mmap else None, allow_pickle=False)
+    with np.load(shard, allow_pickle=False) as data:
+        return np.asarray(data[key]).copy()
+
+
+def _stable_scene_asset_record(asset: dict[str, Any]) -> dict[str, Any]:
+    uuid = str(asset.get("uuid") or "")
+    usd_path = str(asset.get("usd_path") or "")
+    primitive_shape = str(asset.get("primitive_shape") or "")
+    if not uuid or (not usd_path and not primitive_shape):
+        raise ValueError("Exact stable scene target is missing a usable asset record")
+    record: dict[str, Any] = {"uuid": uuid, "name": str(asset.get("name") or uuid)}
+    if usd_path:
+        record["usd_path"] = usd_path
+    for key in (
+        "metadata_text",
+        "raw_object_path",
+        "primitive_shape",
+        "primitive_radius",
+        "primitive_size",
+        "primitive_color",
+        "scale",
+        "usd_spawn_scale",
+        "usd_root_scale",
+        "scaled_half_extents",
+        "scaled_bounds_min",
+        "scaled_bounds_max",
+        "grasp_size",
+        "grasp_prior_path",
+        "stable_pose_path",
+    ):
+        value = asset.get(key)
+        if value not in (None, ""):
+            record[key] = value
+    return record
+
+
+def _source_row(data: np.lib.npyio.NpzFile, key: str, row: int) -> np.ndarray:
+    value = np.asarray(data[key])[int(row)]
+    if value.ndim >= 2 and value.shape[0] == 1:
+        value = value[0]
+    elif value.ndim == 1:
+        pass
+    elif value.ndim >= 1 and value.shape[0] == 1:
+        value = value[0]
+    return np.asarray(value).copy()
+
+
+def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
+    shard = shard.expanduser().resolve()
+    if not shard.exists():
+        raise FileNotFoundError(shard)
+    if shard.is_dir():
+        shard_metadata = json.loads((shard / "metadata.json").read_text(encoding="utf-8"))
+    else:
+        with np.load(shard, allow_pickle=False) as data:
+            shard_metadata = json.loads(str(np.asarray(data["metadata_json"]).item()))
+    source_dataset = _resolve_recorded_path(str(shard_metadata["source_dataset"]), parent=shard.parent)
+    if not source_dataset.is_file():
+        raise FileNotFoundError(source_dataset)
+    trim = shard_metadata.get("trim") if isinstance(shard_metadata.get("trim"), dict) else {}
+    policy_first_rgb_row = int(trim.get("start_row", 0))
+    with np.load(source_dataset, allow_pickle=False) as source:
+        source_metadata = json.loads(str(np.asarray(source["metadata_json"]).item()))
+        rgb_step_idx = np.asarray(source["rgb_step_idx"], dtype=np.int64).reshape(-1)
+        step_idx = np.asarray(source["step_idx"], dtype=np.int64).reshape(-1)
+        if not 0 <= policy_first_rgb_row < int(rgb_step_idx.shape[0]):
+            raise IndexError(f"Exact shard trim row {policy_first_rgb_row} is outside source RGB rows")
+        source_step_id = int(rgb_step_idx[policy_first_rgb_row])
+        matches = np.flatnonzero(step_idx == source_step_id)
+        if matches.size != 1:
+            raise ValueError(f"Expected one source state row for step {source_step_id}, got {matches.tolist()}")
+        source_state_row = int(matches[0])
+        initial_state = {
+            "joint_position": _source_row(source, "actual_joint_position", source_state_row).astype(np.float32),
+            "joint_velocity": _source_row(source, "actual_joint_velocity", source_state_row).astype(np.float32),
+            "target_root_pos": _source_row(source, "target_root_pos", source_state_row).astype(np.float32),
+            "target_root_quat": _source_row(source, "target_root_quat", source_state_row).astype(np.float32),
+            "target_root_velocity": _source_row(source, "target_root_velocity", source_state_row).astype(np.float32),
+        }
+    stable_scene_path = _resolve_recorded_path(str(source_metadata["stable_scene_path"]), parent=source_dataset.parent)
+    if not stable_scene_path.is_file():
+        raise FileNotFoundError(stable_scene_path)
+    stable_scene = json.loads(stable_scene_path.read_text(encoding="utf-8"))
+    target = stable_scene.get("target") if isinstance(stable_scene.get("target"), dict) else {}
+    target_asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+    asset_record = _stable_scene_asset_record(target_asset)
+    target_manifest = output_dir / "exact_target_asset_manifest.json"
+    target_manifest.write_text(
+        json.dumps({"asset_root": "/", "objects": [asset_record], "source": "exact_policy_shard"}, indent=2)
+        + "\n",
+        encoding="utf-8",
+    )
+    reference = {
+        "scene_rgb": np.asarray(_policy_shard_array(shard, "scene_rgb", mmap=True)[0], dtype=np.uint8).copy(),
+        "wrist_rgb": np.asarray(_policy_shard_array(shard, "wrist_rgb", mmap=True)[0], dtype=np.uint8).copy(),
+        "robot_state": np.asarray(_policy_shard_array(shard, "robot_state", mmap=True)[0], dtype=np.float32).copy(),
+    }
+    actions = np.asarray(_policy_shard_array(shard, "action", mmap=True), dtype=np.float32).copy()
+    return {
+        "shard": shard,
+        "shard_metadata": shard_metadata,
+        "source_dataset": source_dataset,
+        "source_metadata": source_metadata,
+        "stable_scene_path": stable_scene_path,
+        "stable_scene": stable_scene,
+        "target_manifest": target_manifest,
+        "target_uuid": str(asset_record["uuid"]),
+        "policy_first_rgb_row": policy_first_rgb_row,
+        "source_state_row": source_state_row,
+        "source_step_id": source_step_id,
+        "initial_state": initial_state,
+        "reference": reference,
+        "actions": actions,
+    }
+
+
+def _exact_demo_summary(exact_demo: dict[str, Any] | None) -> dict[str, Any] | None:
+    if exact_demo is None:
+        return None
+    state = exact_demo["initial_state"]
+    return {
+        "enabled": True,
+        "shard": str(exact_demo["shard"]),
+        "source_dataset": str(exact_demo["source_dataset"]),
+        "stable_scene_path": str(exact_demo["stable_scene_path"]),
+        "target_manifest": str(exact_demo["target_manifest"]),
+        "target_uuid": str(exact_demo["target_uuid"]),
+        "policy_first_rgb_row": int(exact_demo["policy_first_rgb_row"]),
+        "source_state_row": int(exact_demo["source_state_row"]),
+        "source_step_id": int(exact_demo["source_step_id"]),
+        "num_policy_actions": int(exact_demo["actions"].shape[0]),
+        "joint_position": np.asarray(state["joint_position"]).astype(float).tolist(),
+        "target_root_pos": np.asarray(state["target_root_pos"]).astype(float).tolist(),
+        "target_root_quat": np.asarray(state["target_root_quat"]).astype(float).tolist(),
+    }
 
 
 def _scale_gain_value(value: Any, scale: float) -> Any:
@@ -396,6 +582,239 @@ def _sample_texture_path(
     return str(candidates[int(rng.integers(0, len(candidates)))])
 
 
+def _max_abs_error(actual: Any, expected: Any) -> float:
+    lhs = np.asarray(actual, dtype=np.float64)
+    rhs = np.asarray(expected, dtype=np.float64)
+    if lhs.shape != rhs.shape:
+        return float("inf")
+    return float(np.max(np.abs(lhs - rhs), initial=0.0))
+
+
+def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, Any]:
+    metadata = exact_demo["source_metadata"]
+    scene = metadata.get("yam_policy_scene_randomization")
+    camera = metadata.get("scene_camera")
+    if not isinstance(scene, dict) or not isinstance(camera, dict):
+        raise ValueError("Exact source metadata lacks scene randomization or camera records")
+    materials = scene.get("materials") if isinstance(scene.get("materials"), dict) else {}
+    table_texture = scene.get("tabletop_texture") if isinstance(scene.get("tabletop_texture"), dict) else {}
+    background = scene.get("background_walls") if isinstance(scene.get("background_walls"), dict) else {}
+    lighting = scene.get("lighting") if isinstance(scene.get("lighting"), dict) else {}
+
+    rng = np.random.default_rng(int(metadata["seed"]) + 1009)
+    for _ in range(5):
+        rng.uniform(0.0, 1.0)
+    table_color = _replay_random_color(rng, (0.32, 0.82))
+    ground_color = _replay_random_color(rng, (0.32, 0.82))
+    bin_floor_color = _replay_random_color(rng, (0.32, 0.82))
+    x_wall_color = _replay_random_color(rng, (0.32, 0.82))
+    y_wall_color = _replay_random_color(rng, (0.32, 0.82))
+    table_material_roughness = float(rng.uniform(0.45, 0.92))
+    surround_color = _replay_jitter_color(rng, table_color, 0.08)
+    texture_patch_count = int(rng.integers(0, 1))
+    if texture_patch_count != 0:
+        raise RuntimeError("The exact-data replay expected zero procedural texture patches")
+    background_color = _replay_random_color(rng, (0.32, 0.82))
+    surround_roughness = float(rng.uniform(0.52, 0.95))
+    table_texture_roughness = float(rng.uniform(0.60, 0.96))
+    sampled_table_texture = _sample_texture_path(
+        rng,
+        str(table_texture.get("table_texture_dir") or ""),
+        exts=SURFACE_TEXTURE_EXTS,
+        include_tokens=("albedo", "diffuse", "diff", "basecolor", "color"),
+        exclude_tokens=("normal", "orm", "rough", "metal", "height"),
+    )
+    table_texture_tiling = float(rng.uniform(1.4, 3.8))
+    background_roughness = float(rng.uniform(0.58, 0.95))
+    sampled_background_texture = _sample_texture_path(
+        rng,
+        str(background.get("background_texture_dir") or ""),
+        exts=SURFACE_TEXTURE_EXTS,
+        exclude_tokens=("normal", "orm", "rough", "metal", "height"),
+    )
+    background_texture_tiling = float(rng.uniform(1.0, 2.2))
+    sampled_dome_texture = _sample_texture_path(
+        rng,
+        str(lighting.get("dome_light_texture_dir") or background.get("background_texture_dir") or ""),
+        exts=DOME_TEXTURE_EXTS,
+    )
+    bin_visual_roughness = float(rng.uniform(0.45, 0.92))
+    dome_light_intensity = float(rng.uniform(450.0, 1600.0))
+    key_light_intensity = float(rng.uniform(250.0, 1400.0))
+    key_light_rotation_deg = tuple(float(v) for v in rng.uniform((35.0, -8.0, -75.0), (72.0, 8.0, 35.0)))
+
+    eye_jitter = tuple(float(v) for v in camera.get("eye_jitter", (0.018, 0.018, 0.018)))
+    target_jitter = tuple(float(v) for v in camera.get("target_jitter", (0.012, 0.012, 0.012)))
+    shared_y_radius = min(abs(eye_jitter[1]), abs(target_jitter[1]))
+    shared_y_jitter = float(rng.uniform(-shared_y_radius, shared_y_radius))
+    scene_eye = (
+        DEFAULT_SCENE_CAMERA_EYE[0] + float(rng.uniform(-abs(eye_jitter[0]), abs(eye_jitter[0]))),
+        DEFAULT_SCENE_CAMERA_EYE[1] + shared_y_jitter,
+        DEFAULT_SCENE_CAMERA_EYE[2] + float(rng.uniform(-abs(eye_jitter[2]), abs(eye_jitter[2]))),
+    )
+    scene_target = (
+        DEFAULT_SCENE_CAMERA_TARGET[0] + float(rng.uniform(-abs(target_jitter[0]), abs(target_jitter[0]))),
+        DEFAULT_SCENE_CAMERA_TARGET[1] + shared_y_jitter,
+        DEFAULT_SCENE_CAMERA_TARGET[2] + float(rng.uniform(-abs(target_jitter[2]), abs(target_jitter[2]))),
+    )
+
+    numeric_errors = {
+        "table_color": _max_abs_error(table_color, materials.get("table_color")),
+        "ground_color": _max_abs_error(ground_color, materials.get("ground_color")),
+        "goal_bin_floor_color": _max_abs_error(bin_floor_color, materials.get("goal_bin_floor_color")),
+        "goal_bin_x_wall_color": _max_abs_error(x_wall_color, materials.get("goal_bin_x_wall_color")),
+        "goal_bin_y_wall_color": _max_abs_error(y_wall_color, materials.get("goal_bin_y_wall_color")),
+        "tabletop_surround_color": _max_abs_error(surround_color, materials.get("tabletop_surround_color")),
+        "table_texture_tiling": _max_abs_error(table_texture_tiling, table_texture.get("table_texture_tiling")),
+        "background_texture_tiling": _max_abs_error(
+            background_texture_tiling, background.get("background_texture_tiling")
+        ),
+        "dome_light_intensity": _max_abs_error(dome_light_intensity, lighting.get("dome_light_intensity")),
+        "key_light_intensity": _max_abs_error(key_light_intensity, lighting.get("key_light_intensity")),
+        "key_light_rotation_deg": _max_abs_error(key_light_rotation_deg, lighting.get("key_light_rotation_deg")),
+        "scene_eye": _max_abs_error(scene_eye, camera.get("eye")),
+        "scene_target": _max_abs_error(scene_target, camera.get("target")),
+        "shared_y_jitter": _max_abs_error(shared_y_jitter, camera.get("shared_y_jitter")),
+    }
+    max_numeric_error = max(numeric_errors.values(), default=float("inf"))
+    paths = {
+        "table_texture": {
+            "sampled": sampled_table_texture,
+            "recorded": str(table_texture.get("table_texture_path") or ""),
+        },
+        "background_texture": {
+            "sampled": sampled_background_texture,
+            "recorded": str(background.get("background_texture_path") or ""),
+        },
+        "dome_texture": {
+            "sampled": sampled_dome_texture,
+            "recorded": str(lighting.get("dome_light_texture_path") or ""),
+        },
+    }
+    paths_match = all(
+        (not record["recorded"] and not record["sampled"])
+        or Path(record["recorded"]).resolve() == Path(record["sampled"]).resolve()
+        for record in paths.values()
+    )
+    if not math.isfinite(max_numeric_error) or max_numeric_error > 1.0e-6:
+        raise RuntimeError(
+            "Could not deterministically replay exact-demo visual RNG; "
+            f"max recorded numeric error={max_numeric_error} errors={numeric_errors}"
+        )
+    return {
+        "rng_seed": int(metadata["seed"]) + 1009,
+        "max_recorded_numeric_error": max_numeric_error,
+        "numeric_errors": numeric_errors,
+        "sampled_paths_match_recorded": bool(paths_match),
+        "paths": paths,
+        "table_material_roughness": table_material_roughness,
+        "tabletop_surround_roughness": surround_roughness,
+        "table_texture_roughness": table_texture_roughness,
+        "background_roughness": background_roughness,
+        "bin_visual_roughness": bin_visual_roughness,
+        "scene_eye": scene_eye,
+        "scene_target": scene_target,
+        "shared_y_jitter": shared_y_jitter,
+        "background_color": background_color,
+    }
+
+
+def _apply_exact_demo_env_cfg(env_cfg: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
+    metadata = exact_demo["source_metadata"]
+    scene = metadata["yam_policy_scene_randomization"]
+    materials = scene["materials"]
+    surround = scene["tabletop_surround"]
+    table_texture = scene["tabletop_texture"]
+    background = scene["background_walls"]
+    lighting = scene["lighting"]
+    stable_scene = exact_demo["stable_scene"]
+    bins = stable_scene.get("bins") if isinstance(stable_scene.get("bins"), dict) else {}
+    goal = bins.get("goal") if isinstance(bins.get("goal"), dict) else None
+    if goal is None:
+        raise ValueError("Exact stable scene does not contain a goal bin")
+    visual_replay = _replay_exact_visual_randomization(exact_demo)
+    exact_demo["visual_replay"] = visual_replay
+
+    env_cfg.object_asset_manifest_path = str(exact_demo["target_manifest"])
+    env_cfg.max_objects = 1
+    env_cfg.object_asset_assignment = "sequential"
+    env_cfg.object_validate_usd_bounds = False
+    env_cfg.object_reset_settle_steps = 0
+    env_cfg.arm_joint_reset_noise = 0.0
+    initial_state = exact_demo["initial_state"]
+    env_cfg.object_fixed_root_position = tuple(float(v) for v in initial_state["target_root_pos"])
+    env_cfg.object_fixed_root_quat_wxyz = tuple(float(v) for v in initial_state["target_root_quat"])
+
+    env_cfg.tabletop_goal_bin_enabled = True
+    env_cfg.tabletop_source_bin_enabled = False
+    env_cfg.tabletop_goal_bin_center_offset_x = float(goal["center_x"]) - float(env_cfg.table_center_x)
+    env_cfg.tabletop_goal_bin_center_offset_y = float(goal["center_y"]) - float(env_cfg.table_center_y)
+    for key in ("inner_size_x", "inner_size_y", "wall_thickness", "bottom_thickness", "wall_height"):
+        if key in goal:
+            setattr(env_cfg, f"tabletop_goal_bin_{key}", float(goal[key]))
+    env_cfg.tabletop_goal_bin_clearance = float(goal.get("clearance", 0.08))
+    env_cfg.tabletop_goal_bin_placement_clearance = float(goal.get("placement_clearance", 0.08))
+    env_cfg.tabletop_goal_bin_success_xy_tol = min(
+        0.12, 0.35 * min(float(goal["inner_size_x"]), float(goal["inner_size_y"]))
+    )
+    env_cfg.cube_success_xy_tol = env_cfg.tabletop_goal_bin_success_xy_tol
+    if "goal_z" in goal:
+        env_cfg.tabletop_goal_bin_goal_height = max(
+            float(goal["goal_z"])
+            - float(goal.get("table_surface_z", env_cfg.table_surface_z))
+            - float(goal.get("bottom_thickness", env_cfg.tabletop_goal_bin_bottom_thickness)),
+            0.0,
+        )
+
+    env_cfg.ground_plane_color = tuple(float(v) for v in materials["ground_color"])
+    table_material = getattr(getattr(getattr(env_cfg, "table", None), "spawn", None), "visual_material", None)
+    if table_material is not None:
+        if hasattr(table_material, "diffuse_color"):
+            table_material.diffuse_color = tuple(float(v) for v in materials["table_color"])
+        if hasattr(table_material, "roughness"):
+            table_material.roughness = float(visual_replay["table_material_roughness"])
+    env_cfg.tabletop_goal_bin_floor_color = tuple(float(v) for v in materials["goal_bin_floor_color"])
+    env_cfg.tabletop_goal_bin_x_wall_color = tuple(float(v) for v in materials["goal_bin_x_wall_color"])
+    env_cfg.tabletop_goal_bin_y_wall_color = tuple(float(v) for v in materials["goal_bin_y_wall_color"])
+    env_cfg.tabletop_goal_bin_visual_roughness = float(visual_replay["bin_visual_roughness"])
+    env_cfg.dome_light_intensity = float(lighting["dome_light_intensity"])
+    env_cfg.key_light_enabled = True
+    env_cfg.key_light_intensity = float(lighting["key_light_intensity"])
+    env_cfg.key_light_rotation_deg = tuple(float(v) for v in lighting["key_light_rotation_deg"])
+
+    env_cfg.exact_tabletop_surround_enabled = bool(surround.get("enabled", False))
+    env_cfg.exact_tabletop_surround_size = tuple(float(v) for v in surround.get("size", (1.04, 1.20)))
+    env_cfg.exact_tabletop_surround_top_z_offset = float(surround.get("top_z_offset", -0.004))
+    env_cfg.exact_tabletop_surround_thickness = float(surround.get("thickness", 0.006))
+    env_cfg.exact_tabletop_surround_color = tuple(float(v) for v in materials["tabletop_surround_color"])
+    env_cfg.exact_tabletop_surround_roughness = float(visual_replay["tabletop_surround_roughness"])
+    env_cfg.exact_table_texture_enabled = bool(table_texture.get("enabled", False))
+    env_cfg.exact_table_texture_path = str(table_texture.get("table_texture_path") or "")
+    env_cfg.exact_table_texture_tiling = float(table_texture.get("table_texture_tiling", 2.4))
+    env_cfg.exact_table_texture_roughness = float(visual_replay["table_texture_roughness"])
+    env_cfg.exact_dome_texture_path = str(lighting.get("dome_light_texture_path") or "")
+    env_cfg.exact_background_enabled = bool(background.get("enabled", False))
+    if env_cfg.exact_background_enabled:
+        raise ValueError("Exact-demo evaluator currently requires collection scenes without background walls")
+
+    joint_names = [f"joint{i}" for i in range(1, 7)] + ["left_finger", "right_finger"]
+    joint_position = np.asarray(initial_state["joint_position"], dtype=np.float32).reshape(-1)
+    if joint_position.shape != (8,):
+        raise ValueError(f"Expected exact YAM joint state with 8 values, got {joint_position.shape}")
+    env_cfg.robot.init_state.joint_pos = {
+        name: float(value) for name, value in zip(joint_names, joint_position, strict=True)
+    }
+    if hasattr(env_cfg, "viewer") and hasattr(env_cfg.viewer, "resolution"):
+        env_cfg.viewer.resolution = (int(args_cli.exact_render_width), int(args_cli.exact_render_height))
+    return {
+        "enabled": True,
+        "target_uuid": str(exact_demo["target_uuid"]),
+        "goal_bin": {str(key): value for key, value in goal.items()},
+        "visual_replay": visual_replay,
+        "render_resolution": [int(args_cli.exact_render_width), int(args_cli.exact_render_height)],
+    }
+
+
 def _usd_texture_material(stage: Any, path: str, texture_file: str, *, roughness: float) -> UsdShade.Material:
     mat = UsdShade.Material.Define(stage, path)
     shader = UsdShade.Shader.Define(stage, f"{path}/Shader")
@@ -459,6 +878,127 @@ def _usd_add_xy_quad(
     )
     st.Set([Gf.Vec2f(0.0, 0.0), Gf.Vec2f(ux, 0.0), Gf.Vec2f(ux, uy), Gf.Vec2f(0.0, uy)])
     _usd_bind(mesh.GetPrim(), mat)
+
+
+def _usd_solid_material(
+    stage: Any,
+    path: str,
+    color: tuple[float, float, float],
+    *,
+    roughness: float,
+) -> UsdShade.Material:
+    mat = UsdShade.Material.Define(stage, path)
+    shader = UsdShade.Shader.Define(stage, f"{path}/Shader")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*color))
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(roughness))
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+    mat.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+    return mat
+
+
+def _usd_add_box(
+    stage: Any,
+    path: str,
+    center: tuple[float, float, float],
+    size: tuple[float, float, float],
+    mat: UsdShade.Material,
+) -> None:
+    cube = UsdGeom.Cube.Define(stage, path)
+    cube.CreateSizeAttr(1.0)
+    prim = cube.GetPrim()
+    xformable = UsdGeom.Xformable(prim)
+    xformable.ClearXformOpOrder()
+    xformable.AddTranslateOp().Set(Gf.Vec3d(*center))
+    xformable.AddScaleOp().Set(Gf.Vec3f(*size))
+    _usd_bind(prim, mat)
+
+
+def _apply_exact_demo_appearance(task_env: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
+    cfg = task_env.cfg
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        raise RuntimeError("Missing USD stage while creating exact-demo appearance")
+    env_origins = task_env.scene.env_origins.detach().float().cpu().numpy()
+    size_xy = tuple(float(v) for v in cfg.exact_tabletop_surround_size)
+    thickness = float(cfg.exact_tabletop_surround_thickness)
+    top_z = float(cfg.table_surface_z) + float(cfg.exact_tabletop_surround_top_z_offset)
+    center_z = top_z - 0.5 * thickness
+    looks_root = "/World/Looks/YAMPolicyTabletopSurround"
+    UsdGeom.Xform.Define(stage, looks_root)
+    surround_mat = _usd_solid_material(
+        stage,
+        f"{looks_root}/surface",
+        tuple(float(v) for v in cfg.exact_tabletop_surround_color),
+        roughness=float(cfg.exact_tabletop_surround_roughness),
+    )
+    texture_path = str(cfg.exact_table_texture_path or "")
+    texture_mat = None
+    if texture_path:
+        if not Path(texture_path).is_file():
+            raise FileNotFoundError(texture_path)
+        texture_mat = _usd_texture_material(
+            stage,
+            f"{looks_root}/table_texture",
+            texture_path,
+            roughness=float(cfg.exact_table_texture_roughness),
+        )
+    spawned: list[dict[str, Any]] = []
+    texture_quads: list[dict[str, Any]] = []
+    for env_id, origin in enumerate(env_origins):
+        center = (
+            float(origin[0]) + float(cfg.table_center_x),
+            float(origin[1]) + float(cfg.table_center_y),
+            float(origin[2]) + center_z,
+        )
+        if bool(cfg.exact_tabletop_surround_enabled):
+            surround_path = f"/World/envs/env_{env_id}/YAMPolicyTabletopSurround"
+            _usd_add_box(stage, surround_path, center, (size_xy[0], size_xy[1], thickness), surround_mat)
+            spawned.append({"env_id": int(env_id), "path": surround_path, "center": [float(v) for v in center]})
+        if bool(cfg.exact_table_texture_enabled) and texture_mat is not None:
+            quad_center = (
+                center[0],
+                center[1],
+                float(origin[2]) + float(cfg.table_surface_z) + 0.0008,
+            )
+            quad_path = f"/World/envs/env_{env_id}/YAMPolicyTabletopTexture/full_surface"
+            tiling = float(cfg.exact_table_texture_tiling)
+            uv_scale = (tiling, tiling * max(0.1, size_xy[1] / max(size_xy[0], 1.0e-6)))
+            _usd_add_xy_quad(stage, quad_path, quad_center, size_xy, texture_mat, uv_scale=uv_scale)
+            texture_quads.append(
+                {
+                    "env_id": int(env_id),
+                    "path": quad_path,
+                    "center": [float(v) for v in quad_center],
+                    "size": [float(v) for v in size_xy],
+                    "texture_path": texture_path,
+                    "uv_scale": [float(v) for v in uv_scale],
+                }
+            )
+    dome_texture_path = str(cfg.exact_dome_texture_path or "")
+    dome_summary: dict[str, Any] = {"enabled": False}
+    if dome_texture_path:
+        if not Path(dome_texture_path).is_file():
+            raise FileNotFoundError(dome_texture_path)
+        light_prim = stage.GetPrimAtPath("/World/Light")
+        if not light_prim.IsValid():
+            raise RuntimeError("Exact-demo dome texture requested but /World/Light is missing")
+        attr = light_prim.GetAttribute("inputs:texture:file")
+        if not attr:
+            attr = light_prim.CreateAttribute("inputs:texture:file", Sdf.ValueTypeNames.Asset)
+        attr.Set(Sdf.AssetPath(dome_texture_path))
+        dome_summary = {"enabled": True, "texture_path": dome_texture_path}
+    task_env.sim.forward()
+    return {
+        "enabled": True,
+        "size": [float(v) for v in size_xy],
+        "top_z": float(top_z),
+        "thickness": float(thickness),
+        "spawned": spawned,
+        "table_texture_quads": texture_quads,
+        "dome_light_texture": dome_summary,
+        "rng_replay": exact_demo["visual_replay"],
+    }
 
 
 def _apply_eval_table_texture(task_env: Any, rng: np.random.Generator) -> dict[str, Any]:
@@ -846,6 +1386,138 @@ def _capture_obs(
     return {"scene_rgb": scene_rgb, "wrist_rgb": wrist_rgb, "robot_state": _robot_state(task_env)}
 
 
+def _validate_exact_target_asset(task_env: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
+    active_assets = list(getattr(task_env, "_object_assets", []))
+    active_indices = getattr(task_env, "object_asset_index", None)
+    active_uuid = ""
+    active_index = None
+    if active_assets and active_indices is not None:
+        active_index = int(active_indices[0].detach().cpu().item())
+        active_uuid = str(active_assets[active_index].get("uuid") or "")
+    expected_uuid = str(exact_demo["target_uuid"])
+    if active_uuid != expected_uuid:
+        raise RuntimeError(f"Exact target UUID mismatch: expected {expected_uuid}, active {active_uuid}")
+    return {"expected_uuid": expected_uuid, "active_uuid": active_uuid, "active_index": active_index}
+
+
+def _restore_exact_demo_state(task_env: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
+    state = exact_demo["initial_state"]
+    env_ids = torch.tensor([0], dtype=torch.long, device=task_env.device)
+    joint_pos = torch.as_tensor(state["joint_position"], dtype=torch.float32, device=task_env.device).reshape(1, -1)
+    joint_vel = torch.as_tensor(state["joint_velocity"], dtype=torch.float32, device=task_env.device).reshape(1, -1)
+    if joint_pos.shape != (1, 8) or joint_vel.shape != (1, 8):
+        raise ValueError(f"Expected exact joint state (1,8), got {joint_pos.shape}/{joint_vel.shape}")
+    task_env._sync_reset_joint_state(env_ids, joint_pos, joint_vel, update_buffers=True)
+
+    root_pos = torch.as_tensor(state["target_root_pos"], dtype=torch.float32, device=task_env.device).reshape(1, 3)
+    root_quat = torch.as_tensor(state["target_root_quat"], dtype=torch.float32, device=task_env.device).reshape(1, 4)
+    root_vel = torch.as_tensor(state["target_root_velocity"], dtype=torch.float32, device=task_env.device).reshape(1, 6)
+    root_state = torch.zeros((1, 13), dtype=torch.float32, device=task_env.device)
+    root_state[:, :3] = root_pos + task_env.scene.env_origins[env_ids]
+    root_state[:, 3:7] = root_quat
+    root_state[:, 7:13] = root_vel
+    task_env._cube.write_root_state_to_sim(root_state, env_ids=env_ids)
+    task_env._set_object_asset_root_pose(env_ids, root_pos, root_quat)
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+
+    object_center = task_env._object_center_pos_from_root(env_ids, root_pos, root_quat)
+    task_env.cube_initial_pos[env_ids] = object_center
+    task_env.cube_goal_pos[env_ids] = task_env._tabletop_goal_pos(env_ids, object_center)
+    task_env.has_lifted_cube[env_ids] = False
+    task_env.in_success_region[env_ids] = False
+    task_env.time_in_success_region[env_ids] = 0.0
+    task_env.cube_speed_done[env_ids] = False
+    task_env.actions[env_ids] = 0.0
+    task_env.ik_controller.reset(env_ids)
+    if hasattr(task_env, "episode_length_buf"):
+        task_env.episode_length_buf[env_ids] = 0
+    task_env._compute_intermediate_values(env_ids)
+    restored_robot = _robot_state(task_env)
+    return {
+        "source_state_row": int(exact_demo["source_state_row"]),
+        "source_step_id": int(exact_demo["source_step_id"]),
+        "joint_position_max_abs_error": _max_abs_error(restored_robot[:8], state["joint_position"]),
+        "joint_velocity_max_abs_error": _max_abs_error(restored_robot[8:16], state["joint_velocity"]),
+        "target_root_pos_max_abs_error": _max_abs_error(
+            _tensor_numpy(task_env._cube.data.root_pos_w[env_ids] - task_env.scene.env_origins[env_ids])[0],
+            state["target_root_pos"],
+        ),
+        "target_root_quat_max_abs_error": _max_abs_error(
+            _tensor_numpy(task_env._cube.data.root_quat_w[env_ids])[0], state["target_root_quat"]
+        ),
+        "restored_robot_state": restored_robot.astype(float).tolist(),
+        "target_center_pos": _tensor_list(object_center[0]),
+        "goal_pos": _tensor_list(task_env.cube_goal_pos[0]),
+    }
+
+
+def _array_error_metrics(actual: np.ndarray, expected: np.ndarray) -> dict[str, Any]:
+    actual_f = np.asarray(actual, dtype=np.float32)
+    expected_f = np.asarray(expected, dtype=np.float32)
+    if actual_f.shape != expected_f.shape:
+        return {"shape_match": False, "actual_shape": list(actual_f.shape), "expected_shape": list(expected_f.shape)}
+    delta = actual_f - expected_f
+    mse = float(np.mean(np.square(delta)))
+    return {
+        "shape_match": True,
+        "shape": list(actual_f.shape),
+        "mae": float(np.mean(np.abs(delta))),
+        "rmse": float(math.sqrt(mse)),
+        "max_abs": float(np.max(np.abs(delta), initial=0.0)),
+        "psnr_db": None if mse <= 0.0 else float(20.0 * math.log10(255.0 / math.sqrt(mse))),
+    }
+
+
+def _save_exact_observation_comparison(
+    output_dir: Path,
+    live_obs: dict[str, np.ndarray],
+    reference: dict[str, np.ndarray],
+) -> str:
+    from PIL import Image, ImageDraw, ImageFont
+
+    scene_ref = np.asarray(reference["scene_rgb"], dtype=np.uint8)
+    scene_live = np.asarray(live_obs["scene_rgb"], dtype=np.uint8)
+    wrist_ref = np.asarray(reference["wrist_rgb"], dtype=np.uint8)
+    wrist_live = np.asarray(live_obs["wrist_rgb"], dtype=np.uint8)
+    arrays = (scene_ref, scene_live, wrist_ref, wrist_live)
+    if len({array.shape for array in arrays}) != 1:
+        raise ValueError(f"Cannot compare exact observation shapes: {[array.shape for array in arrays]}")
+    height, width = scene_ref.shape[:2]
+    header = 24
+    canvas = Image.new("RGB", (3 * width, 2 * (height + header)), (16, 16, 16))
+    draw = ImageDraw.Draw(canvas)
+    font = ImageFont.load_default()
+    rows = ((scene_ref, scene_live, "scene"), (wrist_ref, wrist_live, "wrist"))
+    for row_idx, (ref, live, label) in enumerate(rows):
+        y = row_idx * (height + header)
+        diff = np.clip(np.abs(live.astype(np.int16) - ref.astype(np.int16)) * 4, 0, 255).astype(np.uint8)
+        canvas.paste(Image.fromarray(ref, mode="RGB"), (0, y + header))
+        canvas.paste(Image.fromarray(live, mode="RGB"), (width, y + header))
+        canvas.paste(Image.fromarray(diff, mode="RGB"), (2 * width, y + header))
+        draw.text((5, y + 6), f"{label} reference", fill=(240, 240, 235), font=font)
+        draw.text((width + 5, y + 6), f"{label} exact-reset live", fill=(240, 240, 235), font=font)
+        draw.text((2 * width + 5, y + 6), f"{label} |difference| x4", fill=(240, 240, 235), font=font)
+    path = output_dir / "exact_observation_parity.png"
+    canvas.save(path)
+    return str(path)
+
+
+def _audit_exact_observation(
+    output_dir: Path,
+    live_obs: dict[str, np.ndarray],
+    exact_demo: dict[str, Any],
+) -> dict[str, Any]:
+    reference = exact_demo["reference"]
+    return {
+        "scene_rgb": _array_error_metrics(live_obs["scene_rgb"], reference["scene_rgb"]),
+        "wrist_rgb": _array_error_metrics(live_obs["wrist_rgb"], reference["wrist_rgb"]),
+        "robot_state": _array_error_metrics(live_obs["robot_state"], reference["robot_state"]),
+        "comparison_image": _save_exact_observation_comparison(output_dir, live_obs, reference),
+    }
+
+
 class RgbRobotObsHistory:
     def __init__(self, n_obs_steps: int, height: int, width: int, robot_state_dim: int = 24):
         self.n_obs_steps = int(n_obs_steps)
@@ -997,14 +1669,18 @@ def main() -> None:
     metrics_path = Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "metrics.json"
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     video_folder = Path(args_cli.video_folder).expanduser().resolve() if args_cli.video_folder else output_dir / "videos"
-    checkpoint = Path(args_cli.checkpoint).expanduser().resolve()
-    if not checkpoint.is_file():
-        raise FileNotFoundError(checkpoint)
+    control_mode = str(args_cli.control_mode)
+    checkpoint = Path(args_cli.checkpoint).expanduser().resolve() if str(args_cli.checkpoint).strip() else None
+    if control_mode == "policy" and (checkpoint is None or not checkpoint.is_file()):
+        raise FileNotFoundError(checkpoint or "--checkpoint is required for --control_mode=policy")
+    exact_shard = Path(args_cli.exact_policy_shard) if str(args_cli.exact_policy_shard).strip() else None
+    exact_demo = _load_exact_demo(exact_shard, output_dir) if exact_shard is not None else None
+    if control_mode == "dataset_actions" and exact_demo is None:
+        raise ValueError("--control_mode=dataset_actions requires --exact_policy_shard")
     if int(args_cli.num_episodes) < 1:
         raise ValueError("--num_episodes must be positive")
 
     rng = np.random.default_rng(int(args_cli.seed))
-    scene_eye, scene_target, scene_camera_jitter_summary = _jitter_scene_camera(rng)
     env_cfg = parse_env_cfg(
         args_cli.task,
         device=args_cli.device,
@@ -1015,15 +1691,45 @@ def main() -> None:
     episode_length_summary = _apply_eval_episode_length(env_cfg)
     pose_summary = _apply_yam_default_pose(env_cfg)
     gain_summary = _apply_yam_actuator_gain_scales(env_cfg)
-    object_asset_summary = _apply_object_asset_overrides(env_cfg)
-    randomization_summary = _apply_scene_randomization(env_cfg, rng)
+    if exact_demo is None:
+        scene_eye, scene_target, scene_camera_jitter_summary = _jitter_scene_camera(rng)
+        object_asset_summary = _apply_object_asset_overrides(env_cfg)
+        randomization_summary = _apply_scene_randomization(env_cfg, rng)
+        exact_config_summary = None
+    else:
+        exact_config_summary = _apply_exact_demo_env_cfg(env_cfg, exact_demo)
+        scene_camera_record = exact_demo["source_metadata"]["scene_camera"]
+        scene_eye = tuple(float(v) for v in scene_camera_record["eye"])
+        scene_target = tuple(float(v) for v in scene_camera_record["target"])
+        scene_camera_jitter_summary = {
+            key: value for key, value in scene_camera_record.items() if key not in {"eye", "target"}
+        }
+        object_asset_summary = {
+            "enabled": True,
+            "exact_demo": True,
+            "object_asset_manifest_path": str(exact_demo["target_manifest"]),
+            "target_uuid": str(exact_demo["target_uuid"]),
+        }
+        randomization_summary = exact_demo["source_metadata"]["yam_policy_scene_randomization"]
+        pose_summary = {
+            "joint_pos": {
+                name: float(value)
+                for name, value in zip(
+                    [f"joint{i}" for i in range(1, 7)] + ["left_finger", "right_finger"],
+                    exact_demo["initial_state"]["joint_position"],
+                    strict=True,
+                )
+            },
+            "source": "exact_policy_shard",
+        }
     _configure_camera(env_cfg, scene_eye, scene_target)
 
     _stage(
         "start",
         output_dir=str(output_dir),
         metrics_path=str(metrics_path),
-        checkpoint=str(checkpoint),
+        checkpoint=None if checkpoint is None else str(checkpoint),
+        control_mode=control_mode,
         task=str(args_cli.task),
         seed=int(args_cli.seed),
         num_episodes=int(args_cli.num_episodes),
@@ -1036,19 +1742,30 @@ def main() -> None:
         gripper_gain_scales=gain_summary,
         object_asset_overrides=object_asset_summary,
         scene_randomization=randomization_summary,
+        exact_demo=_exact_demo_summary(exact_demo),
+        exact_config=exact_config_summary,
     )
 
-    workspace, policy = _load_policy(checkpoint, str(args_cli.device), args_cli.diffusion_policy_root)
-    if int(policy.n_obs_steps) != 1:
-        _stage("warning_policy_n_obs_steps_not_one", n_obs_steps=int(policy.n_obs_steps))
+    workspace = None
+    policy = None
+    if control_mode == "policy":
+        assert checkpoint is not None
+        workspace, policy = _load_policy(checkpoint, str(args_cli.device), args_cli.diffusion_policy_root)
+        if int(policy.n_obs_steps) != 1:
+            _stage("warning_policy_n_obs_steps_not_one", n_obs_steps=int(policy.n_obs_steps))
 
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = gym_env.unwrapped
     _configure_camera(env_cfg, scene_eye, scene_target, task_env)
-    appearance_summary = {
-        "table_texture": _apply_eval_table_texture(task_env, rng),
-        "dome_light_texture": _apply_eval_dome_light_texture(rng),
-    }
+    if exact_demo is None:
+        appearance_summary = {
+            "table_texture": _apply_eval_table_texture(task_env, rng),
+            "dome_light_texture": _apply_eval_dome_light_texture(rng),
+        }
+        exact_asset_summary = None
+    else:
+        appearance_summary = _apply_exact_demo_appearance(task_env, exact_demo)
+        exact_asset_summary = _validate_exact_target_asset(task_env, exact_demo)
     _stage("appearance_ready", appearance=appearance_summary)
     wrist_camera, wrist_camera_summary = _make_single_yam_wrist_camera(task_env)
     if args_cli.video:
@@ -1069,13 +1786,22 @@ def main() -> None:
     policy_call_idx = 0
     env_closed = False
     debug_obs_paths: list[str] = []
+    exact_reset_summaries: list[dict[str, Any]] = []
+    exact_observation_parity: dict[str, Any] | None = None
     try:
         for episode in range(int(args_cli.num_episodes)):
             _policy_obs_from_reset(gym_env.reset(seed=int(args_cli.seed) + episode))
+            exact_reset_summary = None
+            if exact_demo is not None:
+                exact_reset_summary = _restore_exact_demo_state(task_env, exact_demo)
+                exact_reset_summaries.append(exact_reset_summary)
             obs = _capture_obs(gym_env, task_env, wrist_camera, scene_eye, scene_target)
+            if exact_demo is not None and exact_observation_parity is None:
+                exact_observation_parity = _audit_exact_observation(output_dir, obs, exact_demo)
+                _stage("exact_observation_parity", **exact_observation_parity)
             current_obs = obs
             history = RgbRobotObsHistory(
-                n_obs_steps=int(policy.n_obs_steps),
+                n_obs_steps=int(policy.n_obs_steps) if policy is not None else 1,
                 height=int(args_cli.image_height),
                 width=int(args_cli.image_width),
                 robot_state_dim=24,
@@ -1092,11 +1818,16 @@ def main() -> None:
             for step in range(int(args_cli.num_steps)):
                 if not simulation_app.is_running():
                     break
+                if control_mode == "dataset_actions" and step >= int(exact_demo["actions"].shape[0]):
+                    break
                 task_env._compute_intermediate_values()
                 pre_step_metrics = _collect_task_metrics(task_env)
                 pre_step_object_pos = _tensor_list(task_env.cube_pos[0])
                 new_policy_call = False
-                if action_queue.shape[1] == 0:
+                if control_mode == "dataset_actions":
+                    raw_action_np = np.asarray(exact_demo["actions"][step : step + 1], dtype=np.float32)
+                elif action_queue.shape[1] == 0:
+                    assert policy is not None
                     action_seq = _predict_action_sequence(policy, history, policy_call_idx)
                     policy_call_idx += 1
                     new_policy_call = True
@@ -1104,8 +1835,11 @@ def main() -> None:
                         raise RuntimeError(f"Unexpected RGB action sequence shape {action_seq.shape}")
                     chunk_steps = min(chunk_steps_requested, int(action_seq.shape[1]))
                     action_queue = np.asarray(action_seq[:, :chunk_steps], dtype=np.float32)
-                raw_action_np = action_queue[:, 0].copy()
-                action_queue = action_queue[:, 1:]
+                    raw_action_np = action_queue[:, 0].copy()
+                    action_queue = action_queue[:, 1:]
+                else:
+                    raw_action_np = action_queue[:, 0].copy()
+                    action_queue = action_queue[:, 1:]
                 action_np = raw_action_np.copy()
                 clip = float(args_cli.clip_actions)
                 if math.isfinite(clip) and clip > 0.0:
@@ -1198,6 +1932,7 @@ def main() -> None:
                     "final_object_pos": _tensor_list(task_env.cube_pos[0]) if hasattr(task_env, "cube_pos") else None,
                     "final_goal_pos": _tensor_list(task_env.cube_goal_pos[0]) if hasattr(task_env, "cube_goal_pos") else None,
                     "final_gripper_width": _mean_float(getattr(task_env, "gripper_width", None)),
+                    "exact_reset": exact_reset_summary,
                 }
             )
     finally:
@@ -1208,9 +1943,10 @@ def main() -> None:
     reward_values = [float(item["reward_mean"]) for item in step_metrics if item.get("reward_mean") is not None]
     summary = {
         "task": str(args_cli.task),
-        "checkpoint": str(checkpoint),
-        "official_workspace": workspace.__class__.__name__,
-        "policy_class": policy.__class__.__name__,
+        "control_mode": control_mode,
+        "checkpoint": None if checkpoint is None else str(checkpoint),
+        "official_workspace": None if workspace is None else workspace.__class__.__name__,
+        "policy_class": None if policy is None else policy.__class__.__name__,
         "obs_schema": {
             "scene_rgb": [3, int(args_cli.image_height), int(args_cli.image_width)],
             "wrist_rgb": [3, int(args_cli.image_height), int(args_cli.image_width)],
@@ -1224,6 +1960,11 @@ def main() -> None:
         "object_asset_overrides": object_asset_summary,
         "scene_randomization": randomization_summary,
         "appearance": appearance_summary,
+        "exact_demo": _exact_demo_summary(exact_demo),
+        "exact_config": exact_config_summary,
+        "exact_asset": exact_asset_summary,
+        "exact_resets": exact_reset_summaries,
+        "exact_observation_parity": exact_observation_parity,
         "episode_length": episode_length_summary,
         "robot_default_pose": pose_summary,
         "gripper_gain_scales": gain_summary,

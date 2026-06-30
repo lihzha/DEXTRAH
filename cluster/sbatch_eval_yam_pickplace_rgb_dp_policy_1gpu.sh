@@ -28,7 +28,11 @@ CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
 SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
 TASK="${TASK:-Dextrah-Single-YAM-Single-Object-Policy-Grasp}"
 RUN_NAME="${RUN_NAME:-yam_pickplace_rgb_dp_eval_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
-CHECKPOINT="${CHECKPOINT:?Set CHECKPOINT to an official image Diffusion Policy .ckpt path.}"
+CONTROL_MODE="${CONTROL_MODE:-policy}"
+CHECKPOINT="${CHECKPOINT:-}"
+EXACT_POLICY_SHARD="${EXACT_POLICY_SHARD:-}"
+EXACT_RENDER_WIDTH="${EXACT_RENDER_WIDTH:-1024}"
+EXACT_RENDER_HEIGHT="${EXACT_RENDER_HEIGHT:-1024}"
 CODE_COMMIT="${CODE_COMMIT:-}"
 
 NUM_EPISODES="${NUM_EPISODES:-20}"
@@ -110,6 +114,8 @@ container_path_from_host() {
 
 CHECKPOINT_HOST="$(host_path_from_container "$CHECKPOINT")"
 CHECKPOINT_ARG="$(container_path_from_host "$CHECKPOINT")"
+EXACT_POLICY_SHARD_HOST="$(host_path_from_container "$EXACT_POLICY_SHARD")"
+EXACT_POLICY_SHARD_ARG="$(container_path_from_host "$EXACT_POLICY_SHARD")"
 
 if [ ! -f "$IMAGE" ]; then
   echo "Missing Isaac Lab container image: $IMAGE"
@@ -123,8 +129,16 @@ if [ ! -d "$OFFICIAL_DP_NFS/diffusion_policy" ]; then
   echo "Missing official Diffusion Policy checkout: $OFFICIAL_DP_NFS"
   exit 2
 fi
-if [ ! -f "$CHECKPOINT_HOST" ]; then
+if [ "$CONTROL_MODE" = "policy" ] && [ ! -f "$CHECKPOINT_HOST" ]; then
   echo "Missing YAM RGB Diffusion Policy checkpoint: $CHECKPOINT_HOST"
+  exit 2
+fi
+if [ "$CONTROL_MODE" = "dataset_actions" ] && [ -z "$EXACT_POLICY_SHARD" ]; then
+  echo "CONTROL_MODE=dataset_actions requires EXACT_POLICY_SHARD"
+  exit 2
+fi
+if [ -n "$EXACT_POLICY_SHARD" ] && [ ! -e "$EXACT_POLICY_SHARD_HOST" ]; then
+  echo "Missing exact YAM policy shard: $EXACT_POLICY_SHARD_HOST"
   exit 2
 fi
 if [ -n "$CODE_COMMIT" ]; then
@@ -143,7 +157,8 @@ mkdir -p \
   "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
-export TASK RUN_NAME CHECKPOINT_ARG RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME OFFICIAL_DP_ENV_NAME
+export TASK RUN_NAME CONTROL_MODE CHECKPOINT_ARG EXACT_POLICY_SHARD_ARG EXACT_RENDER_WIDTH EXACT_RENDER_HEIGHT
+export RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME OFFICIAL_DP_ENV_NAME
 export NUM_EPISODES NUM_STEPS NUM_INFERENCE_STEPS NUM_ACTION_SAMPLES POLICY_SAMPLE_SEED
 export ACTION_CHUNK_STEPS CLIP_ACTIONS STOP_ON_DONE PRINT_INTERVAL IMAGE_HEIGHT IMAGE_WIDTH RENDERING_MODE
 export CAPTURE_VIDEO VIDEO_LENGTH VIDEO_NAME_PREFIX SEED
@@ -170,6 +185,9 @@ echo "OFFICIAL_DP_NFS=$OFFICIAL_DP_NFS"
 echo "RUN_NAME=$RUN_NAME"
 echo "RUN_DIR_HOST=$RUN_DIR_HOST"
 echo "TASK=$TASK"
+echo "CONTROL_MODE=$CONTROL_MODE"
+echo "EXACT_POLICY_SHARD_ARG=${EXACT_POLICY_SHARD_ARG:-}"
+echo "EXACT_RENDER_RESOLUTION=${EXACT_RENDER_WIDTH}x${EXACT_RENDER_HEIGHT}"
 echo "NUM_EPISODES=$NUM_EPISODES NUM_STEPS=$NUM_STEPS"
 echo "NUM_INFERENCE_STEPS=$NUM_INFERENCE_STEPS NUM_ACTION_SAMPLES=$NUM_ACTION_SAMPLES"
 echo "ACTION_CHUNK_STEPS=$ACTION_CHUNK_STEPS CLIP_ACTIONS=$CLIP_ACTIONS STOP_ON_DONE=$STOP_ON_DONE"
@@ -264,6 +282,10 @@ srun \
       --checkpoint "$CHECKPOINT_ARG"
       --diffusion_policy_root /official_dp
       --task "$TASK"
+      --control_mode "$CONTROL_MODE"
+      --exact_policy_shard "$EXACT_POLICY_SHARD_ARG"
+      --exact_render_width "$EXACT_RENDER_WIDTH"
+      --exact_render_height "$EXACT_RENDER_HEIGHT"
       --num_episodes "$NUM_EPISODES"
       --num_steps "$NUM_STEPS"
       --num_inference_steps "$NUM_INFERENCE_STEPS"

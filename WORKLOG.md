@@ -13022,3 +13022,34 @@ Smoke follow-up:
 - The A100 account still emits a warning that its PPP is approaching the stale
   data limit. It has not blocked submission yet, but it remains an external
   risk to continued GPU access and should be addressed through the quota tool.
+
+## 2026-06-30T03:04:00Z One-Trajectory Exact-Reset Overfit Diagnostic Started
+
+- Goal: isolate whether the RGB diffusion stack can memorize and execute one
+  successful trajectory when evaluation starts from the same recorded scene
+  and dynamics state. This is a controlled train/eval contract test, not a
+  generalization benchmark.
+- Selected shard:
+  `/results/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_mmap_phasegrip2_trimstart_20260626T042729Z/shards/yam_rgb_policy_000000`.
+  It has 794 policy rows and begins at source RGB/state row 51 (source step 52)
+  after initial-static trimming. The source is seed `79000001`, target UUID
+  `6f204b258be743ed8fb2171e1e65f6a3`, and a previously accepted dynamic replay.
+- Audit found a real mismatch in the generic evaluator: collection uses an RNG
+  seeded with `seed + 1009`, an HSV-biased material sampler, a tabletop
+  surround/full-surface texture, stable-scene bin restore, and exact asset
+  selection. The evaluator used a different RNG/order and fresh object reset,
+  so matching only the seed could not recreate a training observation.
+- Starting source state: branch
+  `codex/yam-rgb-diffusion-pickplace/yam-rgb-diffusion-20260624`, commit
+  `ce72499df91911b5c988e83d4f90786bc87cbdcb`, clean before edits.
+- Change in progress: extend
+  `eval_yam_pickplace_rgb_dp_policy.py` and its L40S wrapper with an
+  `exact_policy_shard` path and two control modes. `dataset_actions` will prove
+  that the restored dynamic state and action labels still produce a successful
+  replay. `policy` will run the overfit checkpoint from that same reset. Both
+  modes save scene/wrist/robot-state first-observation parity metrics and a
+  reference/live/difference image.
+- Required gates before training: source compiles; exact visual RNG reproduces
+  recorded numeric metadata; active object UUID matches; restored qpos/qvel and
+  target pose match; dataset-action replay succeeds under dynamics; then build
+  a singleton manifest and launch fresh A100 training.
