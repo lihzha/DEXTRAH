@@ -737,7 +737,7 @@ def _apply_exact_demo_env_cfg(env_cfg: Any, exact_demo: dict[str, Any]) -> dict[
 
     env_cfg.object_asset_manifest_path = str(exact_demo["target_manifest"])
     env_cfg.max_objects = 1
-    env_cfg.object_asset_assignment = "sequential"
+    env_cfg.object_asset_assignment = "round_robin"
     env_cfg.object_validate_usd_bounds = False
     env_cfg.object_reset_settle_steps = 0
     env_cfg.arm_joint_reset_noise = 0.0
