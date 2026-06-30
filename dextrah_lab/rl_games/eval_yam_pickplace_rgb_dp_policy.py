@@ -43,6 +43,7 @@ parser.add_argument("--dataset_action_translation_gain", type=float, default=Non
 parser.add_argument("--dataset_action_rotation_gain", type=float, default=None)
 parser.add_argument("--dataset_target_lookahead", type=int, default=8)
 parser.add_argument("--disable_failure_terminations", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--disable_success_termination", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument(
     "--record_policy_shard",
     type=str,
@@ -445,20 +446,33 @@ def _apply_eval_episode_length(env_cfg: Any) -> dict[str, Any]:
 
 
 def _apply_failure_termination_override(env_cfg: Any) -> dict[str, Any]:
-    if not bool(args_cli.disable_failure_terminations):
+    disable_failure = bool(args_cli.disable_failure_terminations)
+    disable_success = bool(args_cli.disable_success_termination)
+    if not disable_failure and not disable_success:
         return {"enabled": False}
-    overrides = {
-        "out_of_bounds_margin": 1.0e6,
-        "cube_out_max_z": 1.0e6,
-        "prelift_drag_termination_xy_error": 1.0e6,
-        "cube_speed_termination_linear": 1.0e6,
-        "cube_speed_termination_angular": 1.0e6,
-        "finger_table_penetration_termination_margin": -1.0e6,
-    }
+    overrides: dict[str, float] = {}
+    if disable_failure:
+        overrides.update(
+            {
+                "out_of_bounds_margin": 1.0e6,
+                "cube_out_max_z": 1.0e6,
+                "prelift_drag_termination_xy_error": 1.0e6,
+                "cube_speed_termination_linear": 1.0e6,
+                "cube_speed_termination_angular": 1.0e6,
+                "finger_table_penetration_termination_margin": -1.0e6,
+            }
+        )
+    if disable_success:
+        overrides["success_timeout"] = 1.0e6
     previous = {key: getattr(env_cfg, key, None) for key in overrides}
     for key, value in overrides.items():
         setattr(env_cfg, key, value)
-    return {"enabled": True, "previous": previous, "overrides": overrides, "success_termination_preserved": True}
+    return {
+        "enabled": True,
+        "previous": previous,
+        "overrides": overrides,
+        "success_termination_preserved": not disable_success,
+    }
 
 
 def _apply_object_asset_overrides(env_cfg: Any) -> dict[str, Any]:
