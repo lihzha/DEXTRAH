@@ -1286,6 +1286,7 @@ def _warm_up_observation_rendering(
     if num_frames == 0:
         return
     task_env.scene.write_data_to_sim()
+    scene_mean = 0.0
     for _ in range(num_frames):
         task_env.sim.set_camera_view(
             eye=scene_eye,
@@ -1293,12 +1294,13 @@ def _warm_up_observation_rendering(
             camera_prim_path=task_env.cfg.viewer.cam_prim_path,
         )
         task_env.sim.render()
+        frame = _render_scene_frame(gym_env, task_env)
+        scene_mean = float(np.asarray(frame[..., :3], dtype=np.float32).mean())
         wrist_camera.update(0.0, force_recompute=True)
-    frame = _render_scene_frame(gym_env, task_env)
     _stage(
         "initial_render_warmup_complete",
         frames=num_frames,
-        scene_mean=float(np.asarray(frame[..., :3], dtype=np.float32).mean()),
+        scene_mean=scene_mean,
     )
 
 
