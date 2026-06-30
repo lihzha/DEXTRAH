@@ -33,6 +33,7 @@ parser.add_argument("--checkpoint", type=str, default="")
 parser.add_argument("--diffusion_policy_root", type=str, default=None)
 parser.add_argument("--task", type=str, default="Dextrah-Single-YAM-Single-Object-Policy-Grasp")
 parser.add_argument("--control_mode", choices=("policy", "dataset_actions"), default="policy")
+parser.add_argument("--dataset_action_pose_gain", type=float, default=1.0)
 parser.add_argument(
     "--exact_policy_shard",
     type=str,
@@ -293,10 +294,13 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
         + "\n",
         encoding="utf-8",
     )
+    reference_robot_trajectory = np.asarray(
+        _policy_shard_array(shard, "robot_state", mmap=True), dtype=np.float32
+    ).copy()
     reference = {
         "scene_rgb": np.asarray(_policy_shard_array(shard, "scene_rgb", mmap=True)[0], dtype=np.uint8).copy(),
         "wrist_rgb": np.asarray(_policy_shard_array(shard, "wrist_rgb", mmap=True)[0], dtype=np.uint8).copy(),
-        "robot_state": np.asarray(_policy_shard_array(shard, "robot_state", mmap=True)[0], dtype=np.float32).copy(),
+        "robot_state": reference_robot_trajectory[0].copy(),
     }
     actions = np.asarray(_policy_shard_array(shard, "action", mmap=True), dtype=np.float32).copy()
     return {
@@ -313,6 +317,7 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
         "source_step_id": source_step_id,
         "initial_state": initial_state,
         "reference": reference,
+        "reference_robot_trajectory": reference_robot_trajectory,
         "actions": actions,
     }
 
@@ -1826,6 +1831,7 @@ def main() -> None:
                 new_policy_call = False
                 if control_mode == "dataset_actions":
                     raw_action_np = np.asarray(exact_demo["actions"][step : step + 1], dtype=np.float32)
+                    raw_action_np[:, :6] *= float(args_cli.dataset_action_pose_gain)
                 elif action_queue.shape[1] == 0:
                     assert policy is not None
                     action_seq = _predict_action_sequence(policy, history, policy_call_idx)
@@ -1881,12 +1887,15 @@ def main() -> None:
                             "pre_step_object_pos": pre_step_object_pos,
                         }
 
-                next_obs = _capture_obs(gym_env, task_env, wrist_camera, scene_eye, scene_target)
-                if done_now:
-                    history.reset(next_obs)
+                if control_mode == "dataset_actions" and debug_interval <= 0:
+                    next_obs = current_obs
                 else:
-                    history.push(next_obs)
-                current_obs = next_obs
+                    next_obs = _capture_obs(gym_env, task_env, wrist_camera, scene_eye, scene_target)
+                    if done_now:
+                        history.reset(next_obs)
+                    else:
+                        history.push(next_obs)
+                    current_obs = next_obs
                 task_metrics = _collect_task_metrics(task_env)
                 record: dict[str, float | int | None] = {
                     "episode": int(episode),
@@ -1897,6 +1906,20 @@ def main() -> None:
                     "truncated": float(bool(truncated.detach().bool().any().cpu())),
                     **task_metrics,
                 }
+                if control_mode == "dataset_actions":
+                    live_robot_state = _robot_state(task_env)
+                    reference_row = exact_demo["reference_robot_trajectory"][
+                        min(step + 1, int(exact_demo["reference_robot_trajectory"].shape[0]) - 1)
+                    ]
+                    record["dataset_joint_position_l2_error"] = float(
+                        np.linalg.norm(live_robot_state[:8] - reference_row[:8])
+                    )
+                    record["dataset_tcp_position_l2_error"] = float(
+                        np.linalg.norm(live_robot_state[16:19] - reference_row[16:19])
+                    )
+                    record["dataset_gripper_width_abs_error"] = float(
+                        abs(float(live_robot_state[23]) - float(reference_row[23]))
+                    )
                 step_metrics.append(record)
                 episode_records.append(record)
                 if args_cli.print_interval > 0 and ((step + 1) % int(args_cli.print_interval) == 0 or step == 0):
@@ -1932,6 +1955,7 @@ def main() -> None:
                     "final_object_pos": _tensor_list(task_env.cube_pos[0]) if hasattr(task_env, "cube_pos") else None,
                     "final_goal_pos": _tensor_list(task_env.cube_goal_pos[0]) if hasattr(task_env, "cube_goal_pos") else None,
                     "final_gripper_width": _mean_float(getattr(task_env, "gripper_width", None)),
+                    "final_robot_state": _robot_state(task_env).astype(float).tolist(),
                     "exact_reset": exact_reset_summary,
                 }
             )
@@ -1944,6 +1968,7 @@ def main() -> None:
     summary = {
         "task": str(args_cli.task),
         "control_mode": control_mode,
+        "dataset_action_pose_gain": float(args_cli.dataset_action_pose_gain),
         "checkpoint": None if checkpoint is None else str(checkpoint),
         "official_workspace": None if workspace is None else workspace.__class__.__name__,
         "policy_class": None if policy is None else policy.__class__.__name__,
