@@ -24,6 +24,7 @@ DEFAULT_SCENE_CAMERA_EYE = (-0.50, 0.04, 0.68)
 DEFAULT_SCENE_CAMERA_TARGET = (-0.25, 0.04, 0.03)
 DEFAULT_YAM_ARM_QPOS = (0.0, 1.0, 1.0, -1.5, 0.0, 0.0)
 ACTION_NAMES = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"]
+YAM_POSE_ACTION_SCALE = (0.055, 0.055, 0.045, 0.22, 0.22, 0.25)
 SURFACE_TEXTURE_EXTS = (".jpg", ".jpeg", ".png")
 DOME_TEXTURE_EXTS = (".hdr", ".exr", ".jpg", ".jpeg", ".png")
 
@@ -32,10 +33,15 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--checkpoint", type=str, default="")
 parser.add_argument("--diffusion_policy_root", type=str, default=None)
 parser.add_argument("--task", type=str, default="Dextrah-Single-YAM-Single-Object-Policy-Grasp")
-parser.add_argument("--control_mode", choices=("policy", "dataset_actions"), default="policy")
+parser.add_argument(
+    "--control_mode",
+    choices=("policy", "dataset_actions", "dataset_pose_targets"),
+    default="policy",
+)
 parser.add_argument("--dataset_action_pose_gain", type=float, default=1.0)
 parser.add_argument("--dataset_action_translation_gain", type=float, default=None)
 parser.add_argument("--dataset_action_rotation_gain", type=float, default=None)
+parser.add_argument("--dataset_target_lookahead", type=int, default=8)
 parser.add_argument(
     "--exact_policy_shard",
     type=str,
@@ -124,6 +130,11 @@ from dextrah_lab.assets.yam.bimanual_yam import (
     MOLMOACT2_WRIST_CAMERA_INTRINSIC,
     MOLMOACT2_WRIST_CAMERA_LOCAL_POS,
     MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ,
+)
+from dextrah_lab.offline_dp_bc.action_conversion import (
+    axis_angle_from_quat_wxyz,
+    quat_inv_wxyz,
+    quat_mul_wxyz,
 )
 
 
@@ -1653,6 +1664,31 @@ def _predict_action_sequence(policy: Any, history: RgbRobotObsHistory, call_idx:
     return action.detach().cpu().numpy()
 
 
+def _dataset_pose_target_action(
+    task_env: Any,
+    exact_demo: dict[str, Any],
+    step: int,
+) -> tuple[np.ndarray, int]:
+    reference = exact_demo["reference_robot_trajectory"]
+    target_idx = min(
+        int(step) + max(1, int(args_cli.dataset_target_lookahead)),
+        int(reference.shape[0]) - 1,
+    )
+    live = _robot_state(task_env)
+    target = reference[target_idx]
+    pos_delta = np.asarray(target[16:19] - live[16:19], dtype=np.float64)
+    quat_delta = quat_mul_wxyz(
+        np.asarray(target[19:23], dtype=np.float64),
+        quat_inv_wxyz(np.asarray(live[19:23], dtype=np.float64)),
+    )
+    rot_delta = axis_angle_from_quat_wxyz(quat_delta)
+    pose_delta = np.concatenate((pos_delta, rot_delta), axis=0).astype(np.float32)
+    action = np.empty((1, 7), dtype=np.float32)
+    action[0, :6] = pose_delta / np.asarray(YAM_POSE_ACTION_SCALE, dtype=np.float32)
+    action[0, 6] = float(exact_demo["actions"][min(int(step), int(exact_demo["actions"].shape[0]) - 1), 6])
+    return action, int(target_idx)
+
+
 def _policy_obs_from_reset(reset_out: Any) -> torch.Tensor:
     obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
     return obs["policy"] if isinstance(obs, dict) else obs
@@ -1682,8 +1718,8 @@ def main() -> None:
         raise FileNotFoundError(checkpoint or "--checkpoint is required for --control_mode=policy")
     exact_shard = Path(args_cli.exact_policy_shard) if str(args_cli.exact_policy_shard).strip() else None
     exact_demo = _load_exact_demo(exact_shard, output_dir) if exact_shard is not None else None
-    if control_mode == "dataset_actions" and exact_demo is None:
-        raise ValueError("--control_mode=dataset_actions requires --exact_policy_shard")
+    if control_mode in {"dataset_actions", "dataset_pose_targets"} and exact_demo is None:
+        raise ValueError(f"--control_mode={control_mode} requires --exact_policy_shard")
     if int(args_cli.num_episodes) < 1:
         raise ValueError("--num_episodes must be positive")
 
@@ -1825,14 +1861,20 @@ def main() -> None:
             for step in range(int(args_cli.num_steps)):
                 if not simulation_app.is_running():
                     break
-                if control_mode == "dataset_actions" and step >= int(exact_demo["actions"].shape[0]):
+                if control_mode in {"dataset_actions", "dataset_pose_targets"} and step >= int(
+                    exact_demo["actions"].shape[0]
+                ):
                     break
                 task_env._compute_intermediate_values()
                 pre_step_metrics = _collect_task_metrics(task_env)
                 pre_step_object_pos = _tensor_list(task_env.cube_pos[0])
                 new_policy_call = False
-                if control_mode == "dataset_actions":
-                    raw_action_np = np.asarray(exact_demo["actions"][step : step + 1], dtype=np.float32)
+                dataset_target_idx = None
+                if control_mode in {"dataset_actions", "dataset_pose_targets"}:
+                    if control_mode == "dataset_pose_targets":
+                        raw_action_np, dataset_target_idx = _dataset_pose_target_action(task_env, exact_demo, step)
+                    else:
+                        raw_action_np = np.asarray(exact_demo["actions"][step : step + 1], dtype=np.float32)
                     translation_gain = (
                         float(args_cli.dataset_action_pose_gain)
                         if args_cli.dataset_action_translation_gain is None
@@ -1879,6 +1921,7 @@ def main() -> None:
                         "episode": int(episode),
                         "step": int(step + 1),
                         "new_policy_call": bool(new_policy_call),
+                        "dataset_target_idx": dataset_target_idx,
                         "raw_action": raw_action_np.reshape(-1).astype(float).tolist(),
                         "applied_action": action_np.reshape(-1).astype(float).tolist(),
                     }
@@ -1900,7 +1943,7 @@ def main() -> None:
                             "pre_step_object_pos": pre_step_object_pos,
                         }
 
-                if control_mode == "dataset_actions" and debug_interval <= 0:
+                if control_mode in {"dataset_actions", "dataset_pose_targets"} and debug_interval <= 0:
                     next_obs = current_obs
                 else:
                     next_obs = _capture_obs(gym_env, task_env, wrist_camera, scene_eye, scene_target)
@@ -1919,7 +1962,7 @@ def main() -> None:
                     "truncated": float(bool(truncated.detach().bool().any().cpu())),
                     **task_metrics,
                 }
-                if control_mode == "dataset_actions":
+                if control_mode in {"dataset_actions", "dataset_pose_targets"}:
                     live_robot_state = _robot_state(task_env)
                     reference_row = exact_demo["reference_robot_trajectory"][
                         min(step + 1, int(exact_demo["reference_robot_trajectory"].shape[0]) - 1)
@@ -2002,6 +2045,7 @@ def main() -> None:
             if args_cli.dataset_action_rotation_gain is None
             else float(args_cli.dataset_action_rotation_gain)
         ),
+        "dataset_target_lookahead": int(args_cli.dataset_target_lookahead),
         "checkpoint": None if checkpoint is None else str(checkpoint),
         "official_workspace": None if workspace is None else workspace.__class__.__name__,
         "policy_class": None if policy is None else policy.__class__.__name__,
