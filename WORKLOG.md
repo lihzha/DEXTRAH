@@ -13161,3 +13161,35 @@ Smoke follow-up:
   singleton wrapper explicitly passed shard 0. Fix: make CLI append defaults
   empty and let the wrapper provide defaults. Rerun on an immutable later
   checkpoint before spending L40S time on another closed-loop rollout.
+
+## 2026-06-30T06:30:00Z Singleton Convergence Diagnostics Through Epoch 300
+
+- Commit `4c86d03ed51539a3d1249781158873c7a649ce4a` fixes singleton
+  offline row selection and is deployed in isolated NFS worktree
+  `yam-rgb-exact-diag-4c86d03e`; the active trainer continues read-only from its
+  original `17a33051` worktree.
+- Epoch-100 offline job `29633555` on a fixed 48-row probe reported mean first
+  pose MSE `0.005924`, median `0.001047`, pose cosine `0.928`, open-regime pose
+  MSE `0.01658`, and gripper sign `1.0`. L40S eval `1079049` remained open and
+  left the object untouched through step 450, so it was canceled.
+- Epoch-150 EMA job `29633666` and raw-model job `29633707` showed no decisive
+  raw-model advantage; EMA remains the evaluation target.
+- Epoch-200 fixed-row job `29633803` improved mean first pose MSE to `0.001163`,
+  median `0.000149`, open-regime pose MSE `0.003401`, pose cosine `0.971`, and
+  gripper sign `1.0`. L40S chunk-8 job `1079050` and chunk-1 job `1079051`
+  nevertheless drifted before the close state and were canceled. Four-sample
+  averaging job `1079053` completed 260 steps but also remained open; minimum
+  hand-object distance was about `0.1256 m`, just outside the close/grasp
+  corridor.
+- Epoch-300 fixed-row job `29634114` improved mean first pose MSE to
+  `0.000352`, median `5.85e-05`, open-regime pose MSE `0.000971`, pose cosine
+  `0.989`, and gripper sign `1.0`. Full L40S eval `1079055` then crossed the
+  grasp gate: it commanded close, maintained task grasp contact from step 173,
+  and reached `0.005868 m` max lift. It did not enter the demonstrated lift and
+  transport trajectory; final object pose was
+  `(-0.281823, -0.151628, 0.038880) m`, so settled-bin success remained zero.
+- Diagnosis: exact reset, visual parity, executable labels, gripper timing, and
+  basic policy capacity are now demonstrated. The remaining singleton failure
+  is compounding approach/grasp-pose error. Continue the scheduled 500 epochs;
+  preserve and evaluate epoch 400, then final epoch 499/500 with quality video
+  if the performance gate succeeds.

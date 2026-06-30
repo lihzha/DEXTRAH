@@ -107,6 +107,7 @@ parser.add_argument("--yam_gripper_damping_scale", type=float, default=0.25)
 parser.add_argument("--yam_gripper_effort_scale", type=float, default=5.0)
 parser.add_argument("--debug_obs_interval", type=int, default=0)
 parser.add_argument("--debug_obs_max_frames", type=int, default=120)
+parser.add_argument("--initial_render_warmup_frames", type=int, default=0)
 parser.add_argument("--scene_rgb_capture_attempts", type=int, default=6)
 parser.add_argument("--scene_rgb_black_mean_threshold", type=float, default=3.0)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
@@ -1274,6 +1275,33 @@ def _capture_scene_rgb(
     )
 
 
+def _warm_up_observation_rendering(
+    gym_env: Any,
+    task_env: Any,
+    wrist_camera: Camera,
+    scene_eye: tuple[float, float, float],
+    scene_target: tuple[float, float, float],
+) -> None:
+    num_frames = max(0, int(args_cli.initial_render_warmup_frames))
+    if num_frames == 0:
+        return
+    task_env.scene.write_data_to_sim()
+    for _ in range(num_frames):
+        task_env.sim.set_camera_view(
+            eye=scene_eye,
+            target=scene_target,
+            camera_prim_path=task_env.cfg.viewer.cam_prim_path,
+        )
+        task_env.sim.render()
+        wrist_camera.update(0.0, force_recompute=True)
+    frame = _render_scene_frame(gym_env, task_env)
+    _stage(
+        "initial_render_warmup_complete",
+        frames=num_frames,
+        scene_mean=float(np.asarray(frame[..., :3], dtype=np.float32).mean()),
+    )
+
+
 def _save_debug_obs_frame(
     output_dir: Path,
     obs: dict[str, np.ndarray],
@@ -2037,6 +2065,13 @@ def main() -> None:
             if exact_demo is not None:
                 exact_reset_summary = _restore_exact_demo_state(task_env, exact_demo)
                 exact_reset_summaries.append(exact_reset_summary)
+            _warm_up_observation_rendering(
+                gym_env,
+                task_env,
+                wrist_camera,
+                scene_eye,
+                scene_target,
+            )
             obs = _capture_obs(gym_env, task_env, wrist_camera, scene_eye, scene_target)
             if exact_demo is not None and exact_observation_parity is None:
                 exact_observation_parity = _audit_exact_observation(output_dir, obs, exact_demo)
