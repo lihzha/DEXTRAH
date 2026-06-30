@@ -34,6 +34,8 @@ parser.add_argument("--diffusion_policy_root", type=str, default=None)
 parser.add_argument("--task", type=str, default="Dextrah-Single-YAM-Single-Object-Policy-Grasp")
 parser.add_argument("--control_mode", choices=("policy", "dataset_actions"), default="policy")
 parser.add_argument("--dataset_action_pose_gain", type=float, default=1.0)
+parser.add_argument("--dataset_action_translation_gain", type=float, default=None)
+parser.add_argument("--dataset_action_rotation_gain", type=float, default=None)
 parser.add_argument(
     "--exact_policy_shard",
     type=str,
@@ -1831,7 +1833,18 @@ def main() -> None:
                 new_policy_call = False
                 if control_mode == "dataset_actions":
                     raw_action_np = np.asarray(exact_demo["actions"][step : step + 1], dtype=np.float32)
-                    raw_action_np[:, :6] *= float(args_cli.dataset_action_pose_gain)
+                    translation_gain = (
+                        float(args_cli.dataset_action_pose_gain)
+                        if args_cli.dataset_action_translation_gain is None
+                        else float(args_cli.dataset_action_translation_gain)
+                    )
+                    rotation_gain = (
+                        float(args_cli.dataset_action_pose_gain)
+                        if args_cli.dataset_action_rotation_gain is None
+                        else float(args_cli.dataset_action_rotation_gain)
+                    )
+                    raw_action_np[:, :3] *= translation_gain
+                    raw_action_np[:, 3:6] *= rotation_gain
                 elif action_queue.shape[1] == 0:
                     assert policy is not None
                     action_seq = _predict_action_sequence(policy, history, policy_call_idx)
@@ -1917,6 +1930,16 @@ def main() -> None:
                     record["dataset_tcp_position_l2_error"] = float(
                         np.linalg.norm(live_robot_state[16:19] - reference_row[16:19])
                     )
+                    for axis, live_value, reference_value in zip(
+                        ("x", "y", "z"), live_robot_state[16:19], reference_row[16:19], strict=True
+                    ):
+                        record[f"dataset_live_tcp_{axis}"] = float(live_value)
+                        record[f"dataset_reference_tcp_{axis}"] = float(reference_value)
+                        record[f"dataset_tcp_{axis}_error"] = float(live_value - reference_value)
+                    quat_dot = float(abs(np.dot(live_robot_state[19:23], reference_row[19:23])))
+                    record["dataset_tcp_quat_angle_error"] = float(
+                        2.0 * math.acos(float(np.clip(quat_dot, 0.0, 1.0)))
+                    )
                     record["dataset_gripper_width_abs_error"] = float(
                         abs(float(live_robot_state[23]) - float(reference_row[23]))
                     )
@@ -1969,6 +1992,16 @@ def main() -> None:
         "task": str(args_cli.task),
         "control_mode": control_mode,
         "dataset_action_pose_gain": float(args_cli.dataset_action_pose_gain),
+        "dataset_action_translation_gain": (
+            float(args_cli.dataset_action_pose_gain)
+            if args_cli.dataset_action_translation_gain is None
+            else float(args_cli.dataset_action_translation_gain)
+        ),
+        "dataset_action_rotation_gain": (
+            float(args_cli.dataset_action_pose_gain)
+            if args_cli.dataset_action_rotation_gain is None
+            else float(args_cli.dataset_action_rotation_gain)
+        ),
         "checkpoint": None if checkpoint is None else str(checkpoint),
         "official_workspace": None if workspace is None else workspace.__class__.__name__,
         "policy_class": None if policy is None else policy.__class__.__name__,
