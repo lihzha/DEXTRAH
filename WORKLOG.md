@@ -13053,3 +13053,62 @@ Smoke follow-up:
   recorded numeric metadata; active object UUID matches; restored qpos/qvel and
   target pose match; dataset-action replay succeeds under dynamics; then build
   a singleton manifest and launch fresh A100 training.
+
+## 2026-06-30T05:20:00Z Exact Reset Validated; Archived Actions Rejected
+
+- Exact-reset implementation commits: `60a6de16`, `b1c0bb01`, `c0ab0572`,
+  `9d9c86fd`, `47c50789`, and `a54436e1`. Local and dedicated L40S worktrees
+  are clean at `a54436e1ee8e133170bed78c7a855a98d64416a0`.
+- Jobs `1079018` and `1079019` exposed two setup defects before simulation:
+  the generated YAM USD was absent from the dedicated worktree and deterministic
+  asset assignment requires `round_robin`. The generated asset was staged as an
+  untracked runtime asset and the assignment mode was fixed in `b1c0bb01`.
+- Job `1079020`, run
+  `yam_rgb_exact_shard0_dataset_replay3_20260630T045009Z`, exactly restored the
+  selected trajectory's initial qpos, qvel, object pose, object quaternion, bin,
+  object asset, cameras, textures, and lighting. Initial robot-state max error
+  was `5.96e-08`; scene RGB MAE/PSNR was `3.10`/`33.46 dB`; wrist RGB MAE/PSNR
+  was `5.55`/`29.09 dB`. The parity image and quality video were fetched under
+  `cluster_results/l401/yam_rgb_exact_shard0_dataset_replay3_20260630T045009Z`.
+- The archived 794 action labels did not replay successfully: success `0`, max
+  lift `3.87e-07 m`, and minimum hand-object distance `0.2719 m`. Jobs
+  `1079021`-`1079024` swept coupled action gains 2/4/8/12; jobs
+  `1079025`-`1079033` swept translation 4/8/12 against rotation 1/2/4; jobs
+  `1079034`-`1079036` tested rotation 8/12/16. Every arm failed to approach
+  robustly. Conclusion: post-hoc next-frame relative-pose labels are not
+  controller-native feed-forward commands and cannot be used for this
+  memorization contract test.
+- Jobs `1079037`-`1079041` instead computed each action from the live TCP pose
+  to a future recorded source waypoint with lookahead 1/4/8/16/32. Every arm
+  reached the grasp region (minimum hand-object distance about `0.063-0.064 m`)
+  and began moving the object, but task failure termination reset the env around
+  steps 194-247 on object speed before lift. Lookaheads 8/16/32 reached max
+  lifts `0.00117`/`0.00125`/`0.00136 m` before reset.
+- Commit `a54436e1` adds `--disable_failure_terminations`, which disables only
+  failure thresholds while preserving success termination. Next gate: rerun the
+  live-waypoint controller under uninterrupted dynamics, select a successful
+  lookahead, then record the actually applied controller commands and rendered
+  observations as a corrected singleton shard.
+
+## 2026-06-30T05:30:00Z Uninterrupted Dynamics Reveals Pick-Drop Success Metric Bug
+
+- L40S job `1079043`, run
+  `yam_rgb_exact_shard0_pose_l8_uninterrupted_20260630T051731Z`, completed all
+  794 steps at lookahead 8 with failure-only terminations disabled. It achieved
+  a real grasp, `0.1514 m` max lift, and `0.00605 m` mean TCP position error.
+- The rollout ended with the released object settled at
+  `(-0.2362, 0.2350, 0.0360) m` inside the randomized bin centered at
+  `(-0.2696, 0.1732) m` with `0.2975 x 0.2381 m` inner size. Final object
+  linear speed was `2.93e-05 m/s`; max lift and release both occurred.
+- The reported task success remained zero because the legacy grasp task defines
+  success as continuing to hold the object within a center tolerance. That is
+  incompatible with the requested pick-and-drop behavior and explains this
+  false negative. The original source replay also ends off-center but inside
+  the bin, confirming that center-held success is not the data contract.
+- Change in progress: add a pick-drop metric requiring prior lift, release,
+  conservative footprint containment inside the bin, low linear/angular speed,
+  and 0.10 s of continuous settling. Add a controller-native shard recorder
+  that stores each pre-action scene/wrist RGB observation, 24-D robot state,
+  and the exact clipped action applied under dynamics, plus a singleton training
+  manifest. Next: deploy, record a quality-render shard, then prove it succeeds
+  when replayed through `dataset_actions` before training.

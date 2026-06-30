@@ -44,6 +44,12 @@ parser.add_argument("--dataset_action_rotation_gain", type=float, default=None)
 parser.add_argument("--dataset_target_lookahead", type=int, default=8)
 parser.add_argument("--disable_failure_terminations", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument(
+    "--record_policy_shard",
+    type=str,
+    default="",
+    help="Optional output directory for pre-action RGB/state observations and the controller commands applied.",
+)
+parser.add_argument(
     "--exact_policy_shard",
     type=str,
     default="",
@@ -1614,6 +1620,79 @@ def _collect_task_metrics(task_env: Any) -> dict[str, float | None]:
     return {name: _mean_float(getattr(task_env, name)) for name in names if hasattr(task_env, name)}
 
 
+def _exact_bin_drop_spec(exact_demo: dict[str, Any] | None) -> dict[str, float] | None:
+    if exact_demo is None:
+        return None
+    stable_scene = exact_demo["stable_scene"]
+    bins = stable_scene.get("bins") if isinstance(stable_scene.get("bins"), dict) else {}
+    goal = bins.get("goal") if isinstance(bins.get("goal"), dict) else {}
+    target = stable_scene.get("target") if isinstance(stable_scene.get("target"), dict) else {}
+    asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+    half_extents = asset.get("scaled_half_extents") or (0.0, 0.0, 0.0)
+    xy_radius = float(asset.get("xy_radius") or max(float(half_extents[0]), float(half_extents[1])))
+    half_z = float(half_extents[2]) if len(half_extents) >= 3 else xy_radius
+    required = ("center_x", "center_y", "inner_size_x", "inner_size_y")
+    if any(key not in goal for key in required):
+        raise KeyError(f"Exact stable-scene goal bin is missing one of {required}")
+    inner_floor_z = float(goal.get("inner_floor_z", goal.get("table_surface_z", 0.0)))
+    inner_top_z = float(
+        goal.get(
+            "inner_top_z",
+            inner_floor_z + float(goal.get("wall_height", 0.0)),
+        )
+    )
+    return {
+        "center_x": float(goal["center_x"]),
+        "center_y": float(goal["center_y"]),
+        "inner_size_x": float(goal["inner_size_x"]),
+        "inner_size_y": float(goal["inner_size_y"]),
+        "inner_floor_z": inner_floor_z,
+        "inner_top_z": inner_top_z,
+        "object_xy_radius": xy_radius,
+        "object_half_z": half_z,
+        "settled_linear_speed": 0.05,
+        "settled_angular_speed": 1.0,
+        "settled_duration_s": 0.10,
+    }
+
+
+def _bin_drop_metrics(task_env: Any, spec: dict[str, float] | None) -> dict[str, float]:
+    if spec is None:
+        return {}
+    task_env._compute_intermediate_values()
+    center = _tensor_numpy(task_env.cube_pos)[0]
+    error_x = abs(float(center[0]) - float(spec["center_x"]))
+    error_y = abs(float(center[1]) - float(spec["center_y"]))
+    margin_x = 0.5 * float(spec["inner_size_x"]) - float(spec["object_xy_radius"]) - error_x
+    margin_y = 0.5 * float(spec["inner_size_y"]) - float(spec["object_xy_radius"]) - error_y
+    z_min = float(spec["inner_floor_z"]) - 0.02
+    z_max = float(spec["inner_top_z"]) + float(spec["object_half_z"])
+    inside_xy = margin_x >= 0.0 and margin_y >= 0.0
+    inside_z = z_min <= float(center[2]) <= z_max
+    linear_speed = float(_mean_float(task_env.cube_linear_speed) or 0.0)
+    angular_speed = float(_mean_float(task_env.cube_angular_speed) or 0.0)
+    has_lifted = bool((_mean_float(task_env.has_lifted_cube) or 0.0) >= 0.5)
+    released = not bool((_mean_float(task_env.grasp_success) or 0.0) >= 0.5)
+    candidate = (
+        has_lifted
+        and released
+        and inside_xy
+        and inside_z
+        and linear_speed <= float(spec["settled_linear_speed"])
+        and angular_speed <= float(spec["settled_angular_speed"])
+    )
+    return {
+        "bin_center_error_x": error_x,
+        "bin_center_error_y": error_y,
+        "bin_containment_margin_x": margin_x,
+        "bin_containment_margin_y": margin_y,
+        "bin_inside_xy": float(inside_xy),
+        "bin_inside_z": float(inside_z),
+        "bin_object_released": float(released),
+        "bin_drop_candidate": float(candidate),
+    }
+
+
 def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -> dict[str, dict[str, float | int]]:
     summaries: dict[str, dict[str, float | int]] = {}
     for name in sorted({key for item in step_metrics for key in item.keys()} - {"episode", "step"}):
@@ -1638,6 +1717,91 @@ def _latest_video_files(video_folder: Path | None) -> list[str]:
     if video_folder is None or not video_folder.exists():
         return []
     return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
+
+
+def _write_recorded_policy_shard(
+    shard_path: Path,
+    *,
+    exact_demo: dict[str, Any],
+    scene_rgb: list[np.ndarray],
+    wrist_rgb: list[np.ndarray],
+    robot_state: list[np.ndarray],
+    actions: list[np.ndarray],
+    episode_ends: list[int],
+    recording: dict[str, Any],
+) -> dict[str, Any]:
+    if not actions:
+        raise RuntimeError("Cannot write an empty policy shard")
+    shard_path.mkdir(parents=True, exist_ok=True)
+    arrays = {
+        "scene_rgb": np.stack(scene_rgb).astype(np.uint8, copy=False),
+        "wrist_rgb": np.stack(wrist_rgb).astype(np.uint8, copy=False),
+        "robot_state": np.stack(robot_state).astype(np.float32, copy=False),
+        "action": np.stack(actions).astype(np.float32, copy=False),
+        "episode_ends": np.asarray(episode_ends, dtype=np.int64),
+    }
+    row_count = int(arrays["action"].shape[0])
+    if any(int(value.shape[0]) != row_count for key, value in arrays.items() if key != "episode_ends"):
+        raise ValueError(f"Recorded policy arrays have inconsistent lengths: { {k: list(v.shape) for k, v in arrays.items()} }")
+    for key, value in arrays.items():
+        np.save(shard_path / f"{key}.npy", value, allow_pickle=False)
+
+    source_metadata = exact_demo["shard_metadata"]
+    source_trim = source_metadata.get("trim") if isinstance(source_metadata.get("trim"), dict) else {}
+    metadata = {
+        "source_dataset": str(exact_demo["source_dataset"]),
+        "source_row": source_metadata.get("source_row"),
+        "policy_inputs": ["scene_rgb", "wrist_rgb", "robot_state"],
+        "excluded_inputs": ["phase", "progress", "object_state", "bin_state", "target_state", "privileged_obs"],
+        "trim": {
+            "start_row": int(exact_demo["policy_first_rgb_row"]),
+            "original_num_steps": int(source_trim.get("original_num_steps", row_count)),
+            "num_steps": row_count,
+        },
+        "action_convention": {
+            "position_scale": list(YAM_POSE_ACTION_SCALE[:3]),
+            "rotation_scale": list(YAM_POSE_ACTION_SCALE[3:]),
+            "gripper_label_source": "executed_controller_command",
+        },
+        "recording": recording,
+    }
+    (shard_path / "metadata.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    shard_record = {
+        "path": str(shard_path),
+        "source_dataset": str(exact_demo["source_dataset"]),
+        "num_steps": row_count,
+        "scene_rgb_shape": list(arrays["scene_rgb"].shape),
+        "wrist_rgb_shape": list(arrays["wrist_rgb"].shape),
+        "robot_state_shape": list(arrays["robot_state"].shape),
+        "action_shape": list(arrays["action"].shape),
+        "compressed": False,
+        "storage": "npy_dir",
+    }
+    manifest = {
+        "format": "dextrah_yam_rgb_policy_sharded_v1",
+        "num_shards": 1,
+        "num_steps": row_count,
+        "image_keys": ["scene_rgb", "wrist_rgb"],
+        "robot_state_key": "robot_state",
+        "action_key": "action",
+        "gripper_label_source": "executed_controller_command",
+        "compressed": False,
+        "storage": "npy_dir",
+        "shards": [shard_record],
+    }
+    manifest_path = shard_path.parent / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {
+        "enabled": True,
+        "shard_path": str(shard_path),
+        "manifest_path": str(manifest_path),
+        "num_steps": row_count,
+        "episode_ends": [int(v) for v in episode_ends],
+        "shapes": {key: list(value.shape) for key, value in arrays.items()},
+    }
 
 
 def _load_policy(checkpoint: Path, device: str, diffusion_policy_root: str | None):
@@ -1731,6 +1895,11 @@ def main() -> None:
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     video_folder = Path(args_cli.video_folder).expanduser().resolve() if args_cli.video_folder else output_dir / "videos"
     control_mode = str(args_cli.control_mode)
+    record_policy_shard = (
+        Path(args_cli.record_policy_shard).expanduser().resolve()
+        if str(args_cli.record_policy_shard).strip()
+        else None
+    )
     checkpoint = Path(args_cli.checkpoint).expanduser().resolve() if str(args_cli.checkpoint).strip() else None
     if control_mode == "policy" and (checkpoint is None or not checkpoint.is_file()):
         raise FileNotFoundError(checkpoint or "--checkpoint is required for --control_mode=policy")
@@ -1738,6 +1907,8 @@ def main() -> None:
     exact_demo = _load_exact_demo(exact_shard, output_dir) if exact_shard is not None else None
     if control_mode in {"dataset_actions", "dataset_pose_targets"} and exact_demo is None:
         raise ValueError(f"--control_mode={control_mode} requires --exact_policy_shard")
+    if record_policy_shard is not None and exact_demo is None:
+        raise ValueError("--record_policy_shard requires --exact_policy_shard")
     if int(args_cli.num_episodes) < 1:
         raise ValueError("--num_episodes must be positive")
 
@@ -1785,6 +1956,7 @@ def main() -> None:
             "source": "exact_policy_shard",
         }
     _configure_camera(env_cfg, scene_eye, scene_target)
+    bin_drop_spec = _exact_bin_drop_spec(exact_demo)
 
     _stage(
         "start",
@@ -1807,6 +1979,8 @@ def main() -> None:
         scene_randomization=randomization_summary,
         exact_demo=_exact_demo_summary(exact_demo),
         exact_config=exact_config_summary,
+        bin_drop_spec=bin_drop_spec,
+        record_policy_shard=None if record_policy_shard is None else str(record_policy_shard),
     )
 
     workspace = None
@@ -1851,6 +2025,11 @@ def main() -> None:
     debug_obs_paths: list[str] = []
     exact_reset_summaries: list[dict[str, Any]] = []
     exact_observation_parity: dict[str, Any] | None = None
+    recorded_scene_rgb: list[np.ndarray] = []
+    recorded_wrist_rgb: list[np.ndarray] = []
+    recorded_robot_state: list[np.ndarray] = []
+    recorded_actions: list[np.ndarray] = []
+    recorded_episode_ends: list[int] = []
     try:
         for episode in range(int(args_cli.num_episodes)):
             _policy_obs_from_reset(gym_env.reset(seed=int(args_cli.seed) + episode))
@@ -1876,6 +2055,7 @@ def main() -> None:
             done_count = 0
             first_done: dict[str, Any] | None = None
             episode_records: list[dict[str, float | int | None]] = []
+            bin_drop_time_s = 0.0
             chunk_steps_requested = max(1, int(args_cli.action_chunk_steps))
             debug_interval = max(0, int(args_cli.debug_obs_interval))
             for step in range(int(args_cli.num_steps)):
@@ -1925,6 +2105,11 @@ def main() -> None:
                 clip = float(args_cli.clip_actions)
                 if math.isfinite(clip) and clip > 0.0:
                     action_np = np.clip(action_np, -clip, clip)
+                if record_policy_shard is not None:
+                    recorded_scene_rgb.append(np.asarray(current_obs["scene_rgb"], dtype=np.uint8).copy())
+                    recorded_wrist_rgb.append(np.asarray(current_obs["wrist_rgb"], dtype=np.uint8).copy())
+                    recorded_robot_state.append(np.asarray(current_obs["robot_state"], dtype=np.float32).copy())
+                    recorded_actions.append(np.asarray(action_np[0], dtype=np.float32).copy())
                 if debug_interval > 0 and (step == 0 or (step + 1) % debug_interval == 0):
                     _save_debug_obs_frame(
                         output_dir,
@@ -1963,7 +2148,11 @@ def main() -> None:
                             "pre_step_object_pos": pre_step_object_pos,
                         }
 
-                if control_mode in {"dataset_actions", "dataset_pose_targets"} and debug_interval <= 0:
+                if (
+                    control_mode in {"dataset_actions", "dataset_pose_targets"}
+                    and debug_interval <= 0
+                    and record_policy_shard is None
+                ):
                     next_obs = current_obs
                 else:
                     next_obs = _capture_obs(gym_env, task_env, wrist_camera, scene_eye, scene_target)
@@ -1973,6 +2162,16 @@ def main() -> None:
                         history.push(next_obs)
                     current_obs = next_obs
                 task_metrics = _collect_task_metrics(task_env)
+                bin_metrics = _bin_drop_metrics(task_env, bin_drop_spec)
+                if bin_metrics:
+                    if bin_metrics["bin_drop_candidate"] >= 0.5:
+                        bin_drop_time_s += float(task_env.dt)
+                    else:
+                        bin_drop_time_s = 0.0
+                    bin_metrics["bin_drop_time_s"] = float(bin_drop_time_s)
+                    bin_metrics["bin_drop_success"] = float(
+                        bin_drop_time_s + 1.0e-9 >= float(bin_drop_spec["settled_duration_s"])
+                    )
                 record: dict[str, float | int | None] = {
                     "episode": int(episode),
                     "step": int(step + 1),
@@ -1981,6 +2180,7 @@ def main() -> None:
                     "terminated": float(bool(terminated.detach().bool().any().cpu())),
                     "truncated": float(bool(truncated.detach().bool().any().cpu())),
                     **task_metrics,
+                    **bin_metrics,
                 }
                 if control_mode in {"dataset_actions", "dataset_pose_targets"}:
                     live_robot_state = _robot_state(task_env)
@@ -2013,6 +2213,7 @@ def main() -> None:
                         "[YAM_RGB_DP_EVAL] "
                         f"episode={episode} step={step + 1} reward_mean={record['reward_mean']} "
                         f"success={task_metrics.get('in_success_region')} "
+                        f"bin_drop_success={bin_metrics.get('bin_drop_success')} "
                         f"lift={task_metrics.get('cube_lift_height')} "
                         f"xy_error={task_metrics.get('cube_xy_error')} "
                         f"action_min={action_min.tolist()} action_max={action_max.tolist()}",
@@ -2020,11 +2221,14 @@ def main() -> None:
                     )
                 if done_now and bool(args_cli.stop_on_done):
                     break
-            success_values = [float(item["in_success_region"]) for item in episode_records if item.get("in_success_region") is not None]
+            if record_policy_shard is not None:
+                recorded_episode_ends.append(len(recorded_actions))
+            success_key = "bin_drop_success" if bin_drop_spec is not None else "in_success_region"
+            success_values = [float(item[success_key]) for item in episode_records if item.get(success_key) is not None]
             lift_values = [float(item["cube_lift_height"]) for item in episode_records if item.get("cube_lift_height") is not None]
             if first_done is not None:
                 done_metrics = first_done.get("pre_step_metrics") or {}
-                if done_metrics.get("in_success_region") is not None:
+                if success_key == "in_success_region" and done_metrics.get("in_success_region") is not None:
                     success_values.append(float(done_metrics["in_success_region"]))
                 if done_metrics.get("cube_lift_height") is not None:
                     lift_values.append(float(done_metrics["cube_lift_height"]))
@@ -2035,6 +2239,7 @@ def main() -> None:
                     "done_count": int(done_count),
                     "first_done": first_done,
                     "success": bool(success_values and max(success_values) >= 0.5),
+                    "success_metric": success_key,
                     "final_success": None if not success_values else float(success_values[-1]),
                     "max_success": None if not success_values else float(max(success_values)),
                     "max_lift_height": None if not lift_values else float(max(lift_values)),
@@ -2048,6 +2253,39 @@ def main() -> None:
     finally:
         gym_env.close()
         env_closed = True
+
+    recorded_policy_shard_summary = None
+    if record_policy_shard is not None:
+        assert exact_demo is not None
+        recorded_policy_shard_summary = _write_recorded_policy_shard(
+            record_policy_shard,
+            exact_demo=exact_demo,
+            scene_rgb=recorded_scene_rgb,
+            wrist_rgb=recorded_wrist_rgb,
+            robot_state=recorded_robot_state,
+            actions=recorded_actions,
+            episode_ends=recorded_episode_ends,
+            recording={
+                "control_mode": control_mode,
+                "dataset_target_lookahead": int(args_cli.dataset_target_lookahead),
+                "dataset_action_translation_gain": (
+                    float(args_cli.dataset_action_pose_gain)
+                    if args_cli.dataset_action_translation_gain is None
+                    else float(args_cli.dataset_action_translation_gain)
+                ),
+                "dataset_action_rotation_gain": (
+                    float(args_cli.dataset_action_pose_gain)
+                    if args_cli.dataset_action_rotation_gain is None
+                    else float(args_cli.dataset_action_rotation_gain)
+                ),
+                "dynamics_mode": True,
+                "exact_reset": True,
+                "source_policy_shard": str(exact_demo["shard"]),
+                "code_commit": os.environ.get("CODE_COMMIT"),
+                "episode_success": [bool(item["success"]) for item in episode_summaries],
+                "success_metric": "bin_drop_success",
+            },
+        )
 
     success_flags = [bool(item["success"]) for item in episode_summaries]
     reward_values = [float(item["reward_mean"]) for item in step_metrics if item.get("reward_mean") is not None]
@@ -2087,6 +2325,7 @@ def main() -> None:
         "exact_asset": exact_asset_summary,
         "exact_resets": exact_reset_summaries,
         "exact_observation_parity": exact_observation_parity,
+        "bin_drop_spec": bin_drop_spec,
         "episode_length": episode_length_summary,
         "failure_termination_override": termination_override_summary,
         "robot_default_pose": pose_summary,
@@ -2097,6 +2336,7 @@ def main() -> None:
         "num_inference_steps": int(args_cli.num_inference_steps),
         "num_action_samples": int(args_cli.num_action_samples),
         "episode_success_rate": sum(success_flags) / len(success_flags) if success_flags else None,
+        "success_metric": "bin_drop_success" if bin_drop_spec is not None else "in_success_region",
         "episodes_completed": int(len(episode_summaries)),
         "steps_completed": int(len(step_metrics)),
         "reward_mean": sum(reward_values) / len(reward_values) if reward_values else None,
@@ -2109,6 +2349,7 @@ def main() -> None:
         "video_enabled": bool(args_cli.video),
         "video_files": _latest_video_files(video_folder if args_cli.video else None),
         "debug_obs_files": debug_obs_paths,
+        "recorded_policy_shard": recorded_policy_shard_summary,
         "env_closed": env_closed,
         "output_dir": str(output_dir),
         "metrics_path": str(metrics_path),
