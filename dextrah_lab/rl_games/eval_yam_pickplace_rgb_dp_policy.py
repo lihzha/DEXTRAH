@@ -32,6 +32,7 @@ DOME_TEXTURE_EXTS = (".hdr", ".exr", ".jpg", ".jpeg", ".png")
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--checkpoint", type=str, default="")
 parser.add_argument("--diffusion_policy_root", type=str, default=None)
+parser.add_argument("--policy_source", choices=("auto", "ema", "model"), default="auto")
 parser.add_argument("--task", type=str, default="Dextrah-Single-YAM-Single-Object-Policy-Grasp")
 parser.add_argument(
     "--control_mode",
@@ -1858,7 +1859,18 @@ def _load_policy(checkpoint: Path, device: str, diffusion_policy_root: str | Non
 
     _stage("official_dp_checkpoint_load_start", checkpoint=str(checkpoint))
     workspace = TrainDiffusionUnetImageWorkspace.create_from_checkpoint(str(checkpoint))
-    policy = workspace.ema_model if getattr(workspace, "ema_model", None) is not None else workspace.model
+    ema_model = getattr(workspace, "ema_model", None)
+    if args_cli.policy_source == "ema":
+        if ema_model is None:
+            raise ValueError("policy_source=ema requested but checkpoint has no EMA model")
+        policy = ema_model
+        policy_source = "ema"
+    elif args_cli.policy_source == "model":
+        policy = workspace.model
+        policy_source = "model"
+    else:
+        policy = ema_model if ema_model is not None else workspace.model
+        policy_source = "ema" if ema_model is not None else "model"
     policy.num_inference_steps = int(args_cli.num_inference_steps)
     policy.to(torch.device(device))
     policy.eval()
@@ -1866,6 +1878,7 @@ def _load_policy(checkpoint: Path, device: str, diffusion_policy_root: str | Non
         "official_dp_policy_ready",
         workspace=workspace.__class__.__name__,
         policy=policy.__class__.__name__,
+        policy_source=policy_source,
         n_obs_steps=int(policy.n_obs_steps),
         num_inference_steps=int(policy.num_inference_steps),
         device=device,
