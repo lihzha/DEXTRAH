@@ -13231,3 +13231,28 @@ Smoke follow-up:
   are visible in both policy RGB streams. Remove those render-only privileged
   cues before regenerating the sim-to-real dataset or training a deployable
   policy.
+
+## 2026-06-30T20:25:43Z Visible-Object Marker-Free RGB Replay
+
+- Goal: provide a complete dual-camera quality-rendered pick-and-place video
+  with a visually coherent target and no YAM debug-site markers.
+- Reused the accepted L40S quality replay for seed `79100001`, target UUID
+  `ba443b4e68c24265ab4d44c569c9ee6e`, rather than spending another L40S job on
+  an identical render. The source run used `app_rendering_mode=quality`, a
+  `1024x1024` overview render, and recorded 825 scene/D405 policy frames.
+- Source metrics confirm that both `/sites/tcp_site` and
+  `/sites/grasp_site` were hidden before capture (`hidden_count=2`); grasp-pose
+  and visual-object overlays were disabled. The prior yellow-dot diagnosis is
+  refined here: those yellow shapes belonged to the earlier malformed target
+  asset, while the green YAM site was the actual debug marker.
+- Composed the full 825-frame scene/wrist observations at 60 FPS into
+  `cluster_results/l401/yam_rgb_visible_object_no_markers_20260630T202543Z/videos/scene_wrist_visible_object_no_markers_60fps.mp4`.
+  Output is `1032x512`, 13.75 seconds, H.264/yuv420p.
+- Visual inspection of eight milestones confirms the yellow-and-black target
+  is visible in the scene camera from reset and fills a useful fraction of the
+  wrist view during approach/grasp. The robot lifts it by `0.20710 m` and the
+  final XY containment margins are `0.02809 m` and `0.06956 m`.
+- A source-RGB audit found zero saturated green or red site pixels in all 825
+  frames of both camera streams. Evidence is under the same run directory in
+  `inspection/scene_wrist_milestones.png`, `inspection/video_probe.json`, and
+  `inspection/marker_and_motion_audit.json`.
