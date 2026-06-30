@@ -13112,3 +13112,52 @@ Smoke follow-up:
   and the exact clipped action applied under dynamics, plus a singleton training
   manifest. Next: deploy, record a quality-render shard, then prove it succeeds
   when replayed through `dataset_actions` before training.
+
+## 2026-06-30T05:40:00Z Controller-Native Singleton Dataset Accepted
+
+- Commit `17a33051113dba1e846aa61b40393f5314a61810` adds the settled-bin
+  pick-drop metric and controller-native shard recorder; it is pushed and
+  deployed to the dedicated NFS worktree.
+- Recorder smoke job `1079044` completed 5 steps and wrote finite, aligned
+  `(5,256,256,3)` scene/wrist arrays, `(5,24)` robot state, `(5,7)` action,
+  metadata excluding phase/progress/privileged state, and a valid one-shard
+  manifest.
+- Full quality job `1079045`, run
+  `yam_rgb_exact_shard0_controller_native_quality_l8_20260630T052503Z`,
+  completed all 794 dynamic steps and recorded the singleton dataset at
+  `/results/evals/yam_rgb_exact_shard0_controller_native_quality_l8_20260630T052503Z/policy_dataset/manifest.json`.
+  It achieved `1/1` settled-bin success, first success at step 768, max lift
+  `0.151365 m`, final object pose `(-0.236244, 0.234968, 0.035960) m`, and
+  `0.5333 s` continuously settled at the end. Initial quality parity was
+  scene MAE/PSNR `3.468`/`32.89 dB`, wrist `5.538`/`29.10 dB`, and robot-state
+  max error `5.96e-08`.
+- Action-only gate job `1079046` replayed the new `(794,7)` command array from
+  the exact reset and reproduced the same lift, final pose, settle duration,
+  and `1/1` success. This proves the corrected labels are executable commands,
+  not merely next-state deltas.
+- Next launch: fresh one-GPU A100 overfit with no init/normalizer checkpoint,
+  batch `80`, 500 epochs (about 5,000 updates), LR `1e-4`, warmup `100`,
+  `VAL_RATIO=0`, 100 DDPM train/inference steps, horizon 16, action horizon 8,
+  `n_obs_steps=1`, dual 256x256 RGB plus 24-D robot state, and checkpoints every
+  25 epochs. Periodically evaluate exact-reset checkpoints on L40S.
+
+## 2026-06-30T05:50:00Z Singleton Overfit Early Checkpoints
+
+- A100 training job `29633278`, run
+  `yam_rgb_exact_singletraj_controller_native_bs80_500ep_20260630T053150Z`,
+  started on `batch-block4-2007` from commit `17a33051`. It resolved the fresh
+  500-epoch, batch-80, no-validation/no-init config and is writing finite losses
+  and checkpoints. Loss fell from about `1.3` after startup to a trailing mean
+  near `0.07` by roughly 750 updates.
+- L40S epoch-25 job `1079047` used action chunk 1. At step 300 it had not moved
+  the object and sampled actions had diverged from the demonstrated path, so it
+  was canceled as decisively underfit.
+- L40S epoch-50 job `1079048` used the trained action horizon of 8. At step 450
+  the object still had zero lift and numerical-noise XY motion, so it too was
+  canceled as underfit. These are expected convergence checkpoints, not reset
+  or data-contract failures; both used the already validated exact reset.
+- A100 offline diagnostic job `29633506` failed before inference because the
+  script's `argparse` append defaults retained multi-shard probes even when the
+  singleton wrapper explicitly passed shard 0. Fix: make CLI append defaults
+  empty and let the wrapper provide defaults. Rerun on an immutable later
+  checkpoint before spending L40S time on another closed-loop rollout.
