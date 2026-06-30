@@ -12991,3 +12991,34 @@ Smoke follow-up:
   this checkpoint. The failure is a closed-loop policy/generalization problem
   (off-target approach followed by a bin-wall attractor), not an eval reset,
   camera visibility, privileged-input mismatch, or insufficient episode length.
+
+## 2026-06-30T02:09:33Z Newer Periodic Eval And Training Recovery
+
+- While the 48k batch ran, periodic monitor PID `431671` submitted job
+  `1078998` for newer snapshot `step_1010767`. The job completed in `00:47:49`
+  with `0/3` success over `14400` steps and mean reward
+  `2.9438546243144406`. Per-seed max lift remained numerical noise
+  (`6.52e-07`, `6.41e-07`, and `5.22e-08` m).
+- The newer periodic eval also confirms
+  `phase_progress_in_policy=false` and
+  `privileged_object_state_in_policy=false`. Fetched and opened its main and
+  scene/wrist videos locally under
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z_periodic_eval_bs80_10k_20260628T092526Z_step1010767`.
+  Visual inspection shows the same tiny off-target approach and no grasp.
+- A100 job `29607027` timed out after an unsaved tail at
+  `global_step=1016228`, `epoch=17`. The newest durable checkpoint is
+  `global_step=1015146`, `epoch=16`, `val_loss=0.00902063213288784`, mtime
+  `2026-06-30T01:22:12Z`.
+- Its submitter again exhausted eight retries because the 1,229-node static
+  block5/block7 exclusion list had become invalid after scheduler topology
+  changes. Relaunched without a static exclusion list so future timeout
+  resumes are reliable even if some placements are slower.
+- New submitter PID `653779`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/submitter/a100_submitter_bs80_restart13_noexclude_20260630T020353Z.log`.
+  A100 job `29620244` is running on `batch-block7-00770` and confirmed a real
+  resume from step `1015146`, with fresh rows through at least `1015247`.
+  Throughput warmed to `37` updates/min over the latest minute; keep this
+  placement because automatic continuity now outweighs another recycle.
+- The A100 account still emits a warning that its PPP is approaching the stale
+  data limit. It has not blocked submission yet, but it remains an external
+  risk to continued GPU access and should be addressed through the quota tool.
