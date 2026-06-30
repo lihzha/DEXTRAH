@@ -42,6 +42,7 @@ parser.add_argument("--dataset_action_pose_gain", type=float, default=1.0)
 parser.add_argument("--dataset_action_translation_gain", type=float, default=None)
 parser.add_argument("--dataset_action_rotation_gain", type=float, default=None)
 parser.add_argument("--dataset_target_lookahead", type=int, default=8)
+parser.add_argument("--disable_failure_terminations", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument(
     "--exact_policy_shard",
     type=str,
@@ -434,6 +435,23 @@ def _apply_eval_episode_length(env_cfg: Any) -> dict[str, Any]:
         "requested_steps": int(requested_steps),
         "required_episode_length_s": float(required_episode_length_s),
     }
+
+
+def _apply_failure_termination_override(env_cfg: Any) -> dict[str, Any]:
+    if not bool(args_cli.disable_failure_terminations):
+        return {"enabled": False}
+    overrides = {
+        "out_of_bounds_margin": 1.0e6,
+        "cube_out_max_z": 1.0e6,
+        "prelift_drag_termination_xy_error": 1.0e6,
+        "cube_speed_termination_linear": 1.0e6,
+        "cube_speed_termination_angular": 1.0e6,
+        "finger_table_penetration_termination_margin": -1.0e6,
+    }
+    previous = {key: getattr(env_cfg, key, None) for key in overrides}
+    for key, value in overrides.items():
+        setattr(env_cfg, key, value)
+    return {"enabled": True, "previous": previous, "overrides": overrides, "success_termination_preserved": True}
 
 
 def _apply_object_asset_overrides(env_cfg: Any) -> dict[str, Any]:
@@ -1732,6 +1750,7 @@ def main() -> None:
     )
     env_cfg.seed = int(args_cli.seed)
     episode_length_summary = _apply_eval_episode_length(env_cfg)
+    termination_override_summary = _apply_failure_termination_override(env_cfg)
     pose_summary = _apply_yam_default_pose(env_cfg)
     gain_summary = _apply_yam_actuator_gain_scales(env_cfg)
     if exact_demo is None:
@@ -1781,6 +1800,7 @@ def main() -> None:
         scene_camera_jitter=scene_camera_jitter_summary,
         image_shape=[int(args_cli.image_height), int(args_cli.image_width), 3],
         episode_length=episode_length_summary,
+        failure_termination_override=termination_override_summary,
         robot_default_pose=pose_summary,
         gripper_gain_scales=gain_summary,
         object_asset_overrides=object_asset_summary,
@@ -2068,6 +2088,7 @@ def main() -> None:
         "exact_resets": exact_reset_summaries,
         "exact_observation_parity": exact_observation_parity,
         "episode_length": episode_length_summary,
+        "failure_termination_override": termination_override_summary,
         "robot_default_pose": pose_summary,
         "gripper_gain_scales": gain_summary,
         "num_episodes_requested": int(args_cli.num_episodes),
