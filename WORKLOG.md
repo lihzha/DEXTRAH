@@ -12950,3 +12950,44 @@ Smoke follow-up:
   steps, a valid quality rollout MP4, and 402 scene/wrist diagnostic PNGs; then
   aggregate success/lift/gripper behavior across seeds, fetch artifacts,
   encode the three full-horizon diagnostics, and inspect/open all videos.
+
+## 2026-06-30T02:01:21Z 48k Evaluation Complete: 0/3
+
+- All three independent quality-render evaluations completed the full 48,000
+  closed-loop steps with exit code `0`. Aggregate result: `0/3` successes over
+  `144000` steps. No episode terminated or truncated early.
+
+| Seed | Job | Elapsed | MaxRSS | Success | Max lift (m) | Final gripper width (m) | Mean reward |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 42 | `1078995` | `02:38:50` | `45196352K` | `0` | `6.5938e-07` | `0.1078112` | `3.1386411` |
+| 43 | `1078996` | `02:56:12` | `45408040K` | `0` | `2.8312e-07` | `0.1078084` | `2.7622195` |
+| 44 | `1078997` | `02:30:05` | `49927904K` | `0` | `2.0862e-07` | `0.1078090` | `2.7429165` |
+
+- Every result confirms `phase_progress_in_policy=false` and
+  `privileged_object_state_in_policy=false`. The policy used only the 256x256
+  scene/wrist RGB observations and 24-D robot state with `n_obs_steps=1`.
+- Each seed produced a valid 1280x720, 60 FPS, 4,800-frame quality rollout and
+  exactly `402` scene/wrist diagnostic PNGs spanning steps 0 through 48,000.
+  The diagnostics were numerically sorted by step before encoding to avoid the
+  filename-width ordering hazard past step 9,999. Each resulting MP4 is
+  512x284, 8 FPS, 402 frames, and 50.25 seconds with no episode reset.
+- Aggregate local metrics:
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_bs80_step1006379_eval_horizon48000_parallel_20260629T230140Z_summary.json`.
+- Full-horizon visual comparison:
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_bs80_step1006379_eval_horizon48000_parallel_20260629T230140Z_full_horizon_contact_sheet.png`.
+- Full-horizon scene/wrist videos are under each local seed directory:
+  `cluster_results/l401/yam_pickplace_rgb_dp_bs80_step1006379_eval_horizon48000_parallel_20260629T230140Z_seed{42,43,44}/videos/scene_wrist_full_horizon.mp4`.
+- Visual diagnosis is consistent across seeds. The policy initially approaches
+  and eventually commands close, but misses the object, drifts toward the bin,
+  and settles against or immediately beside a bin wall. The wrist view then
+  becomes dominated by the wall/table while the object remains stationary.
+  This state persists through step 48,000 in every seed. The longer horizon
+  therefore rules out the previous 4,800-step cutoff as the cause of failure.
+- Cancelled job `1078993` remains documented as the unsafe 48,000-frame Gym
+  video attempt, and cancelled job `1078994` as the validated memory-safe but
+  sequential attempt superseded by the parallel seed batch. Their partial
+  artifacts are isolated and excluded from aggregate metrics.
+- Next technical conclusion: further horizon extension is not justified for
+  this checkpoint. The failure is a closed-loop policy/generalization problem
+  (off-target approach followed by a bin-wall attractor), not an eval reset,
+  camera visibility, privileged-input mismatch, or insufficient episode length.
