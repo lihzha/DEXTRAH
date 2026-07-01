@@ -69,8 +69,35 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
         return None, "object_material_randomization_not_enabled"
     if str(recording.get("dataset_drop_targeting_mode") or "") != "live_object_to_bin_center":
         return None, "unsupported_drop_targeting_mode"
-    if str(recording.get("dataset_drop_release_height_mode") or "") != "above_bin_top_then_descend":
+    if (
+        str(recording.get("dataset_drop_release_height_mode") or "")
+        != "above_bin_top_then_contained_descent"
+    ):
         return None, "unsupported_drop_release_height_mode"
+    if str(recording.get("dataset_drop_spec_source") or "") != "exact_stable_scene":
+        return None, "unsupported_drop_spec_source"
+    episode_final_success = recording.get("episode_final_success")
+    if (
+        not isinstance(episode_final_success, list)
+        or not episode_final_success
+        or not all(bool(value) for value in episode_final_success)
+    ):
+        return None, "recording_final_success_not_passed"
+    episode_drop_descent = recording.get("episode_drop_descent_started")
+    if (
+        not isinstance(episode_drop_descent, list)
+        or not episode_drop_descent
+        or not all(bool(value) for value in episode_drop_descent)
+    ):
+        return None, "recording_staged_descent_not_observed"
+    gate_episodes = gate.get("episodes")
+    if (
+        not isinstance(gate_episodes, list)
+        or not gate_episodes
+        or not all(bool(item.get("final_success")) for item in gate_episodes if isinstance(item, dict))
+        or not all(isinstance(item, dict) for item in gate_episodes)
+    ):
+        return None, "replay_gate_final_success_not_passed"
     site_visibility = recording.get("robot_debug_site_visibility")
     if not isinstance(site_visibility, dict) or int(site_visibility.get("hidden_count") or 0) < 2:
         return None, "robot_debug_sites_not_hidden"

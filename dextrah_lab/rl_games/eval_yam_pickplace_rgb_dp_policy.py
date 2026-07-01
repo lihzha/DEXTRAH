@@ -2126,6 +2126,11 @@ def _replay_recorded_episode_gate(
             and bin_drop_time_s + 1.0e-9 >= float(bin_drop_spec["settled_duration_s"])
         ):
             success_step = steps_completed
+    final_success = bool(
+        success_step is not None
+        and final_bin_metrics.get("bin_drop_candidate", 0.0) >= 0.5
+        and bin_drop_time_s + 1.0e-9 >= float(bin_drop_spec["settled_duration_s"])
+    )
     success = success_step is not None
     max_tcp_threshold = float(args_cli.recording_gate_max_tcp_error_m)
     max_joint_threshold = float(args_cli.recording_gate_max_joint_error_rad)
@@ -2135,6 +2140,7 @@ def _replay_recorded_episode_gate(
         finite_actions
         and steps_completed == len(actions)
         and success
+        and final_success
         and (tracking_pass or not trajectory_match_required)
     )
     return {
@@ -2145,6 +2151,7 @@ def _replay_recorded_episode_gate(
         "steps_completed": int(steps_completed),
         "finite_actions": bool(finite_actions),
         "success": bool(success),
+        "final_success": bool(final_success),
         "success_step": success_step,
         "done_step": done_step,
         "max_tcp_position_error_m": float(max_tcp_error),
@@ -2370,7 +2377,9 @@ def _dataset_pose_target_action(
     task_env: Any,
     exact_demo: dict[str, Any],
     step: int,
-    controller_state: dict[str, bool],
+    controller_state: dict[str, Any],
+    *,
+    drop_spec: dict[str, float] | None = None,
 ) -> tuple[np.ndarray, int]:
     reference = exact_demo["reference_robot_trajectory"]
     phases = exact_demo.get("reference_phases")
@@ -2409,20 +2418,39 @@ def _dataset_pose_target_action(
         desired_object = np.asarray(object_reference[target_idx], dtype=np.float64)
         pos_delta += _bounded_position_correction(object_feedback_gain * (desired_object - live_object))
     if drop_hold_phase and object_reference is not None:
-        drop_spec = _live_bin_drop_spec(task_env)
-        if drop_spec is not None:
+        active_drop_spec = drop_spec if drop_spec is not None else _live_bin_drop_spec(task_env)
+        if active_drop_spec is not None:
             drop_idx = min(int(step), int(reference.shape[0]) - 1)
             live_object = np.asarray(_tensor_numpy(task_env.cube_pos)[0], dtype=np.float64)
             live_tcp = np.asarray(live[16:19], dtype=np.float64)
             center_error_xy = np.asarray(
-                (float(drop_spec["center_x"]), float(drop_spec["center_y"])), dtype=np.float64
+                (float(active_drop_spec["center_x"]), float(active_drop_spec["center_y"])),
+                dtype=np.float64,
             ) - live_object[:2]
-            transport_z = _dataset_drop_transport_z(drop_spec)
+            containment_margin = min(
+                0.5 * float(active_drop_spec["inner_size_x"])
+                - float(active_drop_spec["object_xy_radius"])
+                - abs(float(center_error_xy[0])),
+                0.5 * float(active_drop_spec["inner_size_y"])
+                - float(active_drop_spec["object_xy_radius"])
+                - abs(float(center_error_xy[1])),
+            )
+            center_ready = float(np.linalg.norm(center_error_xy)) <= max(
+                0.0, float(args_cli.dataset_drop_descent_center_tolerance_m)
+            )
+            containment_ready = containment_margin >= max(
+                0.0, float(args_cli.dataset_drop_settle_containment_margin_m)
+            )
+            transport_z = _dataset_drop_transport_z(active_drop_spec)
+            transport_height_error = abs(float(live_object[2]) - transport_z)
+            controller_state["drop_center_error_m"] = float(np.linalg.norm(center_error_xy))
+            controller_state["drop_containment_margin_m"] = float(containment_margin)
+            controller_state["drop_transport_height_error_m"] = float(transport_height_error)
+            controller_state["drop_xy_ready"] = bool(center_ready or containment_ready)
             if (
                 not controller_state["drop_descent_started"]
-                and float(np.linalg.norm(center_error_xy))
-                <= max(0.0, float(args_cli.dataset_drop_descent_center_tolerance_m))
-                and abs(float(live_object[2]) - transport_z)
+                and controller_state["drop_xy_ready"]
+                and transport_height_error
                 <= max(0.0, float(args_cli.dataset_drop_descent_height_tolerance_m))
             ):
                 controller_state["drop_descent_started"] = True
@@ -2434,7 +2462,7 @@ def _dataset_pose_target_action(
             drop_target_tcp = live_tcp.copy()
             drop_target_tcp[:2] += inward_shift_xy
             object_target_z = (
-                _dataset_drop_release_z(drop_spec)
+                _dataset_drop_release_z(active_drop_spec)
                 if controller_state["drop_descent_started"]
                 else transport_z
             )
@@ -2507,10 +2535,14 @@ def _prepare_pose_recovery_episode(
         raise ValueError("--recovery_phase_fraction must lie in [0, 1]")
     phase_offset = int(round(fraction * max(0, matching.size - 1)))
     reference_step_offset = int(matching[phase_offset])
-    controller_state = {"drop_descent_started": False}
+    controller_state: dict[str, Any] = {"drop_descent_started": False}
     for teacher_step in range(reference_step_offset):
         raw_action, _ = _dataset_pose_target_action(
-            task_env, exact_demo, teacher_step, controller_state
+            task_env,
+            exact_demo,
+            teacher_step,
+            controller_state,
+            drop_spec=_exact_bin_drop_spec(exact_demo),
         )
         action_np = _scaled_clipped_dataset_action(raw_action)
         action_tensor = torch.as_tensor(action_np, dtype=torch.float32, device=task_env.device)
@@ -2783,7 +2815,13 @@ def main() -> None:
             dataset_reference_step = int(reference_step_offset)
             precision_repeat_count = 0
             drop_settle_repeat_count = 0
-            dataset_controller_state = {"drop_descent_started": False}
+            dataset_controller_state: dict[str, Any] = {
+                "drop_descent_started": False,
+                "drop_center_error_m": None,
+                "drop_containment_margin_m": None,
+                "drop_transport_height_error_m": None,
+                "drop_xy_ready": False,
+            }
             dataset_terminal_tail_steps = 0
             for step in range(int(args_cli.num_steps)):
                 if not simulation_app.is_running():
@@ -2810,7 +2848,11 @@ def main() -> None:
                         dataset_terminal_tail_steps += 1
                     elif control_mode in {"dataset_pose_targets", "dataset_pose_recovery"}:
                         raw_action_np, dataset_target_idx = _dataset_pose_target_action(
-                            task_env, exact_demo, dataset_step, dataset_controller_state
+                            task_env,
+                            exact_demo,
+                            dataset_step,
+                            dataset_controller_state,
+                            drop_spec=bin_drop_spec,
                         )
                     else:
                         raw_action_np = np.asarray(
@@ -3020,6 +3062,14 @@ def main() -> None:
                         record["dataset_drop_descent_started"] = float(
                             dataset_controller_state["drop_descent_started"]
                         )
+                        record["dataset_drop_xy_ready"] = float(dataset_controller_state["drop_xy_ready"])
+                        record["dataset_drop_center_error"] = dataset_controller_state["drop_center_error_m"]
+                        record["dataset_drop_transport_containment_margin"] = dataset_controller_state[
+                            "drop_containment_margin_m"
+                        ]
+                        record["dataset_drop_transport_height_error"] = dataset_controller_state[
+                            "drop_transport_height_error_m"
+                        ]
                         record["dataset_drop_settle_ready"] = float(drop_ready)
                         record["dataset_drop_settle_position_error"] = drop_position_error
                         record["dataset_drop_settle_containment_margin"] = drop_containment_margin
@@ -3053,6 +3103,11 @@ def main() -> None:
                     break
             success_key = "bin_drop_success" if bin_drop_spec is not None else "in_success_region"
             success_values = [float(item[success_key]) for item in episode_records if item.get(success_key) is not None]
+            descent_values = [
+                float(item["dataset_drop_descent_started"])
+                for item in episode_records
+                if item.get("dataset_drop_descent_started") is not None
+            ]
             lift_values = [float(item["cube_lift_height"]) for item in episode_records if item.get("cube_lift_height") is not None]
             if first_done is not None:
                 done_metrics = first_done.get("pre_step_metrics") or {}
@@ -3069,6 +3124,7 @@ def main() -> None:
                 "success_metric": success_key,
                 "final_success": None if not success_values else float(success_values[-1]),
                 "max_success": None if not success_values else float(max(success_values)),
+                "drop_descent_started": bool(descent_values and max(descent_values) >= 0.5),
                 "max_lift_height": None if not lift_values else float(max(lift_values)),
                 "final_object_pos": _tensor_list(task_env.cube_pos[0]) if hasattr(task_env, "cube_pos") else None,
                 "final_goal_pos": _tensor_list(task_env.cube_goal_pos[0]) if hasattr(task_env, "cube_goal_pos") else None,
@@ -3081,11 +3137,19 @@ def main() -> None:
             }
             episode_summaries.append(episode_summary)
             if record_policy_shard is not None:
-                accepted = bool(episode_summary["success"]) or not bool(args_cli.recording_require_success)
+                recording_success = bool(
+                    episode_summary["success"]
+                    and float(episode_summary["final_success"] or 0.0) >= 0.5
+                    and episode_summary["drop_descent_started"]
+                )
+                accepted = recording_success or not bool(args_cli.recording_require_success)
                 recording_decisions.append(
                     {
                         "episode": int(episode),
-                        "success": bool(episode_summary["success"]),
+                        "success": bool(recording_success),
+                        "any_success": bool(episode_summary["success"]),
+                        "final_success": bool(float(episode_summary["final_success"] or 0.0) >= 0.5),
+                        "drop_descent_started": bool(episode_summary["drop_descent_started"]),
                         "accepted_before_replay_gate": bool(accepted),
                         "num_steps": int(len(episode_recorded_actions)),
                     }
@@ -3186,7 +3250,8 @@ def main() -> None:
                 "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
-                "dataset_drop_release_height_mode": "above_bin_top_then_descend",
+                "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
+                "dataset_drop_spec_source": "exact_stable_scene",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_transport_clearance_m": float(
                     args_cli.dataset_drop_transport_clearance_m
@@ -3240,7 +3305,20 @@ def main() -> None:
                 "robot_debug_site_visibility": robot_debug_site_visibility,
                 "source_policy_shard": str(exact_demo["shard"]),
                 "code_commit": os.environ.get("CODE_COMMIT"),
-                "episode_success": [bool(item["success"]) for item in episode_summaries],
+                "episode_success": [
+                    bool(
+                        item["success"]
+                        and float(item["final_success"] or 0.0) >= 0.5
+                        and item["drop_descent_started"]
+                    )
+                    for item in episode_summaries
+                ],
+                "episode_final_success": [
+                    bool(float(item["final_success"] or 0.0) >= 0.5) for item in episode_summaries
+                ],
+                "episode_drop_descent_started": [
+                    bool(item["drop_descent_started"]) for item in episode_summaries
+                ],
                 "success_metric": "bin_drop_success",
                 "require_success": bool(args_cli.recording_require_success),
                 "recording_decisions": recording_decisions,
@@ -3277,7 +3355,8 @@ def main() -> None:
         "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
-        "dataset_drop_release_height_mode": "above_bin_top_then_descend",
+        "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
+        "dataset_drop_spec_source": "exact_stable_scene",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),
         "dataset_drop_descent_center_tolerance_m": float(
