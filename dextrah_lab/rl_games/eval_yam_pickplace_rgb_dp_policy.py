@@ -2225,6 +2225,10 @@ def _dataset_pose_target_action(
     pos_delta = np.asarray(target[16:19] - live[16:19], dtype=np.float64)
     object_reference = exact_demo.get("reference_object_trajectory")
     object_feedback_gain = max(0.0, float(args_cli.dataset_object_feedback_gain))
+    if object_reference is not None and _is_precision_grasp_phase(phase):
+        live_object = _tensor_numpy(task_env.cube_pos)[0]
+        reference_object = np.asarray(object_reference[target_idx], dtype=np.float64)
+        pos_delta += live_object - reference_object
     grasped = bool((_mean_float(getattr(task_env, "grasp_success", None)) or 0.0) >= 0.5)
     if (
         object_reference is not None
@@ -2237,6 +2241,11 @@ def _dataset_pose_target_action(
     ):
         live_object = _tensor_numpy(task_env.cube_pos)[0]
         desired_object = np.asarray(object_reference[target_idx], dtype=np.float64)
+        if any(token in phase for token in ("hold_above_bin", "open_fingers_to_drop")):
+            goal_bin = task_env._tabletop_goal_bin_info()
+            if goal_bin is not None:
+                desired_object = desired_object.copy()
+                desired_object[:2] = (float(goal_bin["center_x"]), float(goal_bin["center_y"]))
         pos_delta += object_feedback_gain * (desired_object - live_object)
     quat_delta = quat_mul_wxyz(
         np.asarray(target[19:23], dtype=np.float64),

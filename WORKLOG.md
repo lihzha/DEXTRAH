@@ -13425,3 +13425,10 @@ Smoke follow-up:
   repeat at most twice while the TCP is outside `1 cm`/`0.20 rad` tolerance.
   These are corrective motion commands, not stop/wait frames, and the rollout
   receives up to 512 extra control steps to finish the source plan.
+- Retiming pilot `1080361` reduced source 2's peak TCP orientation error from
+  `0.924` to `0.199 rad`, but its closest hand/object distance was `0.10033 m`,
+  just outside the grasp condition. Source 1 lifted `0.1845 m` and missed only
+  one final bin margin by `0.66 mm`. Added object-relative approach tracking so
+  a displaced target carries its grasp frame with it, and explicit live-bin XY
+  centering during hold/release so source near-edge drop points cannot amplify
+  into a bounce outside the randomized bin.
