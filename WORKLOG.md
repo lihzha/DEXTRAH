@@ -14258,3 +14258,35 @@ Smoke follow-up:
   will evaluate fresh 20k snapshots for a full 4,800-step quality-render
   episode with action chunk eight and all early termination disabled. The
   obsolete stopped stage-100 monitor PID `3685149` was cleaned up.
+
+## 2026-07-01T18:15:00Z Clean V15 Stage-50 Freeze And Training Start
+
+- The collector crossed the stage-50 threshold with 51 accepted shards. A
+  full live audit before the threshold had re-read every available array and
+  accepted all 23 then-present shards; the production rebuild validated all 51
+  current candidates with no rejects.
+- Froze `curriculum/manifest_0050.json` at SHA-256
+  `b8893fa7e583e2a1fcd4a4be6fe01b63930a30a0d94f9b338c7655031a33315e`.
+  It contains 50 trajectories and 45,512 steps, split 45 train / 5 validation
+  with 30 / 5 unique object UUIDs and no UUID overlap. The maximum stationary
+  TCP run is 48 transitions. Rebuilding preserved stage 10 byte-for-byte at
+  `0411444e...`.
+- Source 50 passed nominal settled placement and exact-reset dynamics replay.
+  Encoded its stored 913-frame scene/wrist tensors at stride two into a
+  457-frame, 15.23-second, 520x256 video. First/middle/last inspection shows a
+  visible reset object, table-only external view, wrist acquisition, transport,
+  and released object in the bin with no debug markers or blank observations.
+  Local artifact:
+  `cluster_results/l401/yam_controller_stateobs_v15_final500_20260701T1710Z_source_000050/source_000050_scene_wrist.mp4`.
+- Launched scratch stage-50 run
+  `yam_rgb_dp_stateobs_v15_n50_bs80_300k_20260701T1813Z` as A100 job
+  `29715145` through submitter PID `3841120`. It uses the clean frozen manifest,
+  batch 80, 300k updates, 100-step DDPM, horizon 16, one observation step,
+  eight action steps, two 256x256 RGB streams, 24-D robot state, EMA, ImageNet
+  initialization, and train-only image augmentation. The resolved config has
+  no phase, progress, or privileged object state, and training emitted finite
+  losses from its first batch.
+- L40S monitor PID `3853639` will evaluate fresh 50k increments for one full
+  4,800-step quality episode using action chunk eight, both material
+  randomizers, and no failure or success early termination. Its resolved
+  monitor config and pinned eval commit `7d35a1be` were inspected after launch.
