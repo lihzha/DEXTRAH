@@ -59,6 +59,7 @@ parser.add_argument("--dataset_drop_settle_containment_margin_m", type=float, de
 parser.add_argument("--dataset_drop_settle_height_tolerance_m", type=float, default=0.01)
 parser.add_argument("--dataset_drop_settle_linear_speed", type=float, default=0.10)
 parser.add_argument("--dataset_drop_settle_angular_speed", type=float, default=10.0)
+parser.add_argument("--dataset_post_action_settle_steps", type=int, default=30)
 parser.add_argument("--recovery_phase_pattern", type=str, default="target/go_from_pre_grasp_to_grasp_pose")
 parser.add_argument("--recovery_phase_fraction", type=float, default=0.5)
 parser.add_argument("--recovery_perturbation_steps", type=int, default=2)
@@ -2633,11 +2634,18 @@ def main() -> None:
             dataset_reference_step = int(reference_step_offset)
             precision_repeat_count = 0
             drop_settle_repeat_count = 0
+            dataset_terminal_tail_steps = 0
             for step in range(int(args_cli.num_steps)):
                 if not simulation_app.is_running():
                     break
                 dataset_step = int(dataset_reference_step)
-                if control_mode in dataset_control_modes and dataset_step >= int(exact_demo["actions"].shape[0]):
+                dataset_action_count = int(exact_demo["actions"].shape[0]) if exact_demo is not None else 0
+                dataset_terminal_tail = bool(
+                    control_mode in dataset_control_modes and dataset_step >= dataset_action_count
+                )
+                if dataset_terminal_tail and dataset_terminal_tail_steps >= max(
+                    0, int(args_cli.dataset_post_action_settle_steps)
+                ):
                     break
                 task_env._compute_intermediate_values()
                 pre_step_metrics = _collect_task_metrics(task_env)
@@ -2645,7 +2653,12 @@ def main() -> None:
                 new_policy_call = False
                 dataset_target_idx = None
                 if control_mode in dataset_control_modes:
-                    if control_mode in {"dataset_pose_targets", "dataset_pose_recovery"}:
+                    if dataset_terminal_tail:
+                        raw_action_np = np.zeros((1, 7), dtype=np.float32)
+                        raw_action_np[0, 6] = float(exact_demo["actions"][dataset_action_count - 1, 6])
+                        dataset_target_idx = int(exact_demo["reference_robot_trajectory"].shape[0]) - 1
+                        dataset_terminal_tail_steps += 1
+                    elif control_mode in {"dataset_pose_targets", "dataset_pose_recovery"}:
                         raw_action_np, dataset_target_idx = _dataset_pose_target_action(
                             task_env, exact_demo, dataset_step
                         )
@@ -2776,6 +2789,7 @@ def main() -> None:
                         abs(float(live_robot_state[23]) - float(reference_row[23]))
                     )
                     record["dataset_reference_step"] = int(dataset_step)
+                    record["dataset_terminal_tail"] = float(dataset_terminal_tail)
                     if control_mode in {"dataset_pose_targets", "dataset_pose_recovery"}:
                         assert dataset_target_idx is not None
                         phases = exact_demo.get("reference_phases")
@@ -2883,6 +2897,11 @@ def main() -> None:
                         flush=True,
                     )
                 if done_now and bool(args_cli.stop_on_done):
+                    break
+                if (
+                    control_mode in dataset_control_modes
+                    and float(bin_metrics.get("bin_drop_success") or 0.0) >= 0.5
+                ):
                     break
             success_key = "bin_drop_success" if bin_drop_spec is not None else "in_success_region"
             success_values = [float(item[success_key]) for item in episode_records if item.get(success_key) is not None]
@@ -3033,6 +3052,7 @@ def main() -> None:
                 ),
                 "dataset_drop_settle_linear_speed": float(args_cli.dataset_drop_settle_linear_speed),
                 "dataset_drop_settle_angular_speed": float(args_cli.dataset_drop_settle_angular_speed),
+                "dataset_post_action_settle_steps": int(args_cli.dataset_post_action_settle_steps),
                 "dataset_action_translation_gain": (
                     float(args_cli.dataset_action_pose_gain)
                     if args_cli.dataset_action_translation_gain is None
@@ -3100,6 +3120,7 @@ def main() -> None:
         ),
         "dataset_drop_settle_linear_speed": float(args_cli.dataset_drop_settle_linear_speed),
         "dataset_drop_settle_angular_speed": float(args_cli.dataset_drop_settle_angular_speed),
+        "dataset_post_action_settle_steps": int(args_cli.dataset_post_action_settle_steps),
         "checkpoint": None if checkpoint is None else str(checkpoint),
         "official_workspace": None if workspace is None else workspace.__class__.__name__,
         "policy_class": None if policy is None else policy.__class__.__name__,

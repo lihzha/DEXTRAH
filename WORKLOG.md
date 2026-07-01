@@ -13493,3 +13493,11 @@ Smoke follow-up:
   gripper from a placed object instead of adding a wait, and is recorded in the
   action labels and provenance. Settled-bin success remains the acceptance
   criterion after the retreat.
+- Retreat pilot `1080524` showed source 0 releasing at reference step 789 and
+  remaining inside/settled, but the source trace ended at step 793 after only
+  `0.0833 s` of candidate dwell, one 60 Hz control step short of the required
+  `0.10 s`. Added a maximum 30-step terminal tail with zero Cartesian action
+  and the final open-gripper command. Collection exits immediately on the first
+  settled-bin success row, so successful trajectories add only the evidence
+  actually needed by the gate (one extra step for source 0) rather than a long
+  wait segment.
