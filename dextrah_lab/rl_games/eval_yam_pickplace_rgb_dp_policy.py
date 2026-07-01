@@ -49,11 +49,14 @@ parser.add_argument("--dataset_object_feedback_max_correction_m", type=float, de
 parser.add_argument("--dataset_precision_position_tolerance_m", type=float, default=0.01)
 parser.add_argument("--dataset_precision_rotation_tolerance_rad", type=float, default=0.20)
 parser.add_argument("--dataset_precision_max_repeats", type=int, default=2)
-parser.add_argument("--dataset_drop_center_max_correction_m", type=float, default=0.0025)
-parser.add_argument("--dataset_drop_settle_max_steps", type=int, default=60)
-parser.add_argument("--dataset_drop_settle_position_tolerance_m", type=float, default=0.01)
-parser.add_argument("--dataset_drop_settle_linear_speed", type=float, default=0.05)
-parser.add_argument("--dataset_drop_settle_angular_speed", type=float, default=1.0)
+parser.add_argument("--dataset_drop_reference_inset_m", type=float, default=0.025)
+parser.add_argument("--dataset_drop_release_clearance_m", type=float, default=0.015)
+parser.add_argument("--dataset_drop_pose_max_correction_m", type=float, default=0.005)
+parser.add_argument("--dataset_drop_settle_max_steps", type=int, default=120)
+parser.add_argument("--dataset_drop_settle_containment_margin_m", type=float, default=0.01)
+parser.add_argument("--dataset_drop_settle_height_tolerance_m", type=float, default=0.01)
+parser.add_argument("--dataset_drop_settle_linear_speed", type=float, default=0.10)
+parser.add_argument("--dataset_drop_settle_angular_speed", type=float, default=10.0)
 parser.add_argument("--recovery_phase_pattern", type=str, default="target/go_from_pre_grasp_to_grasp_pose")
 parser.add_argument("--recovery_phase_fraction", type=float, default=0.5)
 parser.add_argument("--recovery_perturbation_steps", type=int, default=2)
@@ -2222,6 +2225,14 @@ def _bounded_position_correction(correction: np.ndarray, max_norm: float | None 
     return correction
 
 
+def _dataset_drop_release_z(spec: dict[str, float]) -> float:
+    return (
+        float(spec["inner_floor_z"])
+        + float(spec["object_half_z"])
+        + max(0.0, float(args_cli.dataset_drop_release_clearance_m))
+    )
+
+
 def _dataset_pose_target_action(
     task_env: Any,
     exact_demo: dict[str, Any],
@@ -2241,6 +2252,7 @@ def _dataset_pose_target_action(
     )
     live = _robot_state(task_env)
     target = reference[target_idx]
+    target_quat = np.asarray(target[19:23], dtype=np.float64)
     pos_delta = np.asarray(target[16:19] - live[16:19], dtype=np.float64)
     object_reference = exact_demo.get("reference_object_trajectory")
     object_feedback_gain = max(0.0, float(args_cli.dataset_object_feedback_gain))
@@ -2255,32 +2267,39 @@ def _dataset_pose_target_action(
         and grasped
         and any(
             token in phase
-            for token in ("hold_after_close", "lift_object", "hold_after_lift", "move_to_above_bin", "hold_above_bin")
+            for token in ("hold_after_close", "lift_object", "hold_after_lift", "move_to_above_bin")
         )
     ):
         live_object = _tensor_numpy(task_env.cube_pos)[0]
         desired_object = np.asarray(object_reference[target_idx], dtype=np.float64)
-        if drop_hold_phase:
-            goal_bin = task_env._tabletop_goal_bin_info()
-            if goal_bin is not None:
-                desired_object = desired_object.copy()
-                desired_object[:2] = (float(goal_bin["center_x"]), float(goal_bin["center_y"]))
         pos_delta += _bounded_position_correction(object_feedback_gain * (desired_object - live_object))
-        if drop_hold_phase and goal_bin is not None:
-            center_error_xy = np.asarray(
-                (float(goal_bin["center_x"]), float(goal_bin["center_y"])), dtype=np.float64
-            ) - np.asarray(live_object[:2], dtype=np.float64)
-            pos_delta[:2] = _bounded_position_correction(
-                center_error_xy,
-                max_norm=float(args_cli.dataset_drop_center_max_correction_m),
+    if drop_hold_phase and object_reference is not None:
+        drop_spec = _live_bin_drop_spec(task_env)
+        if drop_spec is not None:
+            drop_idx = min(int(step), int(reference.shape[0]) - 1)
+            reference_object = np.asarray(object_reference[drop_idx], dtype=np.float64)
+            reference_tcp = np.asarray(reference[drop_idx, 16:19], dtype=np.float64)
+            inward_shift_xy = np.asarray(
+                (float(drop_spec["center_x"]), float(drop_spec["center_y"])), dtype=np.float64
+            ) - reference_object[:2]
+            inward_shift_xy = _bounded_position_correction(
+                inward_shift_xy,
+                max_norm=float(args_cli.dataset_drop_reference_inset_m),
             )
+            drop_target_tcp = reference_tcp.copy()
+            drop_target_tcp[:2] += inward_shift_xy
+            drop_target_tcp[2] += _dataset_drop_release_z(drop_spec) - float(reference_object[2])
+            pos_delta = _bounded_position_correction(
+                drop_target_tcp - np.asarray(live[16:19], dtype=np.float64),
+                max_norm=float(args_cli.dataset_drop_pose_max_correction_m),
+            )
+            target_quat = np.asarray(reference[drop_idx, 19:23], dtype=np.float64)
     if drop_open_phase:
         pos_delta[:] = 0.0
-    if drop_hold_phase or drop_open_phase:
         rot_delta = np.zeros(3, dtype=np.float64)
     else:
         quat_delta = quat_mul_wxyz(
-            np.asarray(target[19:23], dtype=np.float64),
+            target_quat,
             quat_inv_wxyz(np.asarray(live[19:23], dtype=np.float64)),
         )
         rot_delta = axis_angle_from_quat_wxyz(quat_delta)
@@ -2777,23 +2796,36 @@ def main() -> None:
                             else str(phases[min(dataset_step + 1, int(len(phases)) - 1)])
                         )
                         at_drop_hold_boundary = "hold_above_bin" in phase and "open_fingers_to_drop" in next_phase
-                        goal_bin = task_env._tabletop_goal_bin_info() if at_drop_hold_boundary else None
                         drop_position_error = None
+                        drop_containment_margin = None
+                        drop_height_error = None
                         drop_ready = True
-                        if goal_bin is not None:
+                        if at_drop_hold_boundary and bin_drop_spec is not None:
                             live_object = _tensor_numpy(task_env.cube_pos)[0]
                             drop_position_error = float(
                                 np.linalg.norm(
                                     live_object[:2]
                                     - np.asarray(
-                                        (float(goal_bin["center_x"]), float(goal_bin["center_y"])),
+                                        (
+                                            float(bin_drop_spec["center_x"]),
+                                            float(bin_drop_spec["center_y"]),
+                                        ),
                                         dtype=np.float32,
                                     )
                                 )
                             )
+                            drop_containment_margin = min(
+                                float(bin_metrics["bin_containment_margin_x"]),
+                                float(bin_metrics["bin_containment_margin_y"]),
+                            )
+                            drop_height_error = abs(
+                                float(live_object[2]) - _dataset_drop_release_z(bin_drop_spec)
+                            )
                             drop_ready = bool(
-                                drop_position_error
-                                <= max(0.0, float(args_cli.dataset_drop_settle_position_tolerance_m))
+                                drop_containment_margin
+                                >= max(0.0, float(args_cli.dataset_drop_settle_containment_margin_m))
+                                and drop_height_error
+                                <= max(0.0, float(args_cli.dataset_drop_settle_height_tolerance_m))
                                 and float(task_metrics.get("cube_linear_speed") or 0.0)
                                 <= max(0.0, float(args_cli.dataset_drop_settle_linear_speed))
                                 and float(task_metrics.get("cube_angular_speed") or 0.0)
@@ -2811,6 +2843,8 @@ def main() -> None:
                         record["dataset_drop_settle_boundary"] = float(at_drop_hold_boundary)
                         record["dataset_drop_settle_ready"] = float(drop_ready)
                         record["dataset_drop_settle_position_error"] = drop_position_error
+                        record["dataset_drop_settle_containment_margin"] = drop_containment_margin
+                        record["dataset_drop_settle_height_error"] = drop_height_error
                         record["dataset_reference_repeated"] = float(repeat_reference)
                         if repeat_reference:
                             if repeat_precision:
@@ -2971,12 +3005,15 @@ def main() -> None:
                     args_cli.dataset_precision_rotation_tolerance_rad
                 ),
                 "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
-                "dataset_drop_center_max_correction_m": float(
-                    args_cli.dataset_drop_center_max_correction_m
-                ),
+                "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
+                "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
+                "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
                 "dataset_drop_settle_max_steps": int(args_cli.dataset_drop_settle_max_steps),
-                "dataset_drop_settle_position_tolerance_m": float(
-                    args_cli.dataset_drop_settle_position_tolerance_m
+                "dataset_drop_settle_containment_margin_m": float(
+                    args_cli.dataset_drop_settle_containment_margin_m
+                ),
+                "dataset_drop_settle_height_tolerance_m": float(
+                    args_cli.dataset_drop_settle_height_tolerance_m
                 ),
                 "dataset_drop_settle_linear_speed": float(args_cli.dataset_drop_settle_linear_speed),
                 "dataset_drop_settle_angular_speed": float(args_cli.dataset_drop_settle_angular_speed),
@@ -3033,10 +3070,15 @@ def main() -> None:
         "dataset_precision_position_tolerance_m": float(args_cli.dataset_precision_position_tolerance_m),
         "dataset_precision_rotation_tolerance_rad": float(args_cli.dataset_precision_rotation_tolerance_rad),
         "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
-        "dataset_drop_center_max_correction_m": float(args_cli.dataset_drop_center_max_correction_m),
+        "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
+        "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
+        "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
         "dataset_drop_settle_max_steps": int(args_cli.dataset_drop_settle_max_steps),
-        "dataset_drop_settle_position_tolerance_m": float(
-            args_cli.dataset_drop_settle_position_tolerance_m
+        "dataset_drop_settle_containment_margin_m": float(
+            args_cli.dataset_drop_settle_containment_margin_m
+        ),
+        "dataset_drop_settle_height_tolerance_m": float(
+            args_cli.dataset_drop_settle_height_tolerance_m
         ),
         "dataset_drop_settle_linear_speed": float(args_cli.dataset_drop_settle_linear_speed),
         "dataset_drop_settle_angular_speed": float(args_cli.dataset_drop_settle_angular_speed),

@@ -13459,3 +13459,18 @@ Smoke follow-up:
   command opens. This preserves a continuous corrective approach while
   removing the large simultaneous pose/open transient seen in the rejected
   runs. The separate drop-centering rate limit is recorded in all provenance.
+- Direct-centering pilot `1080421` improved source 1 to nominal settled-bin
+  success, but its action-only replay diverged under grasp contact and finished
+  `10.1 mm` outside one containment margin. Source 2's live-object correction
+  crossed into the bin, then oscillated back out; its center error fell from
+  `99.6 mm` to `42.5 mm` before increasing again. The replay gate rejected both
+  shards, preventing this contact-sensitive controller from entering training.
+- Replaced final live-object chasing with a fixed reference-frame release pose.
+  The successful source pose is shifted at most `25 mm` toward the randomized
+  bin center, lowered so the object is `15 mm` above its resting floor height,
+  and approached with a `5 mm` pose-error command cap. The gripper opens with
+  zero Cartesian command. Release readiness now requires `10 mm` true
+  object-aware containment margin, `10 mm` release-height error, and bounded
+  held-object speed; the active lower/settle phase may add at most 120 steps.
+  This teacher target is deterministic under action-only replay while keeping
+  the object away from walls and removing the high drop that amplified bounce.
