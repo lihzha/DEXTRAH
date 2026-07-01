@@ -54,6 +54,7 @@ DATASET_DROP_FALLBACK_RETRACT_LATERAL_M="${DATASET_DROP_FALLBACK_RETRACT_LATERAL
 DATASET_POST_ACTION_SETTLE_STEPS="${DATASET_POST_ACTION_SETTLE_STEPS:-30}"
 DATASET_ACTION_TRANSLATION_GAIN="${DATASET_ACTION_TRANSLATION_GAIN:-1.0}"
 DATASET_ACTION_ROTATION_GAIN="${DATASET_ACTION_ROTATION_GAIN:-1.0}"
+RECORDING_GATE_FALLBACK_POSE_LOOKAHEAD="${RECORDING_GATE_FALLBACK_POSE_LOOKAHEAD:-4}"
 CONTROL_MODE="${CONTROL_MODE:-dataset_pose_targets}"
 RECOVERY_PHASE_PATTERN="${RECOVERY_PHASE_PATTERN:-target/go_from_pre_grasp_to_grasp_pose}"
 RECOVERY_PHASE_FRACTION="${RECOVERY_PHASE_FRACTION:-0.5}"
@@ -150,8 +151,9 @@ valid = (
     and provenance.get("object_material_randomization")
     and provenance.get("dataset_drop_targeting_mode") == "live_object_to_bin_center"
     and provenance.get("dataset_drop_release_height_mode") == "above_bin_top_then_contained_descent"
-    and int(provenance.get("dataset_drop_controller_version") or 0) >= 11
+    and int(provenance.get("dataset_drop_controller_version") or 0) >= 12
     and provenance.get("dataset_drop_release_criterion") == "gripper_open_or_hand_separated"
+    and provenance.get("recording_gate_fallback_replay_mode") == "robot_pose_target_dynamics"
     and provenance.get("dataset_drop_spec_source") == "exact_stable_scene"
     and all(provenance.get("episode_final_success") or [])
     and all(provenance.get("episode_drop_descent_started") or [])
@@ -221,6 +223,7 @@ exec env \
   DATASET_POST_ACTION_SETTLE_STEPS="$DATASET_POST_ACTION_SETTLE_STEPS" \
   DATASET_ACTION_TRANSLATION_GAIN="$DATASET_ACTION_TRANSLATION_GAIN" \
   DATASET_ACTION_ROTATION_GAIN="$DATASET_ACTION_ROTATION_GAIN" \
+  RECORDING_GATE_FALLBACK_POSE_LOOKAHEAD="$RECORDING_GATE_FALLBACK_POSE_LOOKAHEAD" \
   RECOVERY_PHASE_PATTERN="$RECOVERY_PHASE_PATTERN" \
   RECOVERY_PHASE_FRACTION="$RECOVERY_PHASE_FRACTION" \
   RECOVERY_PERTURBATION_STEPS="$RECOVERY_PERTURBATION_STEPS" \

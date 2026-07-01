@@ -98,6 +98,7 @@ parser.add_argument(
 )
 parser.add_argument("--recording_gate_max_tcp_error_m", type=float, default=0.01)
 parser.add_argument("--recording_gate_max_joint_error_rad", type=float, default=0.05)
+parser.add_argument("--recording_gate_fallback_pose_lookahead", type=int, default=4)
 parser.add_argument(
     "--recording_gate_require_trajectory_match",
     action=argparse.BooleanOptionalAction,
@@ -2093,6 +2094,7 @@ def _replay_recorded_episode_gate(
     robot_states: list[np.ndarray],
     initial_state: dict[str, Any] | None,
     seed: int,
+    pose_target_replay: bool = False,
 ) -> dict[str, Any]:
     if len(actions) != len(robot_states) or not actions:
         raise ValueError(
@@ -2112,6 +2114,8 @@ def _replay_recorded_episode_gate(
     finite_actions = True
     steps_completed = 0
     final_bin_metrics: dict[str, float] = {}
+    replay_mode = "robot_pose_target_dynamics" if pose_target_replay else "recorded_actions_dynamics"
+    pose_lookahead = max(1, int(args_cli.recording_gate_fallback_pose_lookahead))
     for step, (action, reference_state) in enumerate(zip(actions, robot_states, strict=True)):
         if not simulation_app.is_running():
             break
@@ -2122,7 +2126,23 @@ def _replay_recorded_episode_gate(
             max_joint_error,
             float(np.max(np.abs(live_state[:8] - reference_state[:8]), initial=0.0)),
         )
-        action_np = np.asarray(action, dtype=np.float32).reshape(1, 7)
+        if pose_target_replay:
+            target_idx = min(step + pose_lookahead, len(robot_states) - 1)
+            target_state = np.asarray(robot_states[target_idx], dtype=np.float32)
+            position_delta = target_state[16:19] - live_state[16:19]
+            quaternion_delta = quat_mul_wxyz(
+                np.asarray(target_state[19:23], dtype=np.float64),
+                quat_inv_wxyz(np.asarray(live_state[19:23], dtype=np.float64)),
+            )
+            rotation_delta = axis_angle_from_quat_wxyz(quaternion_delta)
+            action_np = np.empty((1, 7), dtype=np.float32)
+            action_np[0, :6] = np.concatenate((position_delta, rotation_delta)).astype(
+                np.float32
+            ) / np.asarray(YAM_POSE_ACTION_SCALE, dtype=np.float32)
+            action_np[0, 6] = float(np.asarray(action, dtype=np.float32).reshape(-1)[6])
+            action_np = _scaled_clipped_dataset_action(action_np)
+        else:
+            action_np = np.asarray(action, dtype=np.float32).reshape(1, 7)
         finite_actions = finite_actions and bool(np.isfinite(action_np).all())
         if not finite_actions:
             break
@@ -2160,6 +2180,8 @@ def _replay_recorded_episode_gate(
     )
     return {
         "enabled": True,
+        "replay_mode": replay_mode,
+        "pose_lookahead": pose_lookahead if pose_target_replay else None,
         "passed": passed,
         "dynamics_mode": True,
         "num_actions": int(len(actions)),
@@ -3355,6 +3377,7 @@ def main() -> None:
                             "actions": episode_recorded_actions,
                             "robot_states": episode_recorded_robot_state,
                             "initial_state": episode_initial_state,
+                            "drop_fallback_used": bool(episode_summary["drop_fallback_used"]),
                             "reference_step_offset": int(reference_step_offset),
                             "recovery": None
                             if recovery_summary is None
@@ -3385,6 +3408,7 @@ def main() -> None:
                         robot_states=recording["robot_states"],
                         initial_state=recording["initial_state"],
                         seed=int(args_cli.seed) + 100_000 + gate_idx,
+                        pose_target_replay=bool(recording["drop_fallback_used"]),
                     )
                     gate_result["episode"] = int(recording["episode"])
                     gate_episodes.append(gate_result)
@@ -3440,8 +3464,12 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-                "dataset_drop_controller_version": 11,
+                "dataset_drop_controller_version": 12,
                 "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
+                "recording_gate_fallback_replay_mode": "robot_pose_target_dynamics",
+                "recording_gate_fallback_pose_lookahead": int(
+                    args_cli.recording_gate_fallback_pose_lookahead
+                ),
                 "dataset_drop_spec_source": "exact_stable_scene",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_transport_clearance_m": float(
@@ -3581,8 +3609,12 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-        "dataset_drop_controller_version": 11,
+        "dataset_drop_controller_version": 12,
         "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
+        "recording_gate_fallback_replay_mode": "robot_pose_target_dynamics",
+        "recording_gate_fallback_pose_lookahead": int(
+            args_cli.recording_gate_fallback_pose_lookahead
+        ),
         "dataset_drop_spec_source": "exact_stable_scene",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),
