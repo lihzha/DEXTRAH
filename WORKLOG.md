@@ -13402,3 +13402,17 @@ Smoke follow-up:
   markers, dynamics, and no early task reset. The summarizer ranks checkpoints
   by held-out settled-bin success first, then training success, lift, and
   closest approach; offline validation loss is retained only as a diagnostic.
+- The first multi-source pilot exposed two teacher failures that the replay
+  gate correctly rejected. Source 1 lifted and transported but settled roughly
+  `6 mm` beyond both object-aware bin margins; source 2 only achieved
+  `0.0159 m` lift and lost the grasp. Sources 0 and 3 passed nominal and
+  action-only replay. Canceled sources 4-9 from the baseline array once this
+  pattern was established rather than spending more L40S time on known teacher
+  behavior.
+- Source-array inspection confirmed that the original dynamics trajectories
+  for sources 1 and 2 did physically lift, so their plans remain usable. The
+  revised teacher uses a precision lookahead of 2 during final approach/grasp
+  and the normal lookahead of 8 elsewhere. Once grasped, it also feeds back
+  against the successful source object trajectory to correct grasp-offset and
+  transport/drop drift. Object state is teacher-only privileged information;
+  stored policy observations remain RGB plus robot state.

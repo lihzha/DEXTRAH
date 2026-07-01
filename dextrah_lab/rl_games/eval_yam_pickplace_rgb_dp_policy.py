@@ -43,6 +43,8 @@ parser.add_argument("--dataset_action_pose_gain", type=float, default=1.0)
 parser.add_argument("--dataset_action_translation_gain", type=float, default=None)
 parser.add_argument("--dataset_action_rotation_gain", type=float, default=None)
 parser.add_argument("--dataset_target_lookahead", type=int, default=8)
+parser.add_argument("--dataset_precision_lookahead", type=int, default=2)
+parser.add_argument("--dataset_object_feedback_gain", type=float, default=0.5)
 parser.add_argument("--recovery_phase_pattern", type=str, default="target/go_from_pre_grasp_to_grasp_pose")
 parser.add_argument("--recovery_phase_fraction", type=float, default=0.5)
 parser.add_argument("--recovery_perturbation_steps", type=int, default=2)
@@ -352,6 +354,11 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
         rgb_step_idx = np.asarray(source["rgb_step_idx"], dtype=np.int64).reshape(-1)
         step_idx = np.asarray(source["step_idx"], dtype=np.int64).reshape(-1)
         source_phases = np.asarray(source["phase"]).astype(str) if "phase" in source.files else None
+        source_object_centers = (
+            np.asarray(source["target_object_center_pos"], dtype=np.float32).reshape(-1, 3)
+            if "target_object_center_pos" in source.files
+            else None
+        )
         if not 0 <= policy_first_rgb_row < int(rgb_step_idx.shape[0]):
             raise IndexError(f"Exact shard trim row {policy_first_rgb_row} is outside source RGB rows")
         source_step_id = int(rgb_step_idx[policy_first_rgb_row])
@@ -413,6 +420,7 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
     }
     actions = np.asarray(_policy_shard_array(shard, "action", mmap=True), dtype=np.float32).copy()
     reference_phases = None
+    reference_object_trajectory = None
     if source_phases is not None:
         phase_end = policy_first_rgb_row + int(actions.shape[0])
         if phase_end > int(source_phases.shape[0]):
@@ -421,6 +429,14 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
                 f"with length {source_phases.shape[0]}"
             )
         reference_phases = source_phases[policy_first_rgb_row:phase_end].copy()
+    if source_object_centers is not None:
+        object_end = policy_first_rgb_row + int(actions.shape[0])
+        if object_end > int(source_object_centers.shape[0]):
+            raise ValueError(
+                f"Exact shard object range [{policy_first_rgb_row}, {object_end}) exceeds source object rows "
+                f"with length {source_object_centers.shape[0]}"
+            )
+        reference_object_trajectory = source_object_centers[policy_first_rgb_row:object_end].copy()
     return {
         "shard": shard,
         "shard_metadata": shard_metadata,
@@ -438,6 +454,7 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
         "reference": reference,
         "reference_robot_trajectory": reference_robot_trajectory,
         "reference_phases": reference_phases,
+        "reference_object_trajectory": reference_object_trajectory,
         "actions": actions,
     }
 
@@ -2178,13 +2195,36 @@ def _dataset_pose_target_action(
     step: int,
 ) -> tuple[np.ndarray, int]:
     reference = exact_demo["reference_robot_trajectory"]
+    phases = exact_demo.get("reference_phases")
+    phase = "" if phases is None else str(phases[min(int(step), int(len(phases)) - 1)])
+    lookahead = max(1, int(args_cli.dataset_target_lookahead))
+    if any(
+        token in phase
+        for token in ("hold_at_pre_grasp", "go_from_pre_grasp_to_grasp_pose", "hold_at_grasp", "close_fingers")
+    ):
+        lookahead = min(lookahead, max(1, int(args_cli.dataset_precision_lookahead)))
     target_idx = min(
-        int(step) + max(1, int(args_cli.dataset_target_lookahead)),
+        int(step) + lookahead,
         int(reference.shape[0]) - 1,
     )
     live = _robot_state(task_env)
     target = reference[target_idx]
     pos_delta = np.asarray(target[16:19] - live[16:19], dtype=np.float64)
+    object_reference = exact_demo.get("reference_object_trajectory")
+    object_feedback_gain = max(0.0, float(args_cli.dataset_object_feedback_gain))
+    grasped = bool((_mean_float(getattr(task_env, "grasp_success", None)) or 0.0) >= 0.5)
+    if (
+        object_reference is not None
+        and object_feedback_gain > 0.0
+        and grasped
+        and any(
+            token in phase
+            for token in ("hold_after_close", "lift_object", "hold_after_lift", "move_to_above_bin", "hold_above_bin", "open_fingers_to_drop")
+        )
+    ):
+        live_object = _tensor_numpy(task_env.cube_pos)[0]
+        desired_object = np.asarray(object_reference[target_idx], dtype=np.float64)
+        pos_delta += object_feedback_gain * (desired_object - live_object)
     quat_delta = quat_mul_wxyz(
         np.asarray(target[19:23], dtype=np.float64),
         quat_inv_wxyz(np.asarray(live[19:23], dtype=np.float64)),
@@ -2783,6 +2823,8 @@ def main() -> None:
             recording={
                 "control_mode": control_mode,
                 "dataset_target_lookahead": int(args_cli.dataset_target_lookahead),
+                "dataset_precision_lookahead": int(args_cli.dataset_precision_lookahead),
+                "dataset_object_feedback_gain": float(args_cli.dataset_object_feedback_gain),
                 "dataset_action_translation_gain": (
                     float(args_cli.dataset_action_pose_gain)
                     if args_cli.dataset_action_translation_gain is None
@@ -2830,6 +2872,8 @@ def main() -> None:
             else float(args_cli.dataset_action_rotation_gain)
         ),
         "dataset_target_lookahead": int(args_cli.dataset_target_lookahead),
+        "dataset_precision_lookahead": int(args_cli.dataset_precision_lookahead),
+        "dataset_object_feedback_gain": float(args_cli.dataset_object_feedback_gain),
         "checkpoint": None if checkpoint is None else str(checkpoint),
         "official_workspace": None if workspace is None else workspace.__class__.__name__,
         "policy_class": None if policy is None else policy.__class__.__name__,
