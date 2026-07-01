@@ -150,6 +150,12 @@ parser.add_argument("--policy_sample_seed", type=int, default=None)
 parser.add_argument("--action_chunk_steps", type=int, default=8)
 parser.add_argument("--clip_actions", type=float, default=1.0)
 parser.add_argument("--stop_on_done", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument(
+    "--stop_on_bin_drop_success",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="Stop after recording the first settled bin-drop success state.",
+)
 parser.add_argument("--print_interval", type=int, default=20)
 parser.add_argument("--image_height", type=int, default=256)
 parser.add_argument("--image_width", type=int, default=256)
@@ -3313,6 +3319,11 @@ def main() -> None:
                     )
                 if done_now and bool(args_cli.stop_on_done):
                     break
+                if (
+                    bool(args_cli.stop_on_bin_drop_success)
+                    and float(bin_metrics.get("bin_drop_success", 0.0)) >= 0.5
+                ):
+                    break
             success_key = "bin_drop_success" if bin_drop_spec is not None else "in_success_region"
             success_values = [float(item[success_key]) for item in episode_records if item.get(success_key) is not None]
             descent_values = [
@@ -3707,6 +3718,7 @@ def main() -> None:
         "num_episodes_requested": int(args_cli.num_episodes),
         "num_steps_requested": int(args_cli.num_steps),
         "action_chunk_steps": int(args_cli.action_chunk_steps),
+        "stop_on_bin_drop_success": bool(args_cli.stop_on_bin_drop_success),
         "num_inference_steps": int(args_cli.num_inference_steps),
         "num_action_samples": int(args_cli.num_action_samples),
         "episode_success_rate": sum(success_flags) / len(success_flags) if success_flags else None,

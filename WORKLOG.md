@@ -13687,3 +13687,42 @@ Smoke follow-up:
   least one train and one validation shard. This allows the fixed source-0-9
   stage-10 prefix to launch as soon as its ten replay-gated shards are ready;
   six local dataset/curriculum tests pass.
+- Version-13 qualification jobs `1082032` and `1082033` accepted sources 5 and
+  8 through the `source_tracked_drop` path. Both ended in settled-bin success
+  and passed exact-reset raw-action dynamics replay, so no physical or replay
+  gate was weakened. Source 10 then passed the staged-descent path in production
+  job `1082144`.
+- The fixed stage-10 registry prefix was changed to
+  `3,5,2,10,1,9,8,0,6,7`, keeping long-settling source 4 out of the smallest
+  diagnostic stage while retaining it later in the immutable order. The
+  resulting `curriculum/manifest_0010.json` contains 10 accepted trajectories,
+  12,194 steps, nine object-disjoint train trajectories, one validation
+  trajectory, two `256x256x3` RGB streams, 24-D robot state, and 7-D actions.
+- Scratch stage-10 Diffusion Policy training started as A100 job `29706332`
+  under run
+  `yam_rgb_dp_ctrl_native_v13_n10_bs80_70k_20260701T1057Z`. It uses batch 80,
+  horizon 16, one observation step, eight trained action steps, 100-step DDPM,
+  train-only image augmentation, and a 70,000-step target. The first two
+  validation losses improved from `0.6806` to `0.3036`; no phase, progress, or
+  object state enters the policy. L40S monitor PID `3352176` will evaluate fresh
+  20k/40k/60k checkpoints for three 4,800-step quality-render episodes using
+  action-chunk size one.
+- Production collection resumed from source 11 with submitter PID `3351548`,
+  pinned commit `4a33f8e3`, eight-minute jobs, and three-way L40S concurrency.
+  Sources 11-13 were submitted as jobs `1082184-1082186` while source 4 ran
+  separately.
+- Source-4 retries with 60, 120, and 240 extra terminal steps all failed the
+  final settled-state gate. The 240-step run `1082148` remained safely contained
+  with `48.58/52.11 mm` final margins and reached multiple certified 0.1-second
+  settled-success windows, but its irregular geometry kept re-contacting the bin
+  and later crossed the `1 rad/s` angular threshold. Extending an idle tail is
+  therefore counterproductive and conflicts with the requested teleoperation-like
+  flow.
+- Added a recorder-only `stop_on_bin_drop_success` option. It records the first
+  certified settled-bin state and exits the episode before any auto-reset or
+  artificial idle tail; the existing exact-reset dynamics replay gate still has
+  to reproduce that same final successful state. Ordinary policy evaluation
+  keeps the option off. Python compilation, shell syntax checks, `git diff
+  --check`, and all six dataset/curriculum unit tests pass. Qualify this behavior
+  on source 4 and a normal staged-descent source before promoting it to remaining
+  production records.
