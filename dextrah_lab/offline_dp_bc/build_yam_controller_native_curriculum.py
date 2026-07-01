@@ -74,8 +74,10 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
         != "above_bin_top_then_contained_descent"
     ):
         return None, "unsupported_drop_release_height_mode"
-    if int(recording.get("dataset_drop_controller_version") or 0) < 10:
+    if int(recording.get("dataset_drop_controller_version") or 0) < 11:
         return None, "unsupported_drop_controller_version"
+    if str(recording.get("dataset_drop_release_criterion") or "") != "gripper_open_or_hand_separated":
+        return None, "unsupported_drop_release_criterion"
     if str(recording.get("dataset_drop_spec_source") or "") != "exact_stable_scene":
         return None, "unsupported_drop_spec_source"
     episode_final_success = recording.get("episode_final_success")

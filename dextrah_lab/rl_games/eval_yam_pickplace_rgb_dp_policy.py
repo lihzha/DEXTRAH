@@ -69,7 +69,7 @@ parser.add_argument("--dataset_drop_fallback_height_tolerance_m", type=float, de
 parser.add_argument("--dataset_drop_fallback_linear_speed", type=float, default=0.03)
 parser.add_argument("--dataset_drop_fallback_angular_speed", type=float, default=4.0)
 parser.add_argument("--dataset_drop_fallback_open_steps", type=int, default=60)
-parser.add_argument("--dataset_drop_fallback_retract_lateral_m", type=float, default=0.08)
+parser.add_argument("--dataset_drop_fallback_retract_lateral_m", type=float, default=0.0)
 parser.add_argument("--dataset_post_action_settle_steps", type=int, default=30)
 parser.add_argument("--recovery_phase_pattern", type=str, default="target/go_from_pre_grasp_to_grasp_pose")
 parser.add_argument("--recovery_phase_fraction", type=float, default=0.5)
@@ -2055,7 +2055,12 @@ def _bin_drop_metrics(task_env: Any, spec: dict[str, float] | None) -> dict[str,
     linear_speed = float(_mean_float(task_env.cube_linear_speed) or 0.0)
     angular_speed = float(_mean_float(task_env.cube_angular_speed) or 0.0)
     has_lifted = bool((_mean_float(task_env.has_lifted_cube) or 0.0) >= 0.5)
-    released = not bool((_mean_float(task_env.grasp_success) or 0.0) >= 0.5)
+    gripper_width = float(_mean_float(task_env.gripper_width) or 0.0)
+    gripper_open = gripper_width >= max(
+        0.0, float(args_cli.dataset_drop_retract_gripper_width_m)
+    )
+    hand_separated = not bool((_mean_float(task_env.grasp_success) or 0.0) >= 0.5)
+    released = bool(gripper_open or hand_separated)
     candidate = (
         has_lifted
         and released
@@ -2071,6 +2076,8 @@ def _bin_drop_metrics(task_env: Any, spec: dict[str, float] | None) -> dict[str,
         "bin_containment_margin_y": margin_y,
         "bin_inside_xy": float(inside_xy),
         "bin_inside_z": float(inside_z),
+        "bin_gripper_open": float(gripper_open),
+        "bin_hand_separated": float(hand_separated),
         "bin_object_released": float(released),
         "bin_drop_candidate": float(candidate),
     }
@@ -3433,7 +3440,8 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-                "dataset_drop_controller_version": 10,
+                "dataset_drop_controller_version": 11,
+                "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
                 "dataset_drop_spec_source": "exact_stable_scene",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_transport_clearance_m": float(
@@ -3573,7 +3581,8 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-        "dataset_drop_controller_version": 10,
+        "dataset_drop_controller_version": 11,
+        "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
         "dataset_drop_spec_source": "exact_stable_scene",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),
