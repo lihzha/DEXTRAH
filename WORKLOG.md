@@ -13977,3 +13977,46 @@ Smoke follow-up:
   `0.01719`, best validation `0.02686`, latest `0.02911`. Stage 100 reached
   step `6483` / epoch 5 with recent train loss `0.02932` and a new best
   validation `0.03415`. No trainer has emitted a nonfinite loss.
+
+## 2026-07-01T14:53:00Z Lustre Alias Correction And Recovery Audit
+
+- Live replacement evidence exposed a host/container path bug before any
+  invalid shard could enter a curriculum. Both automation scripts called
+  `Path.resolve()`, changing the launch spelling from `/lustre/fsw/...` to its
+  `/lustre/fs11/...` target. The recorder wrapper maps only the configured
+  `/lustre/fsw/.../results/dextrah` prefix to `/results`; physics and the replay
+  gate could therefore pass while the final shard write used an inaccessible
+  host path inside the container and failed with missing metadata.
+- Stopped recovery PID `3550527`, replacement PID `3573130`, and their active
+  `yv15auto`/`yv15rep` jobs without touching the main collector. Commit
+  `5336f4d4` replaces symlink resolution with absolute-path normalization that
+  preserves the caller's Lustre alias. Eight submitter tests, including real
+  temporary-symlink spelling checks, plus Python compilation and diff checks
+  pass. The exact commit is deployed in remote worktree
+  `yam-rgb-automation-5336-20260701`.
+- Audited every affected recovery metric. Original sources 103 and 129 had
+  physically passed nominal plus exact-reset dynamics replay but failed only at
+  write time. Sources 106, 110, 114, 116, 121, 123, 127, and 131 were genuine
+  physical/replay rejects. Replacement candidates 527 and 528 had also passed
+  physically but failed only at write time.
+- Corrected jobs `1084120-1084123` wrote accepted shards for original 103,
+  original 129, replacement 527 for source 123, and replacement 528 for source
+  121. Correctly mapped automated jobs `1084124-1084125` wrote replacements
+  536 and 537 for physically rejected sources 127 and 131. Every resulting
+  metadata record has dynamics mode, quality rendering, exact visual resample,
+  successful episode evidence, and a passed replay gate.
+- Because corrected original 103 restores greater object diversity, preserved
+  but moved its now-unnecessary accepted replacement 521 to
+  `quarantine/path_alias_correction/source_000521`. A machine-readable
+  quarantine record names both indices and the reason. No frozen 10/50/100
+  curriculum referenced source 103 or 521. The active accepted count was 142
+  after the swap, with the main first-pass stream at source 146.
+- Restarted the corrected first-recovery and replacement submitters as PIDs
+  `3587462` and `3587463`. Their resolved configs retain the `/lustre/fsw`
+  output/code paths, and live recovery headers for sources 141/142 show
+  container output paths under `/results/...`.
+- Stage-10 A100 job `29706332` timed out after an unsaved tail at step 31,743.
+  The login submitter recorded the timeout and launched job `29709315`; its
+  resolved command has `training.resume=true` and loaded the durable
+  `official_dp_train/checkpoints/latest.ckpt`. Stage-50 and stage-100 jobs were
+  unaffected.
