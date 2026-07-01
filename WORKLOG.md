@@ -13602,3 +13602,55 @@ Smoke follow-up:
   source 15) are queued from pinned production commit `f9d50072` under
   `yam_controller_native_final500_stagedrop_warm64_20260701T0743Z`. Scale to all
   500 only after both nominal/replay gates and stored-frame convergence pass.
+- Commit `805b4a25` added deterministic robot/object material randomization on
+  exact visual resamples in addition to the existing table, bin, lighting, dome,
+  camera, and ground variation. USD root-material bindings were verified on
+  `/World/envs/env_0/Robot` and `/World/envs/env_0/object`. The fetched source-12
+  dual-camera render shows a dark YAM, blue object, randomized oak tabletop, a
+  table-only external view, and a useful wrist close-up with debug sites hidden.
+- A warm64 source-12 shard measured only `1.19` total RGB levels of static-patch
+  drift over the first 64 stored frames (`0.81` over the first 16, maximum
+  adjacent-frame delta `0.48`), resolving the earlier 7-8 level RTX transient.
+  Exact robot state and all restored scene numeric values remained bit-exact.
+- Exact closed-loop evaluation of the old epoch-10 full-data checkpoint in jobs
+  `1081008-1081010` produced 0/3 grasps and 0/3 placements over 1,200 steps.
+  Reset robot/object errors were exactly zero, action chunking was one control
+  step, and the policy used only two RGB streams plus 24-D robot state. This
+  ruled out an eval/train reset mismatch: the early Diffusion Policy checkpoint
+  simply moved around the workspace without approaching the object.
+- Staged-drop qualification exposed two controller regimes. Commits
+  `5b220532` and `1e290c34` made final stable containment and replay mandatory;
+  sources 0 and 12 passed with the original low release. Source 15 could not
+  reach that release height at the left workspace boundary. Global high-release
+  variants `03868183`, `2b7cf450`, `537fffae`, and `5b0e32cf` regressed the easy
+  cases or released source 15 with enough angular/contact energy to leave the
+  bin, so none were promoted.
+- Controller versions 7-11 isolated the reach-limit behavior instead of changing
+  every trajectory. The standard path retains the proven 15 mm release,
+  reference orientation, 240-step bounded settle budget, and 0.10 m/s / 10
+  rad/s readiness. Only residual release-height error above 0.10 m activates a
+  live-orientation 55 mm fallback. The fallback recenters inside the bin, latches
+  one Cartesian pose, and ramps the gripper over 60 active control steps. Release
+  is now defined by a fully open gripper or physical hand separation; final
+  object-aware containment, 0.05 m/s / 1 rad/s speed, and 0.10 s dwell remain
+  mandatory.
+- Raw relative-action replay of source 15 diverged after small grasp-contact
+  perturbations despite exact state restoration, while the nominal closed-loop
+  trajectory ended centered and stable. Commit `0a805eb5` therefore keeps raw
+  action dynamics replay for standard episodes and validates fallback episodes
+  by tracking the recorded robot pose trajectory under dynamics with four-step
+  lookahead. This matches the pose-target replay used to gather observations
+  without introducing object, phase, or progress inputs to the learned policy.
+- Final source-15 qualification job `1081698` passed nominal and dynamics
+  pose-target replay under controller version 12. Nominal produced 1.53 s of
+  terminal stable-bin evidence; replay finished with `78.35 mm` / `64.58 mm`
+  object-aware margins and success at step 1,480 of 1,554. Its accepted
+  256x256 scene/wrist tensors were rendered side by side at
+  `cluster_results/l401/yam_controller_native_adaptive_v12_s15_20260701T095804Z/source_000015_scene_wrist.mp4`.
+- Final standard-path qualification jobs `1081731` (source 0) and `1081732`
+  (source 12) also passed under the same controller-v12 commit `0a805eb5`.
+  Neither invoked fallback; both retained raw recorded-action dynamics replay.
+  Source 0 recorded 1,098 commands and source 12 recorded 1,152, with final
+  replay success in both cases. The three-case qualification therefore covers
+  normal, tall-bin, and reach-limited release regimes before the clean 500-run
+  launch.
