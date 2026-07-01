@@ -29,6 +29,18 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected_count", type=int, default=500)
     parser.add_argument("--val_ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--max_stationary_tcp_steps",
+        type=int,
+        default=60,
+        help="Reject shards with a longer consecutive near-stationary TCP run; negative disables the gate.",
+    )
+    parser.add_argument(
+        "--stationary_tcp_delta_m",
+        type=float,
+        default=1.0e-5,
+        help="Per-control-step TCP displacement threshold used by the flow gate.",
+    )
     return parser
 
 
@@ -40,7 +52,21 @@ def _source_index(shard: Path) -> int:
     raise ValueError(f"Cannot infer source index from {shard}")
 
 
-def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
+def _longest_true_run(values: np.ndarray) -> int:
+    longest = 0
+    current = 0
+    for value in values:
+        current = current + 1 if bool(value) else 0
+        longest = max(longest, current)
+    return longest
+
+
+def _validate_shard(
+    shard: Path,
+    *,
+    max_stationary_tcp_steps: int | None = None,
+    stationary_tcp_delta_m: float = 1.0e-5,
+) -> tuple[dict[str, Any] | None, str | None]:
     metadata_path = shard / "metadata.json"
     if not metadata_path.is_file():
         return None, "missing_metadata"
@@ -174,6 +200,19 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
             return None, f"invalid_episode_ends:{episode_ends.shape}"
         if not np.isfinite(action).all() or not np.isfinite(robot_state).all():
             return None, "nonfinite_lowdim_array"
+        tcp_step_displacement = np.linalg.norm(np.diff(robot_state[:, 16:19], axis=0), axis=1)
+        longest_stationary_tcp_steps = _longest_true_run(
+            tcp_step_displacement < max(0.0, float(stationary_tcp_delta_m))
+        )
+        if (
+            max_stationary_tcp_steps is not None
+            and int(max_stationary_tcp_steps) >= 0
+            and longest_stationary_tcp_steps > int(max_stationary_tcp_steps)
+        ):
+            return None, (
+                "excessive_stationary_tcp_run:"
+                f"{longest_stationary_tcp_steps}>{int(max_stationary_tcp_steps)}"
+            )
     except (OSError, ValueError) as exc:
         return None, f"array_validation_failed:{exc}"
     return {
@@ -187,6 +226,8 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
         "wrist_rgb_shape": list(wrist_rgb.shape),
         "robot_state_shape": list(robot_state.shape),
         "action_shape": list(action.shape),
+        "longest_stationary_tcp_steps": longest_stationary_tcp_steps,
+        "stationary_tcp_delta_m": float(stationary_tcp_delta_m),
         "compressed": False,
         "storage": "npy_dir",
     }, None
@@ -289,7 +330,11 @@ def main() -> None:
     rejected = []
     seen_sources: set[int] = set()
     for shard in candidates:
-        record, reason = _validate_shard(shard)
+        record, reason = _validate_shard(
+            shard,
+            max_stationary_tcp_steps=int(args.max_stationary_tcp_steps),
+            stationary_tcp_delta_m=float(args.stationary_tcp_delta_m),
+        )
         if record is None:
             rejected.append({"path": str(shard), "reason": reason})
             continue
@@ -305,6 +350,10 @@ def main() -> None:
         "accepted_count": len(accepted),
         "rejected_count": len(rejected),
         "rejected": rejected,
+        "flow_gate": {
+            "max_stationary_tcp_steps": int(args.max_stationary_tcp_steps),
+            "stationary_tcp_delta_m": float(args.stationary_tcp_delta_m),
+        },
     }
     (output_dir / "validation_audit.json").write_text(
         json.dumps(audit, indent=2, sort_keys=True) + "\n", encoding="utf-8"

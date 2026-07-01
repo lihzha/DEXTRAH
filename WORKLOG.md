@@ -14066,3 +14066,67 @@ Smoke follow-up:
   chunk eight, 4,800 quality-render steps, overview video, and scene/wrist
   debug capture every 60 steps through the full horizon. It must reproduce the
   source-3 success before its complete dual-camera artifact is accepted.
+
+## 2026-07-01T16:05:00Z Dual-Camera Success And 40k Exact Evaluation
+
+- Deterministic action-chunk-eight replay job `1084395` reproduced the
+  source-3 policy success: first settled-bin success at step `1842`, maximum
+  lift `0.2103 m`, 2,959 successful steps, and final success at the full
+  4,800-step horizon. The 82-frame scene/wrist video was fetched, encoded, and
+  inspected at reset, approach, grasp, transport, release, and final state.
+  Both camera streams are valid; the scene view remains table-only and the
+  wrist view tracks the object through the grasp and transport.
+- Same-checkpoint chunk-eight extensions failed on train source 5 and held-out
+  source 7. Source 5 reached only `0.00495 m` lift and source 7 did not lift,
+  confirming that chunking repairs temporal action coherence but does not by
+  itself solve 10-shot coverage/generalization.
+- Commits `7e2763f2` and `333bf326` retain exact-observation diagnostics through
+  the full requested horizon and derive the default retained frame count from
+  `ceil(num_steps / interval) + 2`. The final implementation is deployed at
+  remote worktree `yam-rgb-exact-333b-20260701`; focused syntax and diff checks
+  pass.
+- Stage-10 checkpoint step `40836` regressed from the earlier source-3 success.
+  Randomized job `1084523` completed 4,800 uninterrupted steps with no success
+  and only `0.00922 m` lift. Exact chunk-eight jobs `1084526-1084528` produced
+  `0/3`: source 3 pushed the object (`0.01364 m` lift), source 5 grasped and
+  carried it past the bin (`0.17617 m` lift) without releasing, and held-out
+  source 7 did not lift. Reset parity remained high (`37-59 dB`) and the
+  scene/wrist videos were inspected, so step `20170` remains the best stage-10
+  rollout checkpoint.
+- Stage-50 job `29707415` reached step `32395` before its short-allocation
+  timeout. Submitter PID `1704471` launched job `29710841`, which restored the
+  durable `latest.ckpt` and resumed without nonfinite loss. Stage-10 and
+  stage-100 submitters also remain healthy.
+
+## 2026-07-01T16:44:00Z Source-200 Flow Audit And Hidden-Timeout Gate
+
+- Production reached 203 strict accepted demonstrations. Source 200 was
+  fetched in full and its 520x256, 30 FPS, 19.5-second scene/wrist video was
+  inspected. Framing, object visibility, grasp, transport, and final bin drop
+  all pass, but its longest near-stationary TCP run is 128 control transitions
+  (`2.13 s`) from steps 1016-1144 while the gripper holds the object inside the
+  bin.
+- Step metrics identify the cause: the controller repeatedly holds the same
+  drop-boundary reference until `dataset_drop_settle_max_steps=240` expires.
+  The object is contained, but its `0.045 m` release-height error never reaches
+  the `0.01 m` tolerance. The same RGB/24-D state therefore maps to repeated
+  closed-gripper correction actions and eventually to an open command based on
+  hidden elapsed time. This is not learnable with the required
+  `n_obs_steps=1` and no phase/progress input.
+- A complete scan of 203 accepted low-dimensional trajectories found median
+  longest stationary run 20 steps, 90th percentile 94.8, 36 trajectories at
+  or above 60, and 17 at or above 120. Every inspected long run occurs at the
+  repeated drop-settle boundary, not during grasp precision or the terminal
+  tail.
+- Added a final-curriculum flow gate to
+  `build_yam_controller_native_curriculum.py`: default maximum 60 consecutive
+  TCP transitions below `1e-5 m`, configurable or explicitly disabled. Each
+  accepted manifest row records the measured longest run and threshold, and
+  the validation audit records the resolved gate. Six focused tests, Python
+  compilation, and `git diff --check` pass.
+- Launched quality-render, strict dynamics-replay no-hold ablations
+  `1084885-1084888` on sources 15, 32, 190, and 200. These span the worst
+  `3.53 s` stall, moderate height-error stalls, and a speed-limited stall. Each
+  changes only `dataset_drop_settle_max_steps=240 -> 0`, writes to isolated run
+  `yam_drop_nohold_ablation_v1_20260701T1642Z`, and must pass final physical
+  success plus the same replay gate before the production controller changes.

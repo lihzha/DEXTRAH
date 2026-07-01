@@ -20,6 +20,7 @@ def _write_shard(
     controller_version: int,
     descent_started: bool,
     controller_path: str | None,
+    stationary_tcp: bool = False,
 ) -> Path:
     shard = root / "source_000005" / "policy_dataset" / "yam_rgb_policy_000005"
     shard.mkdir(parents=True)
@@ -27,7 +28,10 @@ def _write_shard(
     rgb = np.full((num_steps, 8, 8, 3), 127, dtype=np.uint8)
     np.save(shard / "scene_rgb.npy", rgb, allow_pickle=False)
     np.save(shard / "wrist_rgb.npy", rgb, allow_pickle=False)
-    np.save(shard / "robot_state.npy", np.zeros((num_steps, 24), dtype=np.float32), allow_pickle=False)
+    robot_state = np.zeros((num_steps, 24), dtype=np.float32)
+    if not stationary_tcp:
+        robot_state[:, 16] = np.arange(num_steps, dtype=np.float32) * 1.0e-3
+    np.save(shard / "robot_state.npy", robot_state, allow_pickle=False)
     np.save(shard / "action.npy", np.zeros((num_steps, 7), dtype=np.float32), allow_pickle=False)
     np.save(shard / "episode_ends.npy", np.asarray([num_steps], dtype=np.int64), allow_pickle=False)
 
@@ -145,6 +149,35 @@ class YamControllerNativeCurriculumValidationTest(unittest.TestCase):
 
             self.assertIsNone(record)
             self.assertEqual(reason, "recording_staged_descent_not_observed")
+
+    def test_flow_gate_rejects_hidden_timeout_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shard = _write_shard(
+                Path(directory),
+                controller_version=13,
+                descent_started=True,
+                controller_path="staged_descent",
+                stationary_tcp=True,
+            )
+
+            record, reason = _validate_shard(shard, max_stationary_tcp_steps=1)
+
+            self.assertIsNone(record)
+            self.assertEqual(reason, "excessive_stationary_tcp_run:2>1")
+
+    def test_flow_gate_records_longest_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shard = _write_shard(
+                Path(directory),
+                controller_version=13,
+                descent_started=True,
+                controller_path="staged_descent",
+            )
+
+            record, reason = _validate_shard(shard, max_stationary_tcp_steps=1)
+
+            self.assertIsNone(reason)
+            self.assertEqual(record["longest_stationary_tcp_steps"], 0)
 
 
 if __name__ == "__main__":
