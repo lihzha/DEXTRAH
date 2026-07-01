@@ -54,7 +54,14 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, check=check, capture_output=True, text=True)
+    for attempt in range(1, 9):
+        try:
+            return subprocess.run(command, check=check, capture_output=True, text=True)
+        except BlockingIOError:
+            if attempt == 8:
+                raise
+            time.sleep(min(2 * attempt, 10))
+    raise AssertionError("unreachable")
 
 
 def _absolute_without_resolving_symlinks(path: Path) -> Path:
