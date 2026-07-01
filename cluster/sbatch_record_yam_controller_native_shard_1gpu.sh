@@ -41,8 +41,8 @@ DATASET_DROP_RETRACT_GRIPPER_WIDTH_M="${DATASET_DROP_RETRACT_GRIPPER_WIDTH_M:-0.
 DATASET_DROP_SETTLE_MAX_STEPS="${DATASET_DROP_SETTLE_MAX_STEPS:-240}"
 DATASET_DROP_SETTLE_CONTAINMENT_MARGIN_M="${DATASET_DROP_SETTLE_CONTAINMENT_MARGIN_M:-0.01}"
 DATASET_DROP_SETTLE_HEIGHT_TOLERANCE_M="${DATASET_DROP_SETTLE_HEIGHT_TOLERANCE_M:-0.01}"
-DATASET_DROP_SETTLE_LINEAR_SPEED="${DATASET_DROP_SETTLE_LINEAR_SPEED:-0.10}"
-DATASET_DROP_SETTLE_ANGULAR_SPEED="${DATASET_DROP_SETTLE_ANGULAR_SPEED:-10.0}"
+DATASET_DROP_SETTLE_LINEAR_SPEED="${DATASET_DROP_SETTLE_LINEAR_SPEED:-0.03}"
+DATASET_DROP_SETTLE_ANGULAR_SPEED="${DATASET_DROP_SETTLE_ANGULAR_SPEED:-1.0}"
 DATASET_POST_ACTION_SETTLE_STEPS="${DATASET_POST_ACTION_SETTLE_STEPS:-30}"
 DATASET_ACTION_TRANSLATION_GAIN="${DATASET_ACTION_TRANSLATION_GAIN:-1.0}"
 DATASET_ACTION_ROTATION_GAIN="${DATASET_ACTION_ROTATION_GAIN:-1.0}"
@@ -135,10 +135,11 @@ valid = (
     and provenance.get("object_material_randomization")
     and provenance.get("dataset_drop_targeting_mode") == "live_object_to_bin_center"
     and provenance.get("dataset_drop_release_height_mode") == "above_bin_top_then_contained_descent"
-    and int(provenance.get("dataset_drop_controller_version") or 0) >= 4
+    and int(provenance.get("dataset_drop_controller_version") or 0) >= 5
     and provenance.get("dataset_drop_spec_source") == "exact_stable_scene"
     and all(provenance.get("episode_final_success") or [])
     and all(provenance.get("episode_drop_descent_started") or [])
+    and all(provenance.get("episode_drop_release_hold_started") or [])
     and all(bool(item.get("final_success")) for item in gate.get("episodes") or [])
 )
 raise SystemExit(0 if valid else 1)

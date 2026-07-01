@@ -74,7 +74,7 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
         != "above_bin_top_then_contained_descent"
     ):
         return None, "unsupported_drop_release_height_mode"
-    if int(recording.get("dataset_drop_controller_version") or 0) < 4:
+    if int(recording.get("dataset_drop_controller_version") or 0) < 5:
         return None, "unsupported_drop_controller_version"
     if str(recording.get("dataset_drop_spec_source") or "") != "exact_stable_scene":
         return None, "unsupported_drop_spec_source"
@@ -92,6 +92,13 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
         or not all(bool(value) for value in episode_drop_descent)
     ):
         return None, "recording_staged_descent_not_observed"
+    episode_release_hold = recording.get("episode_drop_release_hold_started")
+    if (
+        not isinstance(episode_release_hold, list)
+        or not episode_release_hold
+        or not all(bool(value) for value in episode_release_hold)
+    ):
+        return None, "recording_release_hold_not_observed"
     gate_episodes = gate.get("episodes")
     if (
         not isinstance(gate_episodes, list)

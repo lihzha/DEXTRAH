@@ -60,8 +60,8 @@ parser.add_argument("--dataset_drop_retract_gripper_width_m", type=float, defaul
 parser.add_argument("--dataset_drop_settle_max_steps", type=int, default=120)
 parser.add_argument("--dataset_drop_settle_containment_margin_m", type=float, default=0.01)
 parser.add_argument("--dataset_drop_settle_height_tolerance_m", type=float, default=0.01)
-parser.add_argument("--dataset_drop_settle_linear_speed", type=float, default=0.10)
-parser.add_argument("--dataset_drop_settle_angular_speed", type=float, default=10.0)
+parser.add_argument("--dataset_drop_settle_linear_speed", type=float, default=0.03)
+parser.add_argument("--dataset_drop_settle_angular_speed", type=float, default=1.0)
 parser.add_argument("--dataset_post_action_settle_steps", type=int, default=30)
 parser.add_argument("--recovery_phase_pattern", type=str, default="target/go_from_pre_grasp_to_grasp_pose")
 parser.add_argument("--recovery_phase_fraction", type=float, default=0.5)
@@ -2455,6 +2455,19 @@ def _dataset_pose_target_action(
             ):
                 controller_state["drop_descent_started"] = True
                 controller_state["drop_descent_just_started"] = True
+            release_z = _dataset_drop_release_z(active_drop_spec)
+            release_height_error = abs(float(live_object[2]) - release_z)
+            release_height_tolerance = max(0.0, float(args_cli.dataset_drop_settle_height_tolerance_m))
+            if (
+                controller_state["drop_release_hold_started"]
+                and release_height_error > 2.0 * release_height_tolerance
+            ):
+                controller_state["drop_release_hold_started"] = False
+            elif (
+                controller_state["drop_descent_started"]
+                and release_height_error <= release_height_tolerance
+            ):
+                controller_state["drop_release_hold_started"] = True
             if controller_state["drop_descent_started"]:
                 inward_shift_xy = np.zeros(2, dtype=np.float64)
             else:
@@ -2464,11 +2477,12 @@ def _dataset_pose_target_action(
                 )
             drop_target_tcp = live_tcp.copy()
             drop_target_tcp[:2] += inward_shift_xy
-            object_target_z = (
-                _dataset_drop_release_z(active_drop_spec)
-                if controller_state["drop_descent_started"]
-                else transport_z
-            )
+            if controller_state["drop_release_hold_started"]:
+                object_target_z = float(live_object[2])
+            elif controller_state["drop_descent_started"]:
+                object_target_z = release_z
+            else:
+                object_target_z = transport_z
             drop_target_tcp[2] += object_target_z - float(live_object[2])
             pos_delta = _bounded_position_correction(
                 drop_target_tcp - live_tcp,
@@ -2821,6 +2835,7 @@ def main() -> None:
             dataset_controller_state: dict[str, Any] = {
                 "drop_descent_started": False,
                 "drop_descent_just_started": False,
+                "drop_release_hold_started": False,
                 "drop_center_error_m": None,
                 "drop_containment_margin_m": None,
                 "drop_transport_height_error_m": None,
@@ -3071,6 +3086,9 @@ def main() -> None:
                         record["dataset_drop_descent_just_started"] = float(
                             dataset_controller_state["drop_descent_just_started"]
                         )
+                        record["dataset_drop_release_hold_started"] = float(
+                            dataset_controller_state["drop_release_hold_started"]
+                        )
                         record["dataset_drop_xy_ready"] = float(dataset_controller_state["drop_xy_ready"])
                         record["dataset_drop_center_error"] = dataset_controller_state["drop_center_error_m"]
                         record["dataset_drop_transport_containment_margin"] = dataset_controller_state[
@@ -3117,6 +3135,11 @@ def main() -> None:
                 for item in episode_records
                 if item.get("dataset_drop_descent_started") is not None
             ]
+            release_hold_values = [
+                float(item["dataset_drop_release_hold_started"])
+                for item in episode_records
+                if item.get("dataset_drop_release_hold_started") is not None
+            ]
             lift_values = [float(item["cube_lift_height"]) for item in episode_records if item.get("cube_lift_height") is not None]
             if first_done is not None:
                 done_metrics = first_done.get("pre_step_metrics") or {}
@@ -3134,6 +3157,9 @@ def main() -> None:
                 "final_success": None if not success_values else float(success_values[-1]),
                 "max_success": None if not success_values else float(max(success_values)),
                 "drop_descent_started": bool(descent_values and max(descent_values) >= 0.5),
+                "drop_release_hold_started": bool(
+                    release_hold_values and max(release_hold_values) >= 0.5
+                ),
                 "max_lift_height": None if not lift_values else float(max(lift_values)),
                 "final_object_pos": _tensor_list(task_env.cube_pos[0]) if hasattr(task_env, "cube_pos") else None,
                 "final_goal_pos": _tensor_list(task_env.cube_goal_pos[0]) if hasattr(task_env, "cube_goal_pos") else None,
@@ -3150,6 +3176,7 @@ def main() -> None:
                     episode_summary["success"]
                     and float(episode_summary["final_success"] or 0.0) >= 0.5
                     and episode_summary["drop_descent_started"]
+                    and episode_summary["drop_release_hold_started"]
                 )
                 accepted = recording_success or not bool(args_cli.recording_require_success)
                 recording_decisions.append(
@@ -3159,6 +3186,9 @@ def main() -> None:
                         "any_success": bool(episode_summary["success"]),
                         "final_success": bool(float(episode_summary["final_success"] or 0.0) >= 0.5),
                         "drop_descent_started": bool(episode_summary["drop_descent_started"]),
+                        "drop_release_hold_started": bool(
+                            episode_summary["drop_release_hold_started"]
+                        ),
                         "accepted_before_replay_gate": bool(accepted),
                         "num_steps": int(len(episode_recorded_actions)),
                     }
@@ -3260,7 +3290,7 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-                "dataset_drop_controller_version": 4,
+                "dataset_drop_controller_version": 5,
                 "dataset_drop_spec_source": "exact_stable_scene",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_transport_clearance_m": float(
@@ -3320,6 +3350,7 @@ def main() -> None:
                         item["success"]
                         and float(item["final_success"] or 0.0) >= 0.5
                         and item["drop_descent_started"]
+                        and item["drop_release_hold_started"]
                     )
                     for item in episode_summaries
                 ],
@@ -3328,6 +3359,9 @@ def main() -> None:
                 ],
                 "episode_drop_descent_started": [
                     bool(item["drop_descent_started"]) for item in episode_summaries
+                ],
+                "episode_drop_release_hold_started": [
+                    bool(item["drop_release_hold_started"]) for item in episode_summaries
                 ],
                 "success_metric": "bin_drop_success",
                 "require_success": bool(args_cli.recording_require_success),
@@ -3366,7 +3400,7 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-        "dataset_drop_controller_version": 4,
+        "dataset_drop_controller_version": 5,
         "dataset_drop_spec_source": "exact_stable_scene",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),
