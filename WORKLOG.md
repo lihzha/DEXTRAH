@@ -13382,3 +13382,23 @@ Smoke follow-up:
   the existing eval wrapper is a non-executable `sbatch` script. The array
   wrapper now validates it as a regular file and enters it explicitly through
   `bash`; the failed pilot consumed no useful GPU work and wrote no shard.
+- A stale long-train submitter on `a1003` (`PID 653779`) relaunched the invalid
+  state-difference-label training as job `29698376`. Terminated the submitter
+  and canceled the job after `00:16:55`, then checked all three A100 login
+  hosts for another matching launcher. Corrected training now uses a persistent
+  NFS-backed Torch cache for the ImageNet ResNet weights across allocations.
+- Added controller recovery collection without contaminating labels with the
+  perturbation command. The teacher first follows the successful waypoint
+  controller to a configured approach/grasp phase, executes a short bounded
+  pose perturbation without recording it, snapshots the full dynamics state,
+  and then records only teacher corrective commands and pre-action RGB/state.
+  Its action-only gate restores that post-perturbation snapshot, so the
+  recovery fragment must independently complete a settled placement. This is
+  the DAgger-style teacher-at-off-trajectory-state pattern used by DEXTRAH,
+  while phase remains collection-only metadata and never a policy input.
+- Added exact-scene closed-loop evaluation matrices for checkpoint selection.
+  Each matrix evaluates fixed training and object-disjoint validation source
+  scenes for 1,200 control steps with chunk size 1, quality rendering, hidden
+  markers, dynamics, and no early task reset. The summarizer ranks checkpoints
+  by held-out settled-bin success first, then training success, lift, and
+  closest approach; offline validation loss is retained only as a diagnostic.

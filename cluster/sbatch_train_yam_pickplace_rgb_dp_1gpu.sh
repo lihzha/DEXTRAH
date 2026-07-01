@@ -23,6 +23,7 @@ OFFICIAL_DP_NFS="${OFFICIAL_DP_NFS:-$NFS_ROOT/src/external/real-stanford-diffusi
 OFFICIAL_DP_ENV_NAME="${OFFICIAL_DP_ENV_NAME:-franka-cube-dp-bc-warmstart-official-dp}"
 RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
 CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
+TORCH_CACHE_NFS="${TORCH_CACHE_NFS:-$NFS_ROOT/cache/torch}"
 
 SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
 RUN_NAME="${RUN_NAME:-yam_pickplace_rgb_dp_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
@@ -123,6 +124,7 @@ mkdir -p \
   "$CACHE_NFS/glcache" "$CACHE_NFS/computecache" \
   "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
+mkdir -p "$TORCH_CACHE_NFS/hub/checkpoints"
 
 if [ -n "$INIT_CHECKPOINT" ]; then
   cp "$INIT_CHECKPOINT_HOST" "$TRAIN_DIR_HOST/checkpoints/latest.ckpt"
@@ -154,7 +156,7 @@ echo "STAGED_CHECKPOINT_HOST=$STAGED_CHECKPOINT_HOST"
 srun \
   --ntasks=1 \
   --container-image="$IMAGE" \
-  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$FABRICS_NFS":/fabrics,"$ISAACLAB_NFS":/IsaacLab,"$OFFICIAL_DP_NFS":/official_dp,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
+  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$FABRICS_NFS":/fabrics,"$ISAACLAB_NFS":/IsaacLab,"$OFFICIAL_DP_NFS":/official_dp,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$TORCH_CACHE_NFS":/root/.cache/torch,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
   --no-container-entrypoint \
   --container-remap-root \
   --container-writable \
@@ -170,6 +172,7 @@ srun \
       fi
     done
     export WANDB_MODE=offline
+    export TORCH_HOME=/root/.cache/torch
     mkdir -p "$TRAIN_DIR_CONTAINER/checkpoints"
     cd /official_dp
     echo "container_host=$(hostname)"

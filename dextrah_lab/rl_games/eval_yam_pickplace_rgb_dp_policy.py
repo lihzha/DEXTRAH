@@ -36,13 +36,18 @@ parser.add_argument("--policy_source", choices=("auto", "ema", "model"), default
 parser.add_argument("--task", type=str, default="Dextrah-Single-YAM-Single-Object-Policy-Grasp")
 parser.add_argument(
     "--control_mode",
-    choices=("policy", "dataset_actions", "dataset_pose_targets"),
+    choices=("policy", "dataset_actions", "dataset_pose_targets", "dataset_pose_recovery"),
     default="policy",
 )
 parser.add_argument("--dataset_action_pose_gain", type=float, default=1.0)
 parser.add_argument("--dataset_action_translation_gain", type=float, default=None)
 parser.add_argument("--dataset_action_rotation_gain", type=float, default=None)
 parser.add_argument("--dataset_target_lookahead", type=int, default=8)
+parser.add_argument("--recovery_phase_pattern", type=str, default="target/go_from_pre_grasp_to_grasp_pose")
+parser.add_argument("--recovery_phase_fraction", type=float, default=0.5)
+parser.add_argument("--recovery_perturbation_steps", type=int, default=2)
+parser.add_argument("--recovery_translation_action_max", type=float, default=0.18)
+parser.add_argument("--recovery_rotation_action_max", type=float, default=0.12)
 parser.add_argument("--disable_failure_terminations", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--disable_success_termination", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument(
@@ -361,6 +366,30 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
             "target_root_quat": _source_row(source, "target_root_quat", source_state_row).astype(np.float32),
             "target_root_velocity": _source_row(source, "target_root_velocity", source_state_row).astype(np.float32),
         }
+    initial_state_source = "source_dataset"
+    recorded_initial_states = shard_metadata.get("recording_initial_states")
+    if isinstance(recorded_initial_states, list) and len(recorded_initial_states) == 1:
+        recorded_state = recorded_initial_states[0]
+        if not isinstance(recorded_state, dict):
+            raise ValueError("recording_initial_states must contain dictionaries")
+        array_keys = (
+            "joint_position",
+            "joint_velocity",
+            "target_root_pos",
+            "target_root_quat",
+            "target_root_velocity",
+            "cube_initial_pos",
+            "cube_goal_pos",
+        )
+        initial_state = {
+            key: np.asarray(recorded_state[key], dtype=np.float32).copy()
+            for key in array_keys
+            if key in recorded_state
+        }
+        for key in ("has_lifted_cube", "in_success_region", "time_in_success_region"):
+            if key in recorded_state:
+                initial_state[key] = recorded_state[key]
+        initial_state_source = "recording_initial_states"
     stable_scene_path = _resolve_recorded_path(str(source_metadata["stable_scene_path"]), parent=source_dataset.parent)
     if not stable_scene_path.is_file():
         raise FileNotFoundError(stable_scene_path)
@@ -405,6 +434,7 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
         "source_state_row": source_state_row,
         "source_step_id": source_step_id,
         "initial_state": initial_state,
+        "initial_state_source": initial_state_source,
         "reference": reference,
         "reference_robot_trajectory": reference_robot_trajectory,
         "reference_phases": reference_phases,
@@ -426,6 +456,7 @@ def _exact_demo_summary(exact_demo: dict[str, Any] | None) -> dict[str, Any] | N
         "policy_first_rgb_row": int(exact_demo["policy_first_rgb_row"]),
         "source_state_row": int(exact_demo["source_state_row"]),
         "source_step_id": int(exact_demo["source_step_id"]),
+        "initial_state_source": str(exact_demo.get("initial_state_source", "source_dataset")),
         "num_policy_actions": int(exact_demo["actions"].shape[0]),
         "joint_position": np.asarray(state["joint_position"]).astype(float).tolist(),
         "target_root_pos": np.asarray(state["target_root_pos"]).astype(float).tolist(),
@@ -1554,8 +1585,44 @@ def _validate_exact_target_asset(task_env: Any, exact_demo: dict[str, Any]) -> d
     return {"expected_uuid": expected_uuid, "active_uuid": active_uuid, "active_index": active_index}
 
 
-def _restore_exact_demo_state(task_env: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
-    state = exact_demo["initial_state"]
+def _capture_task_dynamic_state(task_env: Any) -> dict[str, np.ndarray | bool | float]:
+    env_ids = torch.tensor([0], dtype=torch.long, device=task_env.device)
+    task_env._compute_intermediate_values(env_ids)
+    root_pos = task_env._cube.data.root_pos_w[env_ids] - task_env.scene.env_origins[env_ids]
+    root_velocity = torch.cat(
+        (task_env._cube.data.root_lin_vel_w[env_ids], task_env._cube.data.root_ang_vel_w[env_ids]), dim=-1
+    )
+    return {
+        "joint_position": _tensor_numpy(task_env._robot.data.joint_pos[env_ids])[0].copy(),
+        "joint_velocity": _tensor_numpy(task_env._robot.data.joint_vel[env_ids])[0].copy(),
+        "target_root_pos": _tensor_numpy(root_pos)[0].copy(),
+        "target_root_quat": _tensor_numpy(task_env._cube.data.root_quat_w[env_ids])[0].copy(),
+        "target_root_velocity": _tensor_numpy(root_velocity)[0].copy(),
+        "cube_initial_pos": _tensor_numpy(task_env.cube_initial_pos[env_ids])[0].copy(),
+        "cube_goal_pos": _tensor_numpy(task_env.cube_goal_pos[env_ids])[0].copy(),
+        "has_lifted_cube": bool(task_env.has_lifted_cube[0].detach().cpu()),
+        "in_success_region": bool(task_env.in_success_region[0].detach().cpu()),
+        "time_in_success_region": float(task_env.time_in_success_region[0].detach().cpu()),
+    }
+
+
+def _jsonable_dynamic_state(state: dict[str, Any]) -> dict[str, Any]:
+    output: dict[str, Any] = {}
+    for key, value in state.items():
+        if isinstance(value, np.ndarray):
+            output[key] = value.astype(float).tolist()
+        elif isinstance(value, (np.bool_, bool)):
+            output[key] = bool(value)
+        elif isinstance(value, (np.floating, float)):
+            output[key] = float(value)
+        elif isinstance(value, (np.integer, int)):
+            output[key] = int(value)
+        else:
+            output[key] = value
+    return output
+
+
+def _restore_task_dynamic_state(task_env: Any, state: dict[str, Any]) -> dict[str, Any]:
     env_ids = torch.tensor([0], dtype=torch.long, device=task_env.device)
     joint_pos = torch.as_tensor(state["joint_position"], dtype=torch.float32, device=task_env.device).reshape(1, -1)
     joint_vel = torch.as_tensor(state["joint_velocity"], dtype=torch.float32, device=task_env.device).reshape(1, -1)
@@ -1577,11 +1644,21 @@ def _restore_exact_demo_state(task_env: Any, exact_demo: dict[str, Any]) -> dict
     task_env.scene.update(dt=0.0)
 
     object_center = task_env._object_center_pos_from_root(env_ids, root_pos, root_quat)
-    task_env.cube_initial_pos[env_ids] = object_center
-    task_env.cube_goal_pos[env_ids] = task_env._tabletop_goal_pos(env_ids, object_center)
-    task_env.has_lifted_cube[env_ids] = False
-    task_env.in_success_region[env_ids] = False
-    task_env.time_in_success_region[env_ids] = 0.0
+    if "cube_initial_pos" in state:
+        task_env.cube_initial_pos[env_ids] = torch.as_tensor(
+            state["cube_initial_pos"], dtype=torch.float32, device=task_env.device
+        ).reshape(1, 3)
+    else:
+        task_env.cube_initial_pos[env_ids] = object_center
+    if "cube_goal_pos" in state:
+        task_env.cube_goal_pos[env_ids] = torch.as_tensor(
+            state["cube_goal_pos"], dtype=torch.float32, device=task_env.device
+        ).reshape(1, 3)
+    else:
+        task_env.cube_goal_pos[env_ids] = task_env._tabletop_goal_pos(env_ids, object_center)
+    task_env.has_lifted_cube[env_ids] = bool(state.get("has_lifted_cube", False))
+    task_env.in_success_region[env_ids] = bool(state.get("in_success_region", False))
+    task_env.time_in_success_region[env_ids] = float(state.get("time_in_success_region", 0.0))
     task_env.cube_speed_done[env_ids] = False
     task_env.actions[env_ids] = 0.0
     task_env.ik_controller.reset(env_ids)
@@ -1590,8 +1667,6 @@ def _restore_exact_demo_state(task_env: Any, exact_demo: dict[str, Any]) -> dict
     task_env._compute_intermediate_values(env_ids)
     restored_robot = _robot_state(task_env)
     return {
-        "source_state_row": int(exact_demo["source_state_row"]),
-        "source_step_id": int(exact_demo["source_step_id"]),
         "joint_position_max_abs_error": _max_abs_error(restored_robot[:8], state["joint_position"]),
         "joint_velocity_max_abs_error": _max_abs_error(restored_robot[8:16], state["joint_velocity"]),
         "target_root_pos_max_abs_error": _max_abs_error(
@@ -1605,6 +1680,13 @@ def _restore_exact_demo_state(task_env: Any, exact_demo: dict[str, Any]) -> dict
         "target_center_pos": _tensor_list(object_center[0]),
         "goal_pos": _tensor_list(task_env.cube_goal_pos[0]),
     }
+
+
+def _restore_exact_demo_state(task_env: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
+    summary = _restore_task_dynamic_state(task_env, exact_demo["initial_state"])
+    summary["source_state_row"] = int(exact_demo["source_state_row"])
+    summary["source_step_id"] = int(exact_demo["source_step_id"])
+    return summary
 
 
 def _array_error_metrics(actual: np.ndarray, expected: np.ndarray) -> dict[str, Any]:
@@ -1834,6 +1916,7 @@ def _replay_recorded_episode_gate(
     *,
     actions: list[np.ndarray],
     robot_states: list[np.ndarray],
+    initial_state: dict[str, Any] | None,
     seed: int,
 ) -> dict[str, Any]:
     if len(actions) != len(robot_states) or not actions:
@@ -1841,7 +1924,11 @@ def _replay_recorded_episode_gate(
             f"Replay gate requires equal non-empty action/state sequences, got {len(actions)}/{len(robot_states)}"
         )
     _policy_obs_from_reset(gym_env.reset(seed=int(seed)))
-    reset_summary = _restore_exact_demo_state(task_env, exact_demo)
+    reset_summary = (
+        _restore_task_dynamic_state(task_env, initial_state)
+        if initial_state is not None
+        else _restore_exact_demo_state(task_env, exact_demo)
+    )
     max_tcp_error = 0.0
     max_joint_error = 0.0
     bin_drop_time_s = 0.0
@@ -1946,6 +2033,7 @@ def _write_recorded_policy_shard(
     robot_state: list[np.ndarray],
     actions: list[np.ndarray],
     episode_ends: list[int],
+    initial_states: list[dict[str, Any]],
     recording: dict[str, Any],
 ) -> dict[str, Any]:
     if not actions:
@@ -1966,6 +2054,11 @@ def _write_recorded_policy_shard(
 
     source_metadata = exact_demo["shard_metadata"]
     source_trim = source_metadata.get("trim") if isinstance(source_metadata.get("trim"), dict) else {}
+    reference_step_offsets = [int(value) for value in recording.get("reference_step_offsets", [0])]
+    if len(reference_step_offsets) != len(initial_states):
+        raise ValueError(
+            f"Expected one reference offset per initial state, got {len(reference_step_offsets)}/{len(initial_states)}"
+        )
     metadata = {
         "source_dataset": str(exact_demo["source_dataset"]),
         "source_row": source_metadata.get("source_row"),
@@ -1974,7 +2067,7 @@ def _write_recorded_policy_shard(
         "policy_inputs": ["scene_rgb", "wrist_rgb", "robot_state"],
         "excluded_inputs": ["phase", "progress", "object_state", "bin_state", "target_state", "privileged_obs"],
         "trim": {
-            "start_row": int(exact_demo["policy_first_rgb_row"]),
+            "start_row": int(exact_demo["policy_first_rgb_row"]) + int(reference_step_offsets[0]),
             "original_num_steps": int(source_trim.get("original_num_steps", row_count)),
             "num_steps": row_count,
         },
@@ -1983,6 +2076,7 @@ def _write_recorded_policy_shard(
             "rotation_scale": list(YAM_POSE_ACTION_SCALE[3:]),
             "gripper_label_source": "executed_controller_command",
         },
+        "recording_initial_states": [_jsonable_dynamic_state(state) for state in initial_states],
         "recording": recording,
     }
     (shard_path / "metadata.json").write_text(
@@ -2103,6 +2197,81 @@ def _dataset_pose_target_action(
     return action, int(target_idx)
 
 
+def _scaled_clipped_dataset_action(action: np.ndarray) -> np.ndarray:
+    output = np.asarray(action, dtype=np.float32).copy()
+    translation_gain = (
+        float(args_cli.dataset_action_pose_gain)
+        if args_cli.dataset_action_translation_gain is None
+        else float(args_cli.dataset_action_translation_gain)
+    )
+    rotation_gain = (
+        float(args_cli.dataset_action_pose_gain)
+        if args_cli.dataset_action_rotation_gain is None
+        else float(args_cli.dataset_action_rotation_gain)
+    )
+    output[:, :3] *= translation_gain
+    output[:, 3:6] *= rotation_gain
+    clip = float(args_cli.clip_actions)
+    if math.isfinite(clip) and clip > 0.0:
+        output = np.clip(output, -clip, clip)
+    return output
+
+
+def _prepare_pose_recovery_episode(
+    gym_env: Any,
+    task_env: Any,
+    exact_demo: dict[str, Any],
+    rng: np.random.Generator,
+) -> dict[str, Any]:
+    phases = exact_demo.get("reference_phases")
+    if phases is None:
+        raise ValueError("dataset_pose_recovery requires source phase annotations")
+    pattern = str(args_cli.recovery_phase_pattern)
+    matching = np.flatnonzero(np.char.find(np.asarray(phases, dtype=str), pattern) >= 0)
+    if matching.size == 0:
+        raise ValueError(f"Recovery phase pattern {pattern!r} does not match any source phase")
+    fraction = float(args_cli.recovery_phase_fraction)
+    if not 0.0 <= fraction <= 1.0:
+        raise ValueError("--recovery_phase_fraction must lie in [0, 1]")
+    phase_offset = int(round(fraction * max(0, matching.size - 1)))
+    reference_step_offset = int(matching[phase_offset])
+    for teacher_step in range(reference_step_offset):
+        raw_action, _ = _dataset_pose_target_action(task_env, exact_demo, teacher_step)
+        action_np = _scaled_clipped_dataset_action(raw_action)
+        action_tensor = torch.as_tensor(action_np, dtype=torch.float32, device=task_env.device)
+        _, _, terminated, truncated, _ = _policy_obs_from_step(gym_env.step(action_tensor))
+        if bool(torch.logical_or(terminated, truncated).any()):
+            raise RuntimeError(f"Recovery warm start terminated at step {teacher_step + 1}")
+
+    perturbation_steps = max(1, int(args_cli.recovery_perturbation_steps))
+    translation_max = max(0.0, float(args_cli.recovery_translation_action_max))
+    rotation_max = max(0.0, float(args_cli.recovery_rotation_action_max))
+    perturbation = np.zeros((1, 7), dtype=np.float32)
+    perturbation[0, :2] = rng.uniform(-translation_max, translation_max, size=2)
+    perturbation[0, 2] = rng.uniform(-0.25 * translation_max, translation_max)
+    perturbation[0, 3:6] = rng.uniform(-rotation_max, rotation_max, size=3)
+    perturbation[0, 6] = float(exact_demo["actions"][reference_step_offset, 6])
+    perturbation = _scaled_clipped_dataset_action(perturbation)
+    for perturbation_step in range(perturbation_steps):
+        action_tensor = torch.as_tensor(perturbation, dtype=torch.float32, device=task_env.device)
+        _, _, terminated, truncated, _ = _policy_obs_from_step(gym_env.step(action_tensor))
+        if bool(torch.logical_or(terminated, truncated).any()):
+            raise RuntimeError(f"Recovery perturbation terminated at step {perturbation_step + 1}")
+    task_env._compute_intermediate_values()
+    initial_state = _capture_task_dynamic_state(task_env)
+    return {
+        "enabled": True,
+        "phase_pattern": pattern,
+        "phase_fraction": fraction,
+        "phase_name": str(phases[reference_step_offset]),
+        "reference_step_offset": reference_step_offset,
+        "warm_start_steps": reference_step_offset,
+        "perturbation_steps": perturbation_steps,
+        "perturbation_action": perturbation.reshape(-1).astype(float).tolist(),
+        "initial_state": initial_state,
+    }
+
+
 def _policy_obs_from_reset(reset_out: Any) -> torch.Tensor:
     obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
     return obs["policy"] if isinstance(obs, dict) else obs
@@ -2137,10 +2306,13 @@ def main() -> None:
         raise FileNotFoundError(checkpoint or "--checkpoint is required for --control_mode=policy")
     exact_shard = Path(args_cli.exact_policy_shard) if str(args_cli.exact_policy_shard).strip() else None
     exact_demo = _load_exact_demo(exact_shard, output_dir) if exact_shard is not None else None
-    if control_mode in {"dataset_actions", "dataset_pose_targets"} and exact_demo is None:
+    dataset_control_modes = {"dataset_actions", "dataset_pose_targets", "dataset_pose_recovery"}
+    if control_mode in dataset_control_modes and exact_demo is None:
         raise ValueError(f"--control_mode={control_mode} requires --exact_policy_shard")
     if record_policy_shard is not None and exact_demo is None:
         raise ValueError("--record_policy_shard requires --exact_policy_shard")
+    if control_mode == "dataset_pose_recovery" and record_policy_shard is None:
+        raise ValueError("--control_mode=dataset_pose_recovery requires --record_policy_shard")
     if int(args_cli.num_episodes) < 1:
         raise ValueError("--num_episodes must be positive")
 
@@ -2266,6 +2438,7 @@ def main() -> None:
     env_closed = False
     debug_obs_paths: list[str] = []
     exact_reset_summaries: list[dict[str, Any]] = []
+    recovery_summaries: list[dict[str, Any]] = []
     exact_observation_parity: dict[str, Any] | None = None
     recorded_scene_rgb: list[np.ndarray] = []
     recorded_wrist_rgb: list[np.ndarray] = []
@@ -2281,9 +2454,21 @@ def main() -> None:
         for episode in range(int(args_cli.num_episodes)):
             _policy_obs_from_reset(gym_env.reset(seed=int(args_cli.seed) + episode))
             exact_reset_summary = None
+            recovery_summary = None
+            reference_step_offset = 0
+            episode_initial_state = None
             if exact_demo is not None:
                 exact_reset_summary = _restore_exact_demo_state(task_env, exact_demo)
                 exact_reset_summaries.append(exact_reset_summary)
+                if control_mode == "dataset_pose_recovery":
+                    recovery_summary = _prepare_pose_recovery_episode(gym_env, task_env, exact_demo, rng)
+                    recovery_summaries.append(
+                        {key: value for key, value in recovery_summary.items() if key != "initial_state"}
+                    )
+                    reference_step_offset = int(recovery_summary["reference_step_offset"])
+                    episode_initial_state = recovery_summary["initial_state"]
+                else:
+                    episode_initial_state = _capture_task_dynamic_state(task_env)
             _warm_up_observation_rendering(
                 gym_env,
                 task_env,
@@ -2292,7 +2477,11 @@ def main() -> None:
                 scene_target,
             )
             obs = _capture_obs(gym_env, task_env, wrist_camera, scene_eye, scene_target)
-            if exact_demo is not None and exact_observation_parity is None:
+            if (
+                exact_demo is not None
+                and exact_observation_parity is None
+                and control_mode != "dataset_pose_recovery"
+            ):
                 exact_observation_parity = _audit_exact_observation(output_dir, obs, exact_demo)
                 _stage("exact_observation_parity", **exact_observation_parity)
             current_obs = obs
@@ -2319,32 +2508,24 @@ def main() -> None:
             for step in range(int(args_cli.num_steps)):
                 if not simulation_app.is_running():
                     break
-                if control_mode in {"dataset_actions", "dataset_pose_targets"} and step >= int(
-                    exact_demo["actions"].shape[0]
-                ):
+                dataset_step = int(step) + int(reference_step_offset)
+                if control_mode in dataset_control_modes and dataset_step >= int(exact_demo["actions"].shape[0]):
                     break
                 task_env._compute_intermediate_values()
                 pre_step_metrics = _collect_task_metrics(task_env)
                 pre_step_object_pos = _tensor_list(task_env.cube_pos[0])
                 new_policy_call = False
                 dataset_target_idx = None
-                if control_mode in {"dataset_actions", "dataset_pose_targets"}:
-                    if control_mode == "dataset_pose_targets":
-                        raw_action_np, dataset_target_idx = _dataset_pose_target_action(task_env, exact_demo, step)
+                if control_mode in dataset_control_modes:
+                    if control_mode in {"dataset_pose_targets", "dataset_pose_recovery"}:
+                        raw_action_np, dataset_target_idx = _dataset_pose_target_action(
+                            task_env, exact_demo, dataset_step
+                        )
                     else:
-                        raw_action_np = np.asarray(exact_demo["actions"][step : step + 1], dtype=np.float32)
-                    translation_gain = (
-                        float(args_cli.dataset_action_pose_gain)
-                        if args_cli.dataset_action_translation_gain is None
-                        else float(args_cli.dataset_action_translation_gain)
-                    )
-                    rotation_gain = (
-                        float(args_cli.dataset_action_pose_gain)
-                        if args_cli.dataset_action_rotation_gain is None
-                        else float(args_cli.dataset_action_rotation_gain)
-                    )
-                    raw_action_np[:, :3] *= translation_gain
-                    raw_action_np[:, 3:6] *= rotation_gain
+                        raw_action_np = np.asarray(
+                            exact_demo["actions"][dataset_step : dataset_step + 1], dtype=np.float32
+                        )
+                    raw_action_np = _scaled_clipped_dataset_action(raw_action_np)
                 elif action_queue.shape[1] == 0:
                     assert policy is not None
                     action_seq = _predict_action_sequence(policy, history, policy_call_idx)
@@ -2409,7 +2590,7 @@ def main() -> None:
                         }
 
                 if (
-                    control_mode in {"dataset_actions", "dataset_pose_targets"}
+                    control_mode in dataset_control_modes
                     and debug_interval <= 0
                     and record_policy_shard is None
                 ):
@@ -2442,10 +2623,10 @@ def main() -> None:
                     **task_metrics,
                     **bin_metrics,
                 }
-                if control_mode in {"dataset_actions", "dataset_pose_targets"}:
+                if control_mode in dataset_control_modes:
                     live_robot_state = _robot_state(task_env)
                     reference_row = exact_demo["reference_robot_trajectory"][
-                        min(step + 1, int(exact_demo["reference_robot_trajectory"].shape[0]) - 1)
+                        min(dataset_step + 1, int(exact_demo["reference_robot_trajectory"].shape[0]) - 1)
                     ]
                     record["dataset_joint_position_l2_error"] = float(
                         np.linalg.norm(live_robot_state[:8] - reference_row[:8])
@@ -2505,6 +2686,9 @@ def main() -> None:
                 "final_gripper_width": _mean_float(getattr(task_env, "gripper_width", None)),
                 "final_robot_state": _robot_state(task_env).astype(float).tolist(),
                 "exact_reset": exact_reset_summary,
+                "recovery": None
+                if recovery_summary is None
+                else {key: value for key, value in recovery_summary.items() if key != "initial_state"},
             }
             episode_summaries.append(episode_summary)
             if record_policy_shard is not None:
@@ -2528,6 +2712,11 @@ def main() -> None:
                             "episode": int(episode),
                             "actions": episode_recorded_actions,
                             "robot_states": episode_recorded_robot_state,
+                            "initial_state": episode_initial_state,
+                            "reference_step_offset": int(reference_step_offset),
+                            "recovery": None
+                            if recovery_summary is None
+                            else {key: value for key, value in recovery_summary.items() if key != "initial_state"},
                         }
                     )
         if record_policy_shard is not None:
@@ -2552,6 +2741,7 @@ def main() -> None:
                         bin_drop_spec,
                         actions=recording["actions"],
                         robot_states=recording["robot_states"],
+                        initial_state=recording["initial_state"],
                         seed=int(args_cli.seed) + 100_000 + gate_idx,
                     )
                     gate_result["episode"] = int(recording["episode"])
@@ -2589,6 +2779,7 @@ def main() -> None:
             robot_state=recorded_robot_state,
             actions=recorded_actions,
             episode_ends=recorded_episode_ends,
+            initial_states=[recording["initial_state"] for recording in accepted_recordings],
             recording={
                 "control_mode": control_mode,
                 "dataset_target_lookahead": int(args_cli.dataset_target_lookahead),
@@ -2615,6 +2806,10 @@ def main() -> None:
                 "require_success": bool(args_cli.recording_require_success),
                 "recording_decisions": recording_decisions,
                 "replay_gate": recording_replay_gate_summary,
+                "reference_step_offsets": [
+                    int(recording["reference_step_offset"]) for recording in accepted_recordings
+                ],
+                "recovery": [recording["recovery"] for recording in accepted_recordings],
             },
         )
 
@@ -2655,6 +2850,7 @@ def main() -> None:
         "exact_config": exact_config_summary,
         "exact_asset": exact_asset_summary,
         "exact_resets": exact_reset_summaries,
+        "recovery_preparations": recovery_summaries,
         "exact_observation_parity": exact_observation_parity,
         "bin_drop_spec": bin_drop_spec,
         "episode_length": episode_length_summary,
