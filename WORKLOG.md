@@ -13508,6 +13508,13 @@ Smoke follow-up:
   on nominal success so the full bounded 30-step open-gripper tail is retained.
   This provides at most `0.5 s` of replay stabilization after the active retreat
   and remains far shorter than the long idle segments excluded from collection.
+- Full-tail pilot `1080574` passed source 0 nominal and action-only replay with
+  1,079 recorded commands. Replay ended with `89.0 mm` and `40.0 mm`
+  object-aware containment margins. Together with the accepted source 1/2
+  retreat shards, all three formerly diagnostic cases now have independently
+  replayable controller-native data. The 10-source production collection will
+  seed those accepted shards and launch only sources 3-9 to avoid duplicate L40S
+  rendering.
 - Hardened the A100 training launch against stale code: the one-GPU wrapper now
   checks `CODE_COMMIT` against its mounted worktree before container startup,
   and the persistent submitter forwards the pinned revision on every resume.
