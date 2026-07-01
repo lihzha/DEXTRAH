@@ -13416,3 +13416,12 @@ Smoke follow-up:
   against the successful source object trajectory to correct grasp-offset and
   transport/drop drift. Object state is teacher-only privileged information;
   stored policy observations remain RGB plus robot state.
+- Feedback pilot `1080320` moved source 1 from roughly `-6 mm/-6 mm` final
+  containment margins to `-0.69 mm/+0.24 mm`, confirming that held-object
+  feedback addresses drop drift but needs full gain. Source 2 still missed the
+  grasp and retained a `0.924 rad` peak orientation error. The next teacher
+  iteration therefore uses gain `1.0` for source-object feedback and bounded
+  adaptive retiming during all pre-grasp/grasp phases: a reference waypoint may
+  repeat at most twice while the TCP is outside `1 cm`/`0.20 rad` tolerance.
+  These are corrective motion commands, not stop/wait frames, and the rollout
+  receives up to 512 extra control steps to finish the source plan.

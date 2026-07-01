@@ -44,7 +44,10 @@ parser.add_argument("--dataset_action_translation_gain", type=float, default=Non
 parser.add_argument("--dataset_action_rotation_gain", type=float, default=None)
 parser.add_argument("--dataset_target_lookahead", type=int, default=8)
 parser.add_argument("--dataset_precision_lookahead", type=int, default=2)
-parser.add_argument("--dataset_object_feedback_gain", type=float, default=0.5)
+parser.add_argument("--dataset_object_feedback_gain", type=float, default=1.0)
+parser.add_argument("--dataset_precision_position_tolerance_m", type=float, default=0.01)
+parser.add_argument("--dataset_precision_rotation_tolerance_rad", type=float, default=0.20)
+parser.add_argument("--dataset_precision_max_repeats", type=int, default=2)
 parser.add_argument("--recovery_phase_pattern", type=str, default="target/go_from_pre_grasp_to_grasp_pose")
 parser.add_argument("--recovery_phase_fraction", type=float, default=0.5)
 parser.add_argument("--recovery_perturbation_steps", type=int, default=2)
@@ -2189,6 +2192,19 @@ def _predict_action_sequence(policy: Any, history: RgbRobotObsHistory, call_idx:
     return action.detach().cpu().numpy()
 
 
+def _is_precision_grasp_phase(phase: str) -> bool:
+    return any(
+        token in str(phase)
+        for token in (
+            "go_to_pre_grasp_pose",
+            "hold_at_pre_grasp",
+            "go_from_pre_grasp_to_grasp_pose",
+            "hold_at_grasp",
+            "close_fingers",
+        )
+    )
+
+
 def _dataset_pose_target_action(
     task_env: Any,
     exact_demo: dict[str, Any],
@@ -2198,10 +2214,7 @@ def _dataset_pose_target_action(
     phases = exact_demo.get("reference_phases")
     phase = "" if phases is None else str(phases[min(int(step), int(len(phases)) - 1)])
     lookahead = max(1, int(args_cli.dataset_target_lookahead))
-    if any(
-        token in phase
-        for token in ("hold_at_pre_grasp", "go_from_pre_grasp_to_grasp_pose", "hold_at_grasp", "close_fingers")
-    ):
+    if _is_precision_grasp_phase(phase):
         lookahead = min(lookahead, max(1, int(args_cli.dataset_precision_lookahead)))
     target_idx = min(
         int(step) + lookahead,
@@ -2545,10 +2558,12 @@ def main() -> None:
             bin_drop_time_s = 0.0
             chunk_steps_requested = max(1, int(args_cli.action_chunk_steps))
             debug_interval = max(0, int(args_cli.debug_obs_interval))
+            dataset_reference_step = int(reference_step_offset)
+            precision_repeat_count = 0
             for step in range(int(args_cli.num_steps)):
                 if not simulation_app.is_running():
                     break
-                dataset_step = int(step) + int(reference_step_offset)
+                dataset_step = int(dataset_reference_step)
                 if control_mode in dataset_control_modes and dataset_step >= int(exact_demo["actions"].shape[0]):
                     break
                 task_env._compute_intermediate_values()
@@ -2687,6 +2702,44 @@ def main() -> None:
                     record["dataset_gripper_width_abs_error"] = float(
                         abs(float(live_robot_state[23]) - float(reference_row[23]))
                     )
+                    record["dataset_reference_step"] = int(dataset_step)
+                    if control_mode in {"dataset_pose_targets", "dataset_pose_recovery"}:
+                        assert dataset_target_idx is not None
+                        phases = exact_demo.get("reference_phases")
+                        phase = "" if phases is None else str(phases[min(dataset_step, int(len(phases)) - 1)])
+                        precision_phase = _is_precision_grasp_phase(phase)
+                        precision_target = exact_demo["reference_robot_trajectory"][int(dataset_target_idx)]
+                        precision_position_error = float(
+                            np.linalg.norm(live_robot_state[16:19] - precision_target[16:19])
+                        )
+                        precision_quat_dot = float(
+                            abs(np.dot(live_robot_state[19:23], precision_target[19:23]))
+                        )
+                        precision_rotation_error = float(
+                            2.0 * math.acos(float(np.clip(precision_quat_dot, 0.0, 1.0)))
+                        )
+                        within_precision_tolerance = (
+                            precision_position_error
+                            <= max(0.0, float(args_cli.dataset_precision_position_tolerance_m))
+                            and precision_rotation_error
+                            <= max(0.0, float(args_cli.dataset_precision_rotation_tolerance_rad))
+                        )
+                        repeat_reference = bool(
+                            precision_phase
+                            and not within_precision_tolerance
+                            and precision_repeat_count < max(0, int(args_cli.dataset_precision_max_repeats))
+                        )
+                        record["dataset_precision_phase"] = float(precision_phase)
+                        record["dataset_precision_position_error"] = precision_position_error
+                        record["dataset_precision_rotation_error"] = precision_rotation_error
+                        record["dataset_reference_repeated"] = float(repeat_reference)
+                        if repeat_reference:
+                            precision_repeat_count += 1
+                        else:
+                            dataset_reference_step += 1
+                            precision_repeat_count = 0
+                    else:
+                        dataset_reference_step += 1
                 step_metrics.append(record)
                 episode_records.append(record)
                 if args_cli.print_interval > 0 and ((step + 1) % int(args_cli.print_interval) == 0 or step == 0):
@@ -2825,6 +2878,13 @@ def main() -> None:
                 "dataset_target_lookahead": int(args_cli.dataset_target_lookahead),
                 "dataset_precision_lookahead": int(args_cli.dataset_precision_lookahead),
                 "dataset_object_feedback_gain": float(args_cli.dataset_object_feedback_gain),
+                "dataset_precision_position_tolerance_m": float(
+                    args_cli.dataset_precision_position_tolerance_m
+                ),
+                "dataset_precision_rotation_tolerance_rad": float(
+                    args_cli.dataset_precision_rotation_tolerance_rad
+                ),
+                "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
                 "dataset_action_translation_gain": (
                     float(args_cli.dataset_action_pose_gain)
                     if args_cli.dataset_action_translation_gain is None
@@ -2874,6 +2934,9 @@ def main() -> None:
         "dataset_target_lookahead": int(args_cli.dataset_target_lookahead),
         "dataset_precision_lookahead": int(args_cli.dataset_precision_lookahead),
         "dataset_object_feedback_gain": float(args_cli.dataset_object_feedback_gain),
+        "dataset_precision_position_tolerance_m": float(args_cli.dataset_precision_position_tolerance_m),
+        "dataset_precision_rotation_tolerance_rad": float(args_cli.dataset_precision_rotation_tolerance_rad),
+        "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
         "checkpoint": None if checkpoint is None else str(checkpoint),
         "official_workspace": None if workspace is None else workspace.__class__.__name__,
         "policy_class": None if policy is None else policy.__class__.__name__,
