@@ -1,0 +1,131 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --account=nvr_lpr_rvp
+#SBATCH --gpus-per-node=1
+#SBATCH --job-name=yam_ctrl_record
+#SBATCH --partition=batch
+#SBATCH --time=00:30:00
+#SBATCH --mem=160G
+#SBATCH --cpus-per-task=16
+#SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/record_yam_controller_native_%A_%a.out
+
+set -euo pipefail
+
+NFS_ROOT="${NFS_ROOT:-/lustre/fsw/portfolios/nvr/users/lzha}"
+CODE_NFS="${CODE_NFS:-$NFS_ROOT/src/DEXTRAH}"
+RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
+SOURCE_MANIFEST="${SOURCE_MANIFEST:?Set SOURCE_MANIFEST to the original 500-shard manifest.}"
+OUTPUT_ROOT="${OUTPUT_ROOT:?Set OUTPUT_ROOT for controller-native records.}"
+EVAL_WRAPPER="${EVAL_WRAPPER:-$CODE_NFS/cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh}"
+SOURCE_INDEX="${SOURCE_INDEX:-${SLURM_ARRAY_TASK_ID:?Set SOURCE_INDEX or submit as a Slurm array.}}"
+DATASET_RUN_NAME="${DATASET_RUN_NAME:-$(basename "$OUTPUT_ROOT")}"
+CODE_COMMIT="${CODE_COMMIT:-}"
+
+DATASET_TARGET_LOOKAHEAD="${DATASET_TARGET_LOOKAHEAD:-8}"
+DATASET_ACTION_TRANSLATION_GAIN="${DATASET_ACTION_TRANSLATION_GAIN:-1.0}"
+DATASET_ACTION_ROTATION_GAIN="${DATASET_ACTION_ROTATION_GAIN:-1.0}"
+RENDERING_MODE="${RENDERING_MODE:-quality}"
+CAPTURE_VIDEO="${CAPTURE_VIDEO:-False}"
+VIDEO_EVERY="${VIDEO_EVERY:-0}"
+PRINT_INTERVAL="${PRINT_INTERVAL:-100}"
+SEED_BASE="${SEED_BASE:-79000001}"
+
+if [ ! -f "$SOURCE_MANIFEST" ]; then
+  echo "Missing source manifest: $SOURCE_MANIFEST" >&2
+  exit 2
+fi
+if [ ! -x "$EVAL_WRAPPER" ]; then
+  echo "Missing or non-executable eval wrapper: $EVAL_WRAPPER" >&2
+  exit 2
+fi
+if [ -n "$CODE_COMMIT" ]; then
+  actual_commit="$(git -C "$CODE_NFS" rev-parse HEAD)"
+  if [ "$actual_commit" != "$CODE_COMMIT" ]; then
+    echo "CODE_COMMIT mismatch: expected $CODE_COMMIT got $actual_commit" >&2
+    exit 2
+  fi
+fi
+
+mapfile -t SOURCE_FIELDS < <(
+  python3 - "$SOURCE_MANIFEST" "$SOURCE_INDEX" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest = Path(sys.argv[1])
+index = int(sys.argv[2])
+payload = json.loads(manifest.read_text(encoding="utf-8"))
+shards = payload.get("shards") or []
+if not 0 <= index < len(shards):
+    raise SystemExit(f"source index {index} outside [0, {len(shards)})")
+row = shards[index]
+print(row["path"])
+print(int(row.get("num_steps") or row["action_shape"][0]))
+PY
+)
+if [ "${#SOURCE_FIELDS[@]}" -ne 2 ]; then
+  echo "Failed to resolve source shard $SOURCE_INDEX from $SOURCE_MANIFEST" >&2
+  exit 2
+fi
+
+SOURCE_SHARD="${SOURCE_FIELDS[0]}"
+NUM_STEPS="${SOURCE_FIELDS[1]}"
+SOURCE_INDEX_PADDED="$(printf '%06d' "$SOURCE_INDEX")"
+RECORD_DIR="$OUTPUT_ROOT/records/source_$SOURCE_INDEX_PADDED"
+RECORD_POLICY_SHARD="$RECORD_DIR/policy_dataset/yam_rgb_policy_$SOURCE_INDEX_PADDED"
+RUN_NAME="${DATASET_RUN_NAME}_source_${SOURCE_INDEX_PADDED}"
+METRICS_PATH="$RESULTS_NFS/evals/$RUN_NAME/metrics.json"
+
+if [ -s "$RECORD_POLICY_SHARD/metadata.json" ] && [ -s "$METRICS_PATH" ]; then
+  if python3 - "$METRICS_PATH" <<'PY'
+import json
+import sys
+
+summary = json.load(open(sys.argv[1], "r", encoding="utf-8")).get("summary", {})
+recording = summary.get("recording") or {}
+gate = recording.get("replay_gate") or {}
+raise SystemExit(0 if recording.get("accepted") and gate.get("passed") else 1)
+PY
+  then
+    echo "Controller-native shard already passed: $RECORD_POLICY_SHARD"
+    exit 0
+  fi
+fi
+
+if [ "$VIDEO_EVERY" -gt 0 ] && [ $((SOURCE_INDEX % VIDEO_EVERY)) -eq 0 ]; then
+  CAPTURE_VIDEO=True
+fi
+
+mkdir -p "$RECORD_DIR" "$OUTPUT_ROOT"
+echo "source_index=$SOURCE_INDEX"
+echo "source_shard=$SOURCE_SHARD"
+echo "num_steps=$NUM_STEPS"
+echo "record_policy_shard=$RECORD_POLICY_SHARD"
+echo "run_name=$RUN_NAME"
+
+exec env \
+  CODE_NFS="$CODE_NFS" \
+  RESULTS_NFS="$RESULTS_NFS" \
+  CODE_COMMIT="$CODE_COMMIT" \
+  RUN_NAME="$RUN_NAME" \
+  CONTROL_MODE=dataset_pose_targets \
+  EXACT_POLICY_SHARD="$SOURCE_SHARD" \
+  RECORD_POLICY_SHARD="$RECORD_POLICY_SHARD" \
+  NUM_EPISODES=1 \
+  NUM_STEPS="$NUM_STEPS" \
+  DATASET_TARGET_LOOKAHEAD="$DATASET_TARGET_LOOKAHEAD" \
+  DATASET_ACTION_TRANSLATION_GAIN="$DATASET_ACTION_TRANSLATION_GAIN" \
+  DATASET_ACTION_ROTATION_GAIN="$DATASET_ACTION_ROTATION_GAIN" \
+  DISABLE_FAILURE_TERMINATIONS=True \
+  DISABLE_SUCCESS_TERMINATION=True \
+  STOP_ON_DONE=False \
+  RECORDING_REQUIRE_SUCCESS=True \
+  RECORDING_REPLAY_GATE=True \
+  CAPTURE_VIDEO="$CAPTURE_VIDEO" \
+  VIDEO_LENGTH="$NUM_STEPS" \
+  PRINT_INTERVAL="$PRINT_INTERVAL" \
+  RENDERING_MODE="$RENDERING_MODE" \
+  SEED="$((SEED_BASE + SOURCE_INDEX))" \
+  HIDE_ROBOT_DEBUG_SITES=True \
+  "$EVAL_WRAPPER"

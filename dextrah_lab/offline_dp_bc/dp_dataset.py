@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 import torch
+import torch.nn.functional as torch_functional
 
 try:
     from diffusion_policy.common.normalize_util import (
@@ -565,6 +566,7 @@ class YamRgbShardedDataset(BaseImageDataset):
         robot_state_key: str = "robot_state",
         obs_robot_state_name: str = "robot_state",
         normalizer_checkpoint: str | None = None,
+        image_augmentation: dict[str, Any] | None = None,
     ):
         super().__init__()
         self.manifest_path = str(manifest_path)
@@ -580,6 +582,7 @@ class YamRgbShardedDataset(BaseImageDataset):
         self.robot_state_key = str(robot_state_key)
         self.obs_robot_state_name = str(obs_robot_state_name)
         self.normalizer_checkpoint = None if normalizer_checkpoint in (None, "") else str(normalizer_checkpoint)
+        self.image_augmentation = dict(image_augmentation or {})
         if not self.image_keys:
             raise ValueError("image_keys must not be empty")
 
@@ -641,7 +644,18 @@ class YamRgbShardedDataset(BaseImageDataset):
     def _make_train_episode_mask(self) -> np.ndarray:
         n_eps = int(len(self.shard_paths))
         rng = np.random.default_rng(self.seed)
-        if self.val_ratio <= 0.0 or n_eps == 1:
+        explicit_splits = [row.get("split") for row in self._shard_rows]
+        if any(split is not None for split in explicit_splits):
+            invalid = [split for split in explicit_splits if split not in {"train", "val"}]
+            if invalid:
+                raise ValueError(
+                    "When any manifest shard defines split, every shard must use 'train' or 'val'; "
+                    f"invalid values: {invalid[:5]}"
+                )
+            train_mask = np.asarray([split == "train" for split in explicit_splits], dtype=bool)
+            if not train_mask.any() or train_mask.all():
+                raise ValueError("Explicit manifest split must contain at least one train and one val shard")
+        elif self.val_ratio <= 0.0 or n_eps == 1:
             train_mask = np.ones(n_eps, dtype=bool)
         else:
             val_count = min(max(1, round(n_eps * min(max(self.val_ratio, 0.0), 1.0))), n_eps - 1)
@@ -782,6 +796,61 @@ class YamRgbShardedDataset(BaseImageDataset):
             frames = frames / 255.0
         return frames
 
+    def _augment_image_sequence(self, frames: torch.Tensor) -> torch.Tensor:
+        cfg = self.image_augmentation
+        if self.split != "train" or not bool(cfg.get("enabled", False)):
+            return frames
+        if frames.ndim != 4 or frames.shape[1] != 3:
+            raise ValueError(f"Expected TCHW RGB frames for augmentation, got {tuple(frames.shape)}")
+
+        crop_scale = cfg.get("crop_scale", (1.0, 1.0))
+        crop_min, crop_max = float(crop_scale[0]), float(crop_scale[1])
+        if not 0.0 < crop_min <= crop_max <= 1.0:
+            raise ValueError(f"image_augmentation.crop_scale must lie in (0,1], got {crop_scale}")
+        height, width = int(frames.shape[-2]), int(frames.shape[-1])
+        if crop_min < 1.0:
+            scale = float(torch.empty(()).uniform_(crop_min, crop_max))
+            crop_h = max(2, min(height, round(height * scale)))
+            crop_w = max(2, min(width, round(width * scale)))
+            top = int(torch.randint(0, height - crop_h + 1, ()).item())
+            left = int(torch.randint(0, width - crop_w + 1, ()).item())
+            frames = torch_functional.interpolate(
+                frames[:, :, top : top + crop_h, left : left + crop_w],
+                size=(height, width),
+                mode="bilinear",
+                align_corners=False,
+                antialias=True,
+            )
+
+        brightness = float(cfg.get("brightness", 0.0))
+        if brightness > 0.0:
+            frames = frames * float(torch.empty(()).uniform_(1.0 - brightness, 1.0 + brightness))
+        contrast = float(cfg.get("contrast", 0.0))
+        if contrast > 0.0:
+            factor = float(torch.empty(()).uniform_(1.0 - contrast, 1.0 + contrast))
+            mean = frames.mean(dim=(-2, -1), keepdim=True)
+            frames = mean + factor * (frames - mean)
+        saturation = float(cfg.get("saturation", 0.0))
+        if saturation > 0.0:
+            factor = float(torch.empty(()).uniform_(1.0 - saturation, 1.0 + saturation))
+            gray = (
+                0.2989 * frames[:, 0:1]
+                + 0.5870 * frames[:, 1:2]
+                + 0.1140 * frames[:, 2:3]
+            )
+            frames = gray + factor * (frames - gray)
+        gamma = float(cfg.get("gamma", 0.0))
+        if gamma > 0.0:
+            exponent = float(torch.empty(()).uniform_(1.0 - gamma, 1.0 + gamma))
+            frames = frames.clamp(0.0, 1.0).pow(exponent)
+        blur_probability = float(cfg.get("blur_probability", 0.0))
+        if blur_probability > 0.0 and float(torch.rand(())) < blur_probability:
+            frames = torch_functional.avg_pool2d(frames, kernel_size=3, stride=1, padding=1)
+        noise_std = float(cfg.get("noise_std", 0.0))
+        if noise_std > 0.0:
+            frames = frames + torch.randn_like(frames) * noise_std
+        return frames.clamp(0.0, 1.0)
+
     def __getitem__(self, idx: int) -> dict[str, Any]:
         shard_idx, center = self.indices[idx]
         length = int(self._shard_lengths[shard_idx])
@@ -789,10 +858,10 @@ class YamRgbShardedDataset(BaseImageDataset):
         frame_ids = np.arange(seq_start, seq_start + self.horizon, dtype=np.int64)
         frame_ids = np.clip(frame_ids, 0, length - 1)
         shard = self._load_shard(shard_idx)
-        obs = {
-            key: torch.from_numpy(self._image_chw_float(shard[key], frame_ids))
-            for key in self.image_keys
-        }
+        obs = {}
+        for key in self.image_keys:
+            frames = torch.from_numpy(self._image_chw_float(shard[key], frame_ids))
+            obs[key] = self._augment_image_sequence(frames)
         obs[self.obs_robot_state_name] = torch.from_numpy(
             np.asarray(shard[self.robot_state_key], dtype=np.float32)[frame_ids]
         )

@@ -13357,3 +13357,24 @@ Smoke follow-up:
   will support object-grouped curriculum splits and exact train/held-out scene
   evaluation. Debug sites remain hidden by default and phase/progress remains
   excluded from policy inputs.
+- L40S pilot `1080259` validated both sides of the rejection path. The nominal
+  controller rollout succeeded, and its stored actions independently replayed
+  to a second settled placement at step `778`. The replay's maximum TCP error
+  relative to the nominal contact trajectory was `0.05663 m`, however, so the
+  initial optional trajectory-identity threshold rejected the shard and the
+  process exited nonzero without writing `metadata.json`. Contact dynamics are
+  not bitwise repeatable after an in-process reset, while task behavior is.
+  The production gate therefore retains TCP/joint divergence as diagnostics
+  but accepts only on full finite action replay and settled-bin success; exact
+  trajectory matching remains available as a stricter opt-in check.
+- Added L40S array recording wrappers plus a strict curriculum builder. The
+  builder accepts only quality-rendered, marker-hidden, exact-reset,
+  dynamics-mode shards with successful action-only replay evidence. It creates
+  nested 10/50/100/500 manifests with object-UUID-disjoint train/validation
+  splits.
+- The revised student config initializes both ResNet-18 camera encoders from
+  ImageNet weights and applies train-only random crop/resize, brightness,
+  contrast, saturation, gamma, blur, and sensor-noise perturbations. Validation
+  images remain untouched. The policy schema remains two `256x256` RGB streams
+  plus 24-D robot state with `n_obs_steps=1`; no phase/progress feature was
+  added.

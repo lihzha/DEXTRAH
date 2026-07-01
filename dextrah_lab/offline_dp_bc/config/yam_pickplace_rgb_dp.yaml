@@ -54,7 +54,7 @@ policy:
     rgb_model:
       _target_: diffusion_policy.model.vision.model_getter.get_resnet
       name: resnet18
-      weights: null
+      weights: IMAGENET1K_V1
     resize_shape: null
     crop_shape: null
     random_crop: false
@@ -118,6 +118,15 @@ task:
     robot_state_key: robot_state
     obs_robot_state_name: robot_state
     normalizer_checkpoint: null
+    image_augmentation:
+      enabled: true
+      crop_scale: [0.90, 1.0]
+      brightness: 0.22
+      contrast: 0.22
+      saturation: 0.18
+      gamma: 0.15
+      blur_probability: 0.15
+      noise_std: 0.015
   env_runner:
     _target_: dextrah_lab.offline_dp_bc.dp_dataset.NoopImageRunner
     metric_prefix: test

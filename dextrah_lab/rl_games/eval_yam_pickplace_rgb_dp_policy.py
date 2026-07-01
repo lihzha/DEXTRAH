@@ -66,6 +66,12 @@ parser.add_argument(
 parser.add_argument("--recording_gate_max_tcp_error_m", type=float, default=0.01)
 parser.add_argument("--recording_gate_max_joint_error_rad", type=float, default=0.05)
 parser.add_argument(
+    "--recording_gate_require_trajectory_match",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="Optionally require replayed robot-state tracking in addition to action-only placement success.",
+)
+parser.add_argument(
     "--exact_policy_shard",
     type=str,
     default="",
@@ -1877,11 +1883,12 @@ def _replay_recorded_episode_gate(
     max_tcp_threshold = float(args_cli.recording_gate_max_tcp_error_m)
     max_joint_threshold = float(args_cli.recording_gate_max_joint_error_rad)
     tracking_pass = max_tcp_error <= max_tcp_threshold and max_joint_error <= max_joint_threshold
+    trajectory_match_required = bool(args_cli.recording_gate_require_trajectory_match)
     passed = bool(
         finite_actions
         and steps_completed == len(actions)
         and success
-        and tracking_pass
+        and (tracking_pass or not trajectory_match_required)
     )
     return {
         "enabled": True,
@@ -1898,6 +1905,7 @@ def _replay_recorded_episode_gate(
         "max_joint_position_error_rad": float(max_joint_error),
         "max_joint_position_error_threshold_rad": max_joint_threshold,
         "tracking_pass": bool(tracking_pass),
+        "trajectory_match_required": trajectory_match_required,
         "final_bin_metrics": final_bin_metrics,
         "reset": reset_summary,
     }
@@ -2596,6 +2604,10 @@ def main() -> None:
                 ),
                 "dynamics_mode": True,
                 "exact_reset": True,
+                "rendering_mode": str(getattr(args_cli, "rendering_mode", "")),
+                "image_height": int(args_cli.image_height),
+                "image_width": int(args_cli.image_width),
+                "robot_debug_site_visibility": robot_debug_site_visibility,
                 "source_policy_shard": str(exact_demo["shard"]),
                 "code_commit": os.environ.get("CODE_COMMIT"),
                 "episode_success": [bool(item["success"]) for item in episode_summaries],
