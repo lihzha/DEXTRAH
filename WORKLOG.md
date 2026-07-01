@@ -13520,3 +13520,37 @@ Smoke follow-up:
   and the persistent submitter forwards the pinned revision on every resume.
   Promoted the previously benchmarked batch size `80` to both wrapper defaults;
   stage launches still record and can override it explicitly.
+- The hard 10-source validation set now has 10/10 accepted controller-native
+  shards. Sources 4 and 8 required targeted `60`-step settle-tail and
+  `100 mm` inward-reference retries respectively; every promoted shard passed
+  nominal settled-bin success and exact-reset action-only dynamics replay. The
+  audited stage-10 manifest contains 11,070 frames, nine training objects, and
+  one object-disjoint validation object.
+- Profiling the first stage-10 training launch found that the custom dataset was
+  loading and augmenting all 16 RGB frames even though `n_obs_steps=1`. Matching
+  the official Diffusion Policy `key_first_k` contract and increasing data-loader
+  workers from 2 to 8 improved L40S throughput from roughly `0.07` to `2.3`
+  batches/s and raised sampled GPU utilization to 95%. Two container regression
+  tests verify one-step RGB/state observations with a retained 16-step action
+  horizon. The stage reached epoch 20 / step 2,748 with train loss `0.04169`,
+  held-out loss `0.05051`, and train action MSE `0.02269` before an intentional
+  checkpoint pause.
+- The initial bulk pilot showed that fixed low releases fail on tall randomized
+  bins: source 12 targeted an `87 mm` object-center height below a `148 mm` wall
+  top, causing gripper/bin contact and a `-19 mm` final containment margin.
+  Production drop targeting now uses bounded live-object XY feedback and releases
+  only when the complete object clears the randomized bin top. Source 12 then
+  passed nominal and dynamics replay with `20.2 mm`/`21.4 mm` replay margins.
+- Stored dual-camera inspection found an RTX texture warm-up transient in the
+  first frames (`44.6 -> 84.9 -> 90.2` mean intensity, stable by frame 12).
+  Quality collection and eval now render 16 frames before recording, without
+  stepping actions, and shard metadata records the warm-up count. The final
+  curriculum audit rejects shards below this threshold, so the early pilots will
+  be regenerated rather than retained in the final 500.
+- Curriculum split/order assignments are now persisted across incremental builds,
+  preserving the current stage-10 prefix and UUID splits at 50/100/500 instead of
+  reshuffling validation objects into training. Training top-k checkpoints now
+  minimize real held-out `val_loss` rather than the no-op runner's constant score,
+  and launch validation requires checkpoint intervals to align with validation.
+  Exact eval also exports all controller defaults into Pyxis, fixing a policy-mode
+  wrapper failure that collection jobs had masked through inherited variables.
