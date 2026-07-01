@@ -2281,20 +2281,20 @@ def _dataset_pose_target_action(
         drop_spec = _live_bin_drop_spec(task_env)
         if drop_spec is not None:
             drop_idx = min(int(step), int(reference.shape[0]) - 1)
-            reference_object = np.asarray(object_reference[drop_idx], dtype=np.float64)
-            reference_tcp = np.asarray(reference[drop_idx, 16:19], dtype=np.float64)
+            live_object = np.asarray(_tensor_numpy(task_env.cube_pos)[0], dtype=np.float64)
+            live_tcp = np.asarray(live[16:19], dtype=np.float64)
             inward_shift_xy = np.asarray(
                 (float(drop_spec["center_x"]), float(drop_spec["center_y"])), dtype=np.float64
-            ) - reference_object[:2]
+            ) - live_object[:2]
             inward_shift_xy = _bounded_position_correction(
                 inward_shift_xy,
                 max_norm=float(args_cli.dataset_drop_reference_inset_m),
             )
-            drop_target_tcp = reference_tcp.copy()
+            drop_target_tcp = live_tcp.copy()
             drop_target_tcp[:2] += inward_shift_xy
-            drop_target_tcp[2] += _dataset_drop_release_z(drop_spec) - float(reference_object[2])
+            drop_target_tcp[2] += _dataset_drop_release_z(drop_spec) - float(live_object[2])
             pos_delta = _bounded_position_correction(
-                drop_target_tcp - np.asarray(live[16:19], dtype=np.float64),
+                drop_target_tcp - live_tcp,
                 max_norm=float(args_cli.dataset_drop_pose_max_correction_m),
             )
             target_quat = np.asarray(reference[drop_idx, 19:23], dtype=np.float64)
@@ -3032,6 +3032,7 @@ def main() -> None:
                 ),
                 "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
+                "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
                 "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
@@ -3102,6 +3103,7 @@ def main() -> None:
         "dataset_precision_rotation_tolerance_rad": float(args_cli.dataset_precision_rotation_tolerance_rad),
         "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
+        "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
         "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
