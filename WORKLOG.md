@@ -14325,3 +14325,41 @@ Smoke follow-up:
   `0.16189` to `0.05752`, with finite training loss throughout. Only the clean
   stage-10 and stage-50 A100 runs now consume training capacity; the freed slots
   are reserved for clean stages 100 and 500.
+
+## 2026-07-01T19:19:00Z Clean V15 Stage-100 Freeze And Training Start
+
+- A low-dimensional audit of the clean stage-50 manifest confirms flowing
+  demonstrations. Lengths are 719-1,088 control steps (median 909.5), only
+  `0.503%` of pose commands have norm below `1e-3`, the median longest such run
+  is two steps, and the maximum is 28. Every trajectory has exactly two
+  gripper-sign transitions (open-close-open). Eleven of 50 trajectories are
+  strict replay-qualified recovery examples, adding corrective state coverage.
+- Replacement trajectories had reached 17 of the first 69 accepted records.
+  To avoid over-weighting six donor objects in the final set, expanded the
+  live donor rotation with recovery-proven distinct sources `14,26,59,66,68`.
+  New replacement submitter PID `3892899` uses 11 donors total; active jobs,
+  controller settings, and every physical/replay acceptance gate were
+  unchanged.
+- The collector crossed the stage-100 threshold at 101 accepted records.
+  Froze `curriculum/manifest_0100.json` at SHA-256
+  `d60b095729791cf9f8180e69329d1e310bb37c35c72cf4b91afdaf40eba8401e`.
+  It contains 100 trajectories and 89,028 steps, split 90 train / 10
+  validation with 41 / 7 unique object UUIDs and no overlap. The maximum
+  stationary TCP run is 54 transitions. Stage-10 and stage-50 hashes remained
+  byte-identical at `0411444e...` and `b8893fa7...`.
+- Source 100 passed nominal and dynamics-replay gates with 859 stored steps and
+  a longest stationary run of 10. Its 430-frame, 14.33-second scene/wrist video
+  was encoded from stored tensors. First/middle/last inspection shows a visible
+  purple target, close wrist acquisition, transport, and final released object
+  in the bin; the external view remains table-only. Local artifact:
+  `cluster_results/l401/yam_controller_stateobs_v15_final500_20260701T1710Z_source_000100/source_000100_scene_wrist.mp4`.
+- Launched scratch stage-100 run
+  `yam_rgb_dp_stateobs_v15_n100_bs80_600k_20260701T1916Z` as A100 job
+  `29719950` through submitter PID `104042`. It uses batch 80, 600k updates,
+  100-step DDPM, horizon 16, one observation step, eight action steps, two
+  256x256 RGB streams, 24-D robot state, EMA, ImageNet initialization, and
+  augmentation. Resolved Hydra config contains no phase/progress/privileged
+  state, and first-batch losses are finite.
+- L40S monitor PID `4092133` is pinned to eval commit `7d35a1be` and will test
+  fresh 100k snapshots for 4,800 uninterrupted quality-rendered steps with
+  action chunk eight and no failure or success early termination.
