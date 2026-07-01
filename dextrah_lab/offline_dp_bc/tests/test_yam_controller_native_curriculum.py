@@ -5,7 +5,10 @@ from pathlib import Path
 
 import numpy as np
 
-from dextrah_lab.offline_dp_bc.build_yam_controller_native_curriculum import _validate_shard
+from dextrah_lab.offline_dp_bc.build_yam_controller_native_curriculum import (
+    _object_disjoint_order,
+    _validate_shard,
+)
 
 
 V13_ACCEPTANCE_MODE = "final_physical_success_plus_dynamics_replay"
@@ -72,6 +75,35 @@ def _write_shard(
 
 
 class YamControllerNativeCurriculumValidationTest(unittest.TestCase):
+    def test_split_registry_allows_missing_future_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            registry_path = output_dir / "split_registry.json"
+            registry_path.write_text(
+                json.dumps(
+                    {
+                        "source_order": [3, 5, 2],
+                        "target_uuid_splits": {
+                            "train-object": "train",
+                            "val-object": "val",
+                            "future-object": "train",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            records = [
+                {"source_index": 5, "target_uuid": "val-object"},
+                {"source_index": 3, "target_uuid": "train-object"},
+            ]
+
+            ordered, val_ids = _object_disjoint_order(records, 0.1, 42, output_dir)
+
+            self.assertEqual([record["source_index"] for record in ordered], [3, 5])
+            self.assertIn("val-object", val_ids)
+            updated = json.loads(registry_path.read_text(encoding="utf-8"))
+            self.assertEqual(updated["source_order"], [3, 5, 2])
+
     def test_v13_accepts_replay_gated_source_tracked_drop(self):
         with tempfile.TemporaryDirectory() as directory:
             shard = _write_shard(

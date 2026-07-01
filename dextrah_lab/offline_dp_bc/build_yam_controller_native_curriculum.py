@@ -225,11 +225,15 @@ def _object_disjoint_order(
         raise ValueError(f"Invalid persistent object splits: {invalid_splits}")
 
     records_by_source = {int(record["source_index"]): record for record in records}
-    missing_sources = [source_index for source_index in source_order if source_index not in records_by_source]
-    if missing_sources:
-        raise ValueError(f"Previously registered sources are missing: {missing_sources[:10]}")
-    source_order.extend(sorted(set(records_by_source).difference(source_order)))
-    ordered = [records_by_source[source_index] for source_index in source_order]
+    present_registered_sources = [
+        source_index for source_index in source_order if source_index in records_by_source
+    ]
+    new_sources = sorted(set(records_by_source).difference(source_order))
+    source_order.extend(new_sources)
+    ordered = [
+        records_by_source[source_index]
+        for source_index in (*present_registered_sources, *new_sources)
+    ]
 
     counts: dict[str, int] = defaultdict(int)
     for record in records:

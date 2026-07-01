@@ -13680,3 +13680,10 @@ Smoke follow-up:
   five local unit tests plus Python/shell syntax checks pass. Next, requalify
   source-tracked sources 5/8 and source 4 with its bounded 60-step settle tail
   before resuming sources 10-499.
+- Incremental curriculum builds now preserve missing future entries in the
+  fixed source-order registry without requiring those shards to exist yet.
+  Present registered sources retain their relative order, new successful
+  sources append deterministically, and each requested stage still requires at
+  least one train and one validation shard. This allows the fixed source-0-9
+  stage-10 prefix to launch as soon as its ten replay-gated shards are ready;
+  six local dataset/curriculum tests pass.
