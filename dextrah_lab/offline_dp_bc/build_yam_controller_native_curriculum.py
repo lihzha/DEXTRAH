@@ -63,6 +63,10 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
         return None, "insufficient_render_warmup"
     if not bool(recording.get("exact_visual_resample")):
         return None, "visual_resample_not_enabled"
+    if str(recording.get("dataset_drop_targeting_mode") or "") != "live_object_to_bin_center":
+        return None, "unsupported_drop_targeting_mode"
+    if str(recording.get("dataset_drop_release_height_mode") or "") != "above_bin_top_then_descend":
+        return None, "unsupported_drop_release_height_mode"
     site_visibility = recording.get("robot_debug_site_visibility")
     if not isinstance(site_visibility, dict) or int(site_visibility.get("hidden_count") or 0) < 2:
         return None, "robot_debug_sites_not_hidden"

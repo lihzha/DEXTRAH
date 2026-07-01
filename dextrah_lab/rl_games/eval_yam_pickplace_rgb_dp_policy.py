@@ -51,6 +51,9 @@ parser.add_argument("--dataset_precision_rotation_tolerance_rad", type=float, de
 parser.add_argument("--dataset_precision_max_repeats", type=int, default=2)
 parser.add_argument("--dataset_drop_reference_inset_m", type=float, default=0.06)
 parser.add_argument("--dataset_drop_release_clearance_m", type=float, default=0.015)
+parser.add_argument("--dataset_drop_transport_clearance_m", type=float, default=0.015)
+parser.add_argument("--dataset_drop_descent_center_tolerance_m", type=float, default=0.015)
+parser.add_argument("--dataset_drop_descent_height_tolerance_m", type=float, default=0.01)
 parser.add_argument("--dataset_drop_pose_max_correction_m", type=float, default=0.005)
 parser.add_argument("--dataset_drop_retract_height_m", type=float, default=0.08)
 parser.add_argument("--dataset_drop_retract_gripper_width_m", type=float, default=0.18)
@@ -2253,18 +2256,19 @@ def _bounded_position_correction(correction: np.ndarray, max_norm: float | None 
 
 def _dataset_drop_release_z(spec: dict[str, float]) -> float:
     clearance = max(0.0, float(args_cli.dataset_drop_release_clearance_m))
-    resting_center_z = (
-        float(spec["inner_floor_z"])
-        + float(spec["object_half_z"])
-    )
-    wall_clear_center_z = float(spec["inner_top_z"]) + float(spec["object_half_z"])
-    return max(resting_center_z, wall_clear_center_z) + clearance
+    return float(spec["inner_floor_z"]) + float(spec["object_half_z"]) + clearance
+
+
+def _dataset_drop_transport_z(spec: dict[str, float]) -> float:
+    clearance = max(0.0, float(args_cli.dataset_drop_transport_clearance_m))
+    return float(spec["inner_top_z"]) + float(spec["object_half_z"]) + clearance
 
 
 def _dataset_pose_target_action(
     task_env: Any,
     exact_demo: dict[str, Any],
     step: int,
+    controller_state: dict[str, bool],
 ) -> tuple[np.ndarray, int]:
     reference = exact_demo["reference_robot_trajectory"]
     phases = exact_demo.get("reference_phases")
@@ -2308,16 +2312,31 @@ def _dataset_pose_target_action(
             drop_idx = min(int(step), int(reference.shape[0]) - 1)
             live_object = np.asarray(_tensor_numpy(task_env.cube_pos)[0], dtype=np.float64)
             live_tcp = np.asarray(live[16:19], dtype=np.float64)
-            inward_shift_xy = np.asarray(
+            center_error_xy = np.asarray(
                 (float(drop_spec["center_x"]), float(drop_spec["center_y"])), dtype=np.float64
             ) - live_object[:2]
+            transport_z = _dataset_drop_transport_z(drop_spec)
+            if (
+                not controller_state["drop_descent_started"]
+                and float(np.linalg.norm(center_error_xy))
+                <= max(0.0, float(args_cli.dataset_drop_descent_center_tolerance_m))
+                and abs(float(live_object[2]) - transport_z)
+                <= max(0.0, float(args_cli.dataset_drop_descent_height_tolerance_m))
+            ):
+                controller_state["drop_descent_started"] = True
+            inward_shift_xy = center_error_xy
             inward_shift_xy = _bounded_position_correction(
                 inward_shift_xy,
                 max_norm=float(args_cli.dataset_drop_reference_inset_m),
             )
             drop_target_tcp = live_tcp.copy()
             drop_target_tcp[:2] += inward_shift_xy
-            drop_target_tcp[2] += _dataset_drop_release_z(drop_spec) - float(live_object[2])
+            object_target_z = (
+                _dataset_drop_release_z(drop_spec)
+                if controller_state["drop_descent_started"]
+                else transport_z
+            )
+            drop_target_tcp[2] += object_target_z - float(live_object[2])
             pos_delta = _bounded_position_correction(
                 drop_target_tcp - live_tcp,
                 max_norm=float(args_cli.dataset_drop_pose_max_correction_m),
@@ -2386,8 +2405,11 @@ def _prepare_pose_recovery_episode(
         raise ValueError("--recovery_phase_fraction must lie in [0, 1]")
     phase_offset = int(round(fraction * max(0, matching.size - 1)))
     reference_step_offset = int(matching[phase_offset])
+    controller_state = {"drop_descent_started": False}
     for teacher_step in range(reference_step_offset):
-        raw_action, _ = _dataset_pose_target_action(task_env, exact_demo, teacher_step)
+        raw_action, _ = _dataset_pose_target_action(
+            task_env, exact_demo, teacher_step, controller_state
+        )
         action_np = _scaled_clipped_dataset_action(raw_action)
         action_tensor = torch.as_tensor(action_np, dtype=torch.float32, device=task_env.device)
         _, _, terminated, truncated, _ = _policy_obs_from_step(gym_env.step(action_tensor))
@@ -2659,6 +2681,7 @@ def main() -> None:
             dataset_reference_step = int(reference_step_offset)
             precision_repeat_count = 0
             drop_settle_repeat_count = 0
+            dataset_controller_state = {"drop_descent_started": False}
             dataset_terminal_tail_steps = 0
             for step in range(int(args_cli.num_steps)):
                 if not simulation_app.is_running():
@@ -2685,7 +2708,7 @@ def main() -> None:
                         dataset_terminal_tail_steps += 1
                     elif control_mode in {"dataset_pose_targets", "dataset_pose_recovery"}:
                         raw_action_np, dataset_target_idx = _dataset_pose_target_action(
-                            task_env, exact_demo, dataset_step
+                            task_env, exact_demo, dataset_step, dataset_controller_state
                         )
                     else:
                         raw_action_np = np.asarray(
@@ -2892,6 +2915,9 @@ def main() -> None:
                         record["dataset_precision_position_error"] = precision_position_error
                         record["dataset_precision_rotation_error"] = precision_rotation_error
                         record["dataset_drop_settle_boundary"] = float(at_drop_hold_boundary)
+                        record["dataset_drop_descent_started"] = float(
+                            dataset_controller_state["drop_descent_started"]
+                        )
                         record["dataset_drop_settle_ready"] = float(drop_ready)
                         record["dataset_drop_settle_position_error"] = drop_position_error
                         record["dataset_drop_settle_containment_margin"] = drop_containment_margin
@@ -3058,8 +3084,17 @@ def main() -> None:
                 "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
-                "dataset_drop_release_height_mode": "above_bin_top",
+                "dataset_drop_release_height_mode": "above_bin_top_then_descend",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
+                "dataset_drop_transport_clearance_m": float(
+                    args_cli.dataset_drop_transport_clearance_m
+                ),
+                "dataset_drop_descent_center_tolerance_m": float(
+                    args_cli.dataset_drop_descent_center_tolerance_m
+                ),
+                "dataset_drop_descent_height_tolerance_m": float(
+                    args_cli.dataset_drop_descent_height_tolerance_m
+                ),
                 "initial_render_warmup_frames": int(args_cli.initial_render_warmup_frames),
                 "exact_visual_resample": bool(args_cli.exact_visual_resample),
                 "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
@@ -3132,8 +3167,15 @@ def main() -> None:
         "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
-        "dataset_drop_release_height_mode": "above_bin_top",
+        "dataset_drop_release_height_mode": "above_bin_top_then_descend",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
+        "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),
+        "dataset_drop_descent_center_tolerance_m": float(
+            args_cli.dataset_drop_descent_center_tolerance_m
+        ),
+        "dataset_drop_descent_height_tolerance_m": float(
+            args_cli.dataset_drop_descent_height_tolerance_m
+        ),
         "initial_render_warmup_frames": int(args_cli.initial_render_warmup_frames),
         "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
         "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
