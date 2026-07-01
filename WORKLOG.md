@@ -14385,3 +14385,12 @@ Smoke follow-up:
   `yam_rgb_dp_stateobs_v15_n10_step0020464_exact_parityfixed_20260701T1951Z`;
   entry zero started with scene/wrist PSNR `62.50/60.08 dB` and runs the full
   4,800-step dynamics horizon with action chunk eight and no early termination.
+- Corrected entry-zero job `1090303` completed all 4,800 steps without a reset
+  or termination. It grasped the exact training object, lifted it by a maximum
+  `0.14663 m` at step 1,124, transported it over the bin, and released it
+  against an inner wall. The object crossed the bin XY gate only briefly and
+  settled with `0.10412 m` center error, so the strict bin-drop metric remained
+  zero. This is a near placement, not a valid success. Fetched and inspected
+  the 1024x1024 overview, both-camera sparse observation video, and parity
+  image under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n10_step0020464_exact_parityfixed_20260701T1951Z_train_src000000`.
