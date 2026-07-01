@@ -2229,11 +2229,13 @@ def _bounded_position_correction(correction: np.ndarray, max_norm: float | None 
 
 
 def _dataset_drop_release_z(spec: dict[str, float]) -> float:
-    return (
+    clearance = max(0.0, float(args_cli.dataset_drop_release_clearance_m))
+    resting_center_z = (
         float(spec["inner_floor_z"])
         + float(spec["object_half_z"])
-        + max(0.0, float(args_cli.dataset_drop_release_clearance_m))
     )
+    wall_clear_center_z = float(spec["inner_top_z"]) + float(spec["object_half_z"])
+    return max(resting_center_z, wall_clear_center_z) + clearance
 
 
 def _dataset_pose_target_action(
@@ -3033,6 +3035,7 @@ def main() -> None:
                 "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
+                "dataset_drop_release_height_mode": "above_bin_top",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
                 "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
@@ -3104,6 +3107,7 @@ def main() -> None:
         "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
+        "dataset_drop_release_height_mode": "above_bin_top",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
         "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
