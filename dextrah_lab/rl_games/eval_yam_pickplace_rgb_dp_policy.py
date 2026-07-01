@@ -50,7 +50,7 @@ parser.add_argument("--dataset_precision_position_tolerance_m", type=float, defa
 parser.add_argument("--dataset_precision_rotation_tolerance_rad", type=float, default=0.20)
 parser.add_argument("--dataset_precision_max_repeats", type=int, default=2)
 parser.add_argument("--dataset_drop_reference_inset_m", type=float, default=0.06)
-parser.add_argument("--dataset_drop_release_clearance_m", type=float, default=0.015)
+parser.add_argument("--dataset_drop_release_clearance_m", type=float, default=0.055)
 parser.add_argument("--dataset_drop_transport_clearance_m", type=float, default=0.015)
 parser.add_argument("--dataset_drop_descent_center_tolerance_m", type=float, default=0.015)
 parser.add_argument("--dataset_drop_descent_height_tolerance_m", type=float, default=0.01)
@@ -3260,7 +3260,7 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-                "dataset_drop_controller_version": 3,
+                "dataset_drop_controller_version": 4,
                 "dataset_drop_spec_source": "exact_stable_scene",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_transport_clearance_m": float(
@@ -3366,7 +3366,7 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-        "dataset_drop_controller_version": 3,
+        "dataset_drop_controller_version": 4,
         "dataset_drop_spec_source": "exact_stable_scene",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),

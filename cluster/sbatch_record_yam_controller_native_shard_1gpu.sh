@@ -31,7 +31,7 @@ DATASET_PRECISION_POSITION_TOLERANCE_M="${DATASET_PRECISION_POSITION_TOLERANCE_M
 DATASET_PRECISION_ROTATION_TOLERANCE_RAD="${DATASET_PRECISION_ROTATION_TOLERANCE_RAD:-0.20}"
 DATASET_PRECISION_MAX_REPEATS="${DATASET_PRECISION_MAX_REPEATS:-2}"
 DATASET_DROP_REFERENCE_INSET_M="${DATASET_DROP_REFERENCE_INSET_M:-0.06}"
-DATASET_DROP_RELEASE_CLEARANCE_M="${DATASET_DROP_RELEASE_CLEARANCE_M:-0.015}"
+DATASET_DROP_RELEASE_CLEARANCE_M="${DATASET_DROP_RELEASE_CLEARANCE_M:-0.055}"
 DATASET_DROP_TRANSPORT_CLEARANCE_M="${DATASET_DROP_TRANSPORT_CLEARANCE_M:-0.015}"
 DATASET_DROP_DESCENT_CENTER_TOLERANCE_M="${DATASET_DROP_DESCENT_CENTER_TOLERANCE_M:-0.015}"
 DATASET_DROP_DESCENT_HEIGHT_TOLERANCE_M="${DATASET_DROP_DESCENT_HEIGHT_TOLERANCE_M:-0.01}"
@@ -135,7 +135,7 @@ valid = (
     and provenance.get("object_material_randomization")
     and provenance.get("dataset_drop_targeting_mode") == "live_object_to_bin_center"
     and provenance.get("dataset_drop_release_height_mode") == "above_bin_top_then_contained_descent"
-    and int(provenance.get("dataset_drop_controller_version") or 0) >= 3
+    and int(provenance.get("dataset_drop_controller_version") or 0) >= 4
     and provenance.get("dataset_drop_spec_source") == "exact_stable_scene"
     and all(provenance.get("episode_final_success") or [])
     and all(provenance.get("episode_drop_descent_started") or [])
