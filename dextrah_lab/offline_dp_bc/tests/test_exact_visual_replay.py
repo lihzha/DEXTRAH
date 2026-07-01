@@ -1,6 +1,7 @@
 import unittest
 
 from dextrah_lab.offline_dp_bc.exact_visual_replay import (
+    authoritative_recorded_visual_asset,
     select_exact_visual_asset,
     should_replay_resampled_assets,
 )
@@ -58,6 +59,34 @@ class ExactVisualReplayTest(unittest.TestCase):
                 recording_output_requested=True,
             )
         )
+
+    def test_nested_recording_selected_asset_becomes_authoritative(self):
+        selected = authoritative_recorded_visual_asset(
+            shard_metadata={
+                "exact_visual_replay": {
+                    "paths": {
+                        "table_texture": {
+                            "recorded": "/textures/source.jpg",
+                            "sampled": "/textures/resampled.jpg",
+                            "selected": "/textures/resampled.jpg",
+                        }
+                    }
+                }
+            },
+            asset_name="table_texture",
+            fallback="/textures/source.jpg",
+        )
+
+        self.assertEqual(selected, "/textures/resampled.jpg")
+
+    def test_legacy_shard_uses_source_metadata_asset(self):
+        selected = authoritative_recorded_visual_asset(
+            shard_metadata={},
+            asset_name="dome_texture",
+            fallback="/textures/source.hdr",
+        )
+
+        self.assertEqual(selected, "/textures/source.hdr")
 
 
 if __name__ == "__main__":

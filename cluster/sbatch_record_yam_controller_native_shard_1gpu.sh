@@ -132,6 +132,12 @@ recording = summary.get("recording") or {}
 gate = recording.get("replay_gate") or {}
 metadata = json.load(open(sys.argv[2], "r", encoding="utf-8"))
 provenance = metadata.get("recording") or {}
+visual_replay = metadata.get("exact_visual_replay") or {}
+visual_paths = visual_replay.get("paths") or {}
+authoritative_visual_assets = all(
+    bool((visual_paths.get(name) or {}).get("selected"))
+    for name in ("table_texture", "dome_texture")
+)
 fallback_used = provenance.get("episode_drop_fallback_used") or []
 release_hold = provenance.get("episode_drop_release_hold_started") or []
 fallback_release_valid = (
@@ -174,6 +180,7 @@ valid = (
     and provenance.get("rendering_mode") == "quality"
     and int(provenance.get("initial_render_warmup_frames") or 0) >= 64
     and provenance.get("exact_visual_resample")
+    and authoritative_visual_assets
     and provenance.get("robot_material_randomization")
     and provenance.get("object_material_randomization")
     and provenance.get("dataset_drop_targeting_mode") == "live_object_to_bin_center"

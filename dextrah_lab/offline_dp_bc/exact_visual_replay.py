@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 
 def should_replay_resampled_assets(
     *,
@@ -44,3 +46,22 @@ def select_exact_visual_asset(
         "selected": selected_path,
         "selected_source": selected_source,
     }
+
+
+def authoritative_recorded_visual_asset(
+    *,
+    shard_metadata: Mapping[str, object],
+    asset_name: str,
+    fallback: object,
+) -> str:
+    """Return the asset that actually produced a recorded policy shard."""
+    replay = shard_metadata.get("exact_visual_replay")
+    if isinstance(replay, Mapping):
+        paths = replay.get("paths")
+        if isinstance(paths, Mapping):
+            asset = paths.get(asset_name)
+            if isinstance(asset, Mapping):
+                selected = str(asset.get("selected") or "")
+                if selected:
+                    return selected
+    return str(fallback or "")

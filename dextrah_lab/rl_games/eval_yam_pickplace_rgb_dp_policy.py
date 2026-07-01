@@ -20,6 +20,7 @@ from typing import Any
 from isaaclab.app import AppLauncher
 
 from dextrah_lab.offline_dp_bc.exact_visual_replay import (
+    authoritative_recorded_visual_asset,
     select_exact_visual_asset,
     should_replay_resampled_assets,
 )
@@ -860,6 +861,21 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         if isinstance(exact_demo["shard_metadata"].get("recording"), dict)
         else {}
     )
+    recorded_table_texture = authoritative_recorded_visual_asset(
+        shard_metadata=exact_demo["shard_metadata"],
+        asset_name="table_texture",
+        fallback=table_texture.get("table_texture_path"),
+    )
+    recorded_background_texture = authoritative_recorded_visual_asset(
+        shard_metadata=exact_demo["shard_metadata"],
+        asset_name="background_texture",
+        fallback=background.get("background_texture_path"),
+    )
+    recorded_dome_texture = authoritative_recorded_visual_asset(
+        shard_metadata=exact_demo["shard_metadata"],
+        asset_name="dome_texture",
+        fallback=lighting.get("dome_light_texture_path"),
+    )
     replay_resampled_assets = should_replay_resampled_assets(
         visual_resample_requested=bool(args_cli.exact_visual_resample),
         shard_recorded_visual_resample=bool(shard_recording.get("exact_visual_resample", False)),
@@ -954,17 +970,17 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
     max_numeric_error = max(numeric_errors.values(), default=float("inf"))
     paths = {
         "table_texture": select_exact_visual_asset(
-            recorded=table_texture.get("table_texture_path"),
+            recorded=recorded_table_texture,
             sampled=sampled_table_texture,
             replay_resampled_asset=replay_resampled_assets,
         ),
         "background_texture": select_exact_visual_asset(
-            recorded=background.get("background_texture_path"),
+            recorded=recorded_background_texture,
             sampled=sampled_background_texture,
             replay_resampled_asset=replay_resampled_assets,
         ),
         "dome_texture": select_exact_visual_asset(
-            recorded=lighting.get("dome_light_texture_path"),
+            recorded=recorded_dome_texture,
             sampled=sampled_dome_texture,
             replay_resampled_asset=replay_resampled_assets,
         ),
@@ -2358,6 +2374,7 @@ def _write_recorded_policy_shard(
             "gripper_label_source": "executed_controller_command",
         },
         "recording_initial_states": [_jsonable_dynamic_state(state) for state in initial_states],
+        "exact_visual_replay": exact_demo.get("visual_replay"),
         "recording": recording,
     }
     (shard_path / "metadata.json").write_text(
