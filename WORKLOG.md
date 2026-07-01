@@ -13918,3 +13918,62 @@ Smoke follow-up:
   randomized jobs `1083600-1083602` likewise had no lift by about 2,000 steps.
   This is closed-loop undertraining/compounding-error evidence, not an initial
   state, camera, termination, or horizon mismatch.
+
+## 2026-07-01T14:36:00Z Exact-Eval Parity Fix And Automated Replacements
+
+- The independent stage-10 20k randomized jobs `1083600-1083602` completed one
+  uninterrupted 4,800-step episode each with action chunk one, 100 DDPM steps,
+  no reset, and no phase/progress/object input. All were unsuccessful. Maximum
+  object lift was `0.0126545`, `2.83e-7`, and `0.00749384 m` for seeds 42-44.
+  Seed 42 visibly approached and pushed the object; no episode established a
+  lifted transport. The old manual launch omitted robot/object material flags,
+  so those two material randomizers were false while table, lighting, camera,
+  object, and bin randomization remained active. Future periodic monitors use
+  the corrected exported flags from commit `195901b6`.
+- Fetched all three 80-second overview videos, metrics, and sampled scene/wrist
+  frames. Encoded 42-frame dual-camera diagnostics locally under each
+  `cluster_results/l401/yam_rgb_dp_ctrl_native_v13_n10_bs80_70k_periodic20k_*`
+  directory. Frame inspection confirmed valid, nonblank, table-dominant views
+  and no horizon resets.
+- The first source-scene matrix `1083642-1083644` also completed all 4,800
+  steps with `0/3` success, but its parity images exposed an evaluation bug:
+  it evaluated the old source shards instead of the controller-recording shards
+  used for training. Sources 3 and 7 consequently used different table/dome and
+  robot/object appearances, yielding only `18.28/13.58 dB` and
+  `9.29/10.19 dB` scene/wrist parity. These results are retained as mismatch
+  evidence and are not treated as matched-train evaluation.
+- Commit `c727df6e` first made recorded source assets authoritative, proving the
+  texture-pool drift mechanism. The follow-up commit `b700234d` fixes the actual
+  contract: exact matrices now select the stage manifest's real train/validation
+  controller shards by default, restore `recording_initial_states`, and replay
+  either source-recorded or RNG-resampled assets according to each shard's
+  recorded mode. Source-shard evaluation remains available explicitly with
+  `EXACT_SHARD_KIND=source`. Ten focused local tests and Python/shell syntax
+  checks pass.
+- L40S parity jobs `1083992-1083993` validated commit `b700234d` against actual
+  stage-10 train source 3 and held-out source 7. Scene/wrist parity improved to
+  `41.04/37.02 dB` and `39.94/38.23 dB`; 24-D robot state was exact and visual
+  inspection showed reference/live frames matching apart from small renderer
+  edge noise. The corrected 4,800-step matrix is running as jobs
+  `1084009-1084011` from remote worktree
+  `yam-rgb-exact-b700-20260701`, with two train shards and the object-disjoint
+  validation shard.
+- Strict collection reached 127 accepted trajectories while the main stream
+  advanced through source 134. Replacements 524 and 525 passed for excluded
+  sources 114 and 116; source 121 and 123 replacement candidates remained
+  strict rejects and were not written into curricula.
+- Added a lock-protected one-for-one replacement submitter in commit `3f980e6a`.
+  It waits for both nominal and the existing strict recovery to terminate
+  without an accepted shard, atomically appends an immutable manifest row from
+  recovery-qualified donors `0,2,3,7,9,10`, submits ordinary recovery jobs with
+  a two-job throttle, and advances to another donor only after a candidate also
+  fails. Eight focused tests pass. Live PID `3573130` owns
+  `replacement_submitter/launcher.log`; the original first-recovery watcher PID
+  `3550527` and main submitter PID `3385083` remain healthy.
+- Current trainer audit: stage 10 reached step `30050` / epoch `219`, recent-200
+  train loss `0.00883`, best validation `0.04433` at step 3424, and latest
+  validation `0.13609`, showing expected severe overfit in the 9/1 diagnostic
+  split. Stage 50 reached step `17986` / epoch 27 with recent train loss
+  `0.01719`, best validation `0.02686`, latest `0.02911`. Stage 100 reached
+  step `6483` / epoch 5 with recent train loss `0.02932` and a new best
+  validation `0.03415`. No trainer has emitted a nonfinite loss.
