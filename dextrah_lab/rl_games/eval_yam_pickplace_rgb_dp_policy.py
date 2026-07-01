@@ -49,7 +49,7 @@ parser.add_argument("--dataset_object_feedback_max_correction_m", type=float, de
 parser.add_argument("--dataset_precision_position_tolerance_m", type=float, default=0.01)
 parser.add_argument("--dataset_precision_rotation_tolerance_rad", type=float, default=0.20)
 parser.add_argument("--dataset_precision_max_repeats", type=int, default=2)
-parser.add_argument("--dataset_drop_reference_inset_m", type=float, default=0.025)
+parser.add_argument("--dataset_drop_reference_inset_m", type=float, default=0.06)
 parser.add_argument("--dataset_drop_release_clearance_m", type=float, default=0.015)
 parser.add_argument("--dataset_drop_pose_max_correction_m", type=float, default=0.005)
 parser.add_argument("--dataset_drop_settle_max_steps", type=int, default=120)

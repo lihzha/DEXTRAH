@@ -13474,3 +13474,11 @@ Smoke follow-up:
   held-object speed; the active lower/settle phase may add at most 120 steps.
   This teacher target is deterministic under action-only replay while keeping
   the object away from walls and removing the high drop that amplified bounce.
+- Low-release pilot `1080465` produced nominal settled placements for both hard
+  sources. Source 2 also passed action-only replay and wrote a 1,179-step shard;
+  source 1's replay still missed one margin by `17.7 mm` with a `25 mm` inward
+  cap. Pilot `1080493` increased the deterministic reference inset cap to
+  `60 mm`: both sources then passed nominal and replay gates. Replay containment
+  margins were `0.59 mm` for source 1 and `22.87 mm` for source 2. Promoted the
+  `60 mm` cap to the production default and retained strict rejection so the
+  broader pilot can measure and filter similarly marginal geometries.
