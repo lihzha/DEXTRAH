@@ -13256,3 +13256,34 @@ Smoke follow-up:
   frames of both camera streams. Evidence is under the same run directory in
   `inspection/scene_wrist_milestones.png`, `inspection/video_probe.json`, and
   `inspection/marker_and_motion_audit.json`.
+
+## 2026-07-01T00:32:41Z Full-Dataset Chunk-1 Eval Preparation
+
+- Goal: isolate action execution cadence by reevaluating the immutable
+  full-500-trajectory checkpoint `step_1006379.ckpt` with
+  `action_chunk_steps=1`. The controlled seed-42 baseline used chunk 8 and had
+  no lift over 48,000 steps.
+- Checkpoint:
+  `/results/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_bs80_resume940628_20260628T062724Z/manual_eval_snapshots/step_1006379.ckpt`,
+  size `1606332835` bytes, SHA-256
+  `e7f7f9e3361494531bcd32fc8d96a0e80f746447c06d70fc9f5bf48cdcdd2e29`.
+- Eval implementation change: hide YAM `tcp_site` and `grasp_site` prims before
+  render warm-up/capture and record hidden paths in metrics. Also instantiate
+  the settled-bin pick/drop metric from the live randomized bin and active
+  object geometry, so generic eval measures lift, release, containment, and
+  settling rather than the legacy held-at-center condition.
+- Local checks passed:
+  `python3 -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`,
+  `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh`, and
+  `git diff --check`.
+- Planned bounded L40S run: seed `42`, one episode, `1200` control steps,
+  `action_chunk_steps=1`, one action sample, 100 DDPM inference steps,
+  `n_obs_steps=1`, dual `256x256` RGB plus 24-D robot state, quality rendering,
+  1200-frame video, and both task failure/success terminations disabled while
+  external settled-bin success remains active. This covers 20 seconds of
+  simulated control, longer than a complete training demonstration, without
+  spending the roughly 20-hour runtime implied by a 48,000-step chunk-1 run.
+- Success criteria: valid nonblank scene/wrist observations, exactly two hidden
+  debug-site prims, no early reset, finite actions, visible approach behavior,
+  and either settled-bin success or a diagnosed max-lift/closest-approach result
+  from metrics and representative video frames.

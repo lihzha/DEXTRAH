@@ -112,6 +112,12 @@ parser.add_argument("--debug_obs_max_frames", type=int, default=120)
 parser.add_argument("--initial_render_warmup_frames", type=int, default=0)
 parser.add_argument("--scene_rgb_capture_attempts", type=int, default=6)
 parser.add_argument("--scene_rgb_black_mean_threshold", type=float, default=3.0)
+parser.add_argument(
+    "--hide_robot_debug_sites",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help="Hide visible MuJoCo tcp_site/grasp_site prims from policy RGB observations.",
+)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -158,6 +164,36 @@ def _tensor_numpy(value: torch.Tensor, dtype=np.float32) -> np.ndarray:
 
 def _tensor_list(value: torch.Tensor) -> list[float] | list[list[float]]:
     return value.detach().float().cpu().tolist()
+
+
+def _hide_robot_debug_site_prims(
+    *, site_names: tuple[str, ...] = ("tcp_site", "grasp_site")
+) -> dict[str, Any]:
+    stage = omni.usd.get_context().get_stage()
+    summary: dict[str, Any] = {
+        "enabled": True,
+        "site_names": list(site_names),
+        "hidden_count": 0,
+        "hidden_paths": [],
+    }
+    if stage is None:
+        summary["reason"] = "missing_stage"
+        return summary
+
+    hidden_paths: list[str] = []
+    site_name_set = set(site_names)
+    for prim in stage.Traverse():
+        if prim.GetName() not in site_name_set:
+            continue
+        imageable = UsdGeom.Imageable(prim)
+        if not imageable:
+            continue
+        imageable.MakeInvisible()
+        hidden_paths.append(str(prim.GetPath()))
+
+    summary["hidden_count"] = len(hidden_paths)
+    summary["hidden_paths"] = hidden_paths
+    return summary
 
 
 def _mean_float(value: Any) -> float | None:
@@ -1701,6 +1737,27 @@ def _exact_bin_drop_spec(exact_demo: dict[str, Any] | None) -> dict[str, float] 
     }
 
 
+def _live_bin_drop_spec(task_env: Any) -> dict[str, float] | None:
+    goal = task_env._tabletop_goal_bin_info()
+    if goal is None:
+        return None
+    object_xy_radius = float(_tensor_numpy(task_env.object_xy_radius).reshape(-1)[0])
+    object_half_extents = _tensor_numpy(task_env.object_half_extents).reshape(-1, 3)[0]
+    return {
+        "center_x": float(goal["center_x"]),
+        "center_y": float(goal["center_y"]),
+        "inner_size_x": float(goal["inner_size_x"]),
+        "inner_size_y": float(goal["inner_size_y"]),
+        "inner_floor_z": float(goal["inner_floor_z"]),
+        "inner_top_z": float(goal["inner_top_z"]),
+        "object_xy_radius": object_xy_radius,
+        "object_half_z": float(object_half_extents[2]),
+        "settled_linear_speed": 0.05,
+        "settled_angular_speed": 1.0,
+        "settled_duration_s": 0.10,
+    }
+
+
 def _bin_drop_metrics(task_env: Any, spec: dict[str, float] | None) -> dict[str, float]:
     if spec is None:
         return {}
@@ -2050,6 +2107,14 @@ def main() -> None:
 
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = gym_env.unwrapped
+    if bin_drop_spec is None:
+        bin_drop_spec = _live_bin_drop_spec(task_env)
+        _stage("bin_drop_spec_ready", bin_drop_spec=bin_drop_spec)
+    robot_debug_site_visibility: dict[str, Any] = {"enabled": False}
+    if bool(args_cli.hide_robot_debug_sites):
+        robot_debug_site_visibility = _hide_robot_debug_site_prims()
+        task_env.sim.forward()
+        _stage("robot_debug_sites_hidden", **robot_debug_site_visibility)
     _configure_camera(env_cfg, scene_eye, scene_target, task_env)
     if exact_demo is None:
         appearance_summary = {
@@ -2394,6 +2459,7 @@ def main() -> None:
         "failure_termination_override": termination_override_summary,
         "robot_default_pose": pose_summary,
         "gripper_gain_scales": gain_summary,
+        "robot_debug_site_visibility": robot_debug_site_visibility,
         "num_episodes_requested": int(args_cli.num_episodes),
         "num_steps_requested": int(args_cli.num_steps),
         "action_chunk_steps": int(args_cli.action_chunk_steps),
