@@ -35,8 +35,8 @@ if [ ! -f "$SOURCE_MANIFEST" ]; then
   echo "Missing source manifest: $SOURCE_MANIFEST" >&2
   exit 2
 fi
-if [ ! -x "$EVAL_WRAPPER" ]; then
-  echo "Missing or non-executable eval wrapper: $EVAL_WRAPPER" >&2
+if [ ! -f "$EVAL_WRAPPER" ]; then
+  echo "Missing eval wrapper: $EVAL_WRAPPER" >&2
   exit 2
 fi
 if [ -n "$CODE_COMMIT" ]; then
@@ -128,4 +128,4 @@ exec env \
   RENDERING_MODE="$RENDERING_MODE" \
   SEED="$((SEED_BASE + SOURCE_INDEX))" \
   HIDE_ROBOT_DEBUG_SITES=True \
-  "$EVAL_WRAPPER"
+  bash "$EVAL_WRAPPER"

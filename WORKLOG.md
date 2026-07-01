@@ -13378,3 +13378,7 @@ Smoke follow-up:
   images remain untouched. The policy schema remains two `256x256` RGB streams
   plus 24-D robot state with `n_obs_steps=1`; no phase/progress feature was
   added.
+- Production-wrapper pilot `1080274` failed before simulator startup because
+  the existing eval wrapper is a non-executable `sbatch` script. The array
+  wrapper now validates it as a regular file and enters it explicitly through
+  `bash`; the failed pilot consumed no useful GPU work and wrote no shard.
