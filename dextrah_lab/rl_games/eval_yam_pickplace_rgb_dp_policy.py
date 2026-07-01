@@ -2421,7 +2421,6 @@ def _dataset_pose_target_action(
         controller_state["drop_descent_just_started"] = False
         active_drop_spec = drop_spec if drop_spec is not None else _live_bin_drop_spec(task_env)
         if active_drop_spec is not None:
-            drop_idx = min(int(step), int(reference.shape[0]) - 1)
             live_object = np.asarray(_tensor_numpy(task_env.cube_pos)[0], dtype=np.float64)
             live_tcp = np.asarray(live[16:19], dtype=np.float64)
             center_error_xy = np.asarray(
@@ -2456,11 +2455,13 @@ def _dataset_pose_target_action(
             ):
                 controller_state["drop_descent_started"] = True
                 controller_state["drop_descent_just_started"] = True
-            inward_shift_xy = center_error_xy
-            inward_shift_xy = _bounded_position_correction(
-                inward_shift_xy,
-                max_norm=float(args_cli.dataset_drop_reference_inset_m),
-            )
+            if controller_state["drop_descent_started"]:
+                inward_shift_xy = np.zeros(2, dtype=np.float64)
+            else:
+                inward_shift_xy = _bounded_position_correction(
+                    center_error_xy,
+                    max_norm=float(args_cli.dataset_drop_reference_inset_m),
+                )
             drop_target_tcp = live_tcp.copy()
             drop_target_tcp[:2] += inward_shift_xy
             object_target_z = (
@@ -2473,7 +2474,7 @@ def _dataset_pose_target_action(
                 drop_target_tcp - live_tcp,
                 max_norm=float(args_cli.dataset_drop_pose_max_correction_m),
             )
-            target_quat = np.asarray(reference[drop_idx, 19:23], dtype=np.float64)
+            target_quat = np.asarray(live[19:23], dtype=np.float64)
     if drop_open_phase:
         pos_delta[:] = 0.0
         if float(live[23]) >= max(0.0, float(args_cli.dataset_drop_retract_gripper_width_m)):
@@ -3259,7 +3260,7 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-                "dataset_drop_controller_version": 2,
+                "dataset_drop_controller_version": 3,
                 "dataset_drop_spec_source": "exact_stable_scene",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_transport_clearance_m": float(
@@ -3365,7 +3366,7 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-        "dataset_drop_controller_version": 2,
+        "dataset_drop_controller_version": 3,
         "dataset_drop_spec_source": "exact_stable_scene",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),
