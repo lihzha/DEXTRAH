@@ -27,6 +27,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output_dir", type=Path, required=True)
     parser.add_argument("--sizes", type=int, nargs="+", default=(10, 50, 100, 500))
     parser.add_argument("--expected_count", type=int, default=500)
+    parser.add_argument(
+        "--require_authoritative_visual_replay",
+        action="store_true",
+        help="Reject shards that do not persist the table and dome assets that produced their RGB arrays.",
+    )
     parser.add_argument("--val_ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
@@ -66,6 +71,7 @@ def _validate_shard(
     *,
     max_stationary_tcp_steps: int | None = None,
     stationary_tcp_delta_m: float = 1.0e-5,
+    require_authoritative_visual_replay: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     metadata_path = shard / "metadata.json"
     if not metadata_path.is_file():
@@ -91,6 +97,23 @@ def _validate_shard(
         return None, "insufficient_render_warmup"
     if not bool(recording.get("exact_visual_resample")):
         return None, "visual_resample_not_enabled"
+    if require_authoritative_visual_replay:
+        visual_replay = (
+            metadata.get("exact_visual_replay")
+            if isinstance(metadata.get("exact_visual_replay"), dict)
+            else {}
+        )
+        visual_paths = (
+            visual_replay.get("paths")
+            if isinstance(visual_replay.get("paths"), dict)
+            else {}
+        )
+        if not all(
+            isinstance(visual_paths.get(name), dict)
+            and bool(visual_paths[name].get("selected"))
+            for name in ("table_texture", "dome_texture")
+        ):
+            return None, "authoritative_visual_replay_missing"
     if not bool(recording.get("robot_material_randomization")):
         return None, "robot_material_randomization_not_enabled"
     if not bool(recording.get("object_material_randomization")):
@@ -348,6 +371,7 @@ def main() -> None:
             shard,
             max_stationary_tcp_steps=int(args.max_stationary_tcp_steps),
             stationary_tcp_delta_m=float(args.stationary_tcp_delta_m),
+            require_authoritative_visual_replay=bool(args.require_authoritative_visual_replay),
         )
         if record is None:
             rejected.append({"path": str(shard), "reason": reason})

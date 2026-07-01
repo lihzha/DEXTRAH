@@ -14418,3 +14418,38 @@ Smoke follow-up:
   gates. This keeps the frozen 10/50/100 experiments intact and gives the
   scratch 500-trajectory run the broader visual distribution. A one-shard
   quality-render smoke test must pass before the full second pass launches.
+
+## 2026-07-01T20:56:00Z Exact Matrix Completion And Authoritative Visual Replay
+
+- Completed the corrected stage-10 step-20,464 exact matrix. Training source 1
+  lifted by `0.22281 m`, spent `7.625%` of the 4,800-step rollout inside the
+  bin XY bounds, and physically settled against an inner wall, but its final Y
+  containment margin was `-0.01076 m`; strict success correctly remained zero.
+  The held-out source completed 4,800 uninterrupted steps with zero lift and
+  zero success. Its reset parity was scene/wrist `42.04/38.80 dB`, exact robot
+  state error was zero, and the amplified diff confirmed only small
+  edge/shadow rasterization changes. The matched matrix therefore shows partial
+  stage-10 memorization but no held-out generalization yet.
+- The first expanded-texture source-0 smoke replay lifted by `0.15019 m` but
+  missed strict placement and was rejected. Three subsequent dynamics-mode
+  sources all passed nominal settled placement and recorded-action replay, with
+  selected prefixes of 960, 1,070, and 1,059 steps and maximum lifts of
+  `0.18585`, `0.15881`, and `0.20826 m`. Visual inspection covered Bamboo,
+  light laminate, and dark rosewood tables; the external view stayed table-only
+  and both stored camera streams remained nonblank and continuous.
+- A pure exact replay of the first accepted visual smoke exposed a provenance
+  bug: its RGB arrays contained Bamboo, but the nested policy shard discarded
+  the replay record and later resolved the ancestral table path, producing only
+  `7.80/8.86 dB` parity. Commit `b1166f9a` now persists the full selected
+  `exact_visual_replay` record and makes exact loading treat its selected table,
+  background, and dome assets as authoritative. Eight focused helper tests,
+  Python compilation, launcher syntax, and the same checks on L40S pass.
+- Re-recorded the source under `b1166f9a`. Its metadata now records Bamboo as
+  both the sampled and authoritative selected table asset, controller v15,
+  strict physical success, and a passed dynamics replay gate. Pure exact replay
+  selected that recorded Bamboo asset, restored robot state with zero error,
+  and reached scene/wrist `38.43/36.23 dB` with only `1.61/1.38` mean pixel
+  error. The parity image is visually matched; residual error is confined to
+  shadow and mesh edges. Added an opt-in final-curriculum gate that rejects any
+  shard missing authoritative table or dome metadata while retaining legacy
+  compatibility for the frozen v15 curricula.

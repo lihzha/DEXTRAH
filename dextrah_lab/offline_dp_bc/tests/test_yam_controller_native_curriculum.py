@@ -22,6 +22,7 @@ def _write_shard(
     controller_path: str | None,
     stationary_tcp: bool = False,
     drop_settle_timed_out: bool = False,
+    authoritative_visual_replay: bool = False,
 ) -> Path:
     shard = root / "source_000005" / "policy_dataset" / "yam_rgb_policy_000005"
     shard.mkdir(parents=True)
@@ -71,15 +72,21 @@ def _write_shard(
             15: "contained_geometry_with_tcp_stall_recovery",
         }[controller_version]
         recording["episode_drop_settle_timed_out"] = [drop_settle_timed_out]
-    (shard / "metadata.json").write_text(
-        json.dumps(
-            {
-                "recording": recording,
-                "target_uuid": "test-object",
-                "source_dataset": "/tmp/source.npz",
-                "source_policy_shard": "/tmp/source-shard",
+    metadata = {
+        "recording": recording,
+        "target_uuid": "test-object",
+        "source_dataset": "/tmp/source.npz",
+        "source_policy_shard": "/tmp/source-shard",
+    }
+    if authoritative_visual_replay:
+        metadata["exact_visual_replay"] = {
+            "paths": {
+                "table_texture": {"selected": "/textures/table.jpg"},
+                "dome_texture": {"selected": "/textures/light.hdr"},
             }
-        ),
+        }
+    (shard / "metadata.json").write_text(
+        json.dumps(metadata),
         encoding="utf-8",
     )
     return shard
@@ -225,6 +232,41 @@ class YamControllerNativeCurriculumValidationTest(unittest.TestCase):
             )
 
             record, reason = _validate_shard(shard)
+
+            self.assertIsNone(reason)
+            self.assertEqual(record["source_index"], 5)
+
+    def test_final_visual_gate_rejects_legacy_shard(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shard = _write_shard(
+                Path(directory),
+                controller_version=15,
+                descent_started=True,
+                controller_path="staged_descent",
+            )
+
+            record, reason = _validate_shard(
+                shard,
+                require_authoritative_visual_replay=True,
+            )
+
+            self.assertIsNone(record)
+            self.assertEqual(reason, "authoritative_visual_replay_missing")
+
+    def test_final_visual_gate_accepts_persisted_assets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shard = _write_shard(
+                Path(directory),
+                controller_version=15,
+                descent_started=True,
+                controller_path="staged_descent",
+                authoritative_visual_replay=True,
+            )
+
+            record, reason = _validate_shard(
+                shard,
+                require_authoritative_visual_replay=True,
+            )
 
             self.assertIsNone(reason)
             self.assertEqual(record["source_index"], 5)
