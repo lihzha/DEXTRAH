@@ -102,6 +102,7 @@ parser.add_argument(
         "and first robot/object dynamics state before every episode."
     ),
 )
+parser.add_argument("--exact_visual_resample", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--exact_render_width", type=int, default=1024)
 parser.add_argument("--exact_render_height", type=int, default=1024)
 parser.add_argument("--num_episodes", type=int, default=20)
@@ -805,9 +806,14 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
     background_color = _replay_random_color(rng, (0.32, 0.82))
     surround_roughness = float(rng.uniform(0.52, 0.95))
     table_texture_roughness = float(rng.uniform(0.60, 0.96))
+    table_texture_roots = (
+        args_cli.yam_policy_table_texture_dir
+        if args_cli.exact_visual_resample
+        else str(table_texture.get("table_texture_dir") or "")
+    )
     sampled_table_texture = _sample_texture_path(
         rng,
-        str(table_texture.get("table_texture_dir") or ""),
+        table_texture_roots,
         exts=SURFACE_TEXTURE_EXTS,
         include_tokens=("albedo", "diffuse", "diff", "basecolor", "color"),
         exclude_tokens=("normal", "orm", "rough", "metal", "height"),
@@ -821,9 +827,14 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         exclude_tokens=("normal", "orm", "rough", "metal", "height"),
     )
     background_texture_tiling = float(rng.uniform(1.0, 2.2))
+    dome_texture_roots = (
+        args_cli.yam_policy_dome_light_texture_dir
+        if args_cli.exact_visual_resample
+        else str(lighting.get("dome_light_texture_dir") or background.get("background_texture_dir") or "")
+    )
     sampled_dome_texture = _sample_texture_path(
         rng,
-        str(lighting.get("dome_light_texture_dir") or background.get("background_texture_dir") or ""),
+        dome_texture_roots,
         exts=DOME_TEXTURE_EXTS,
     )
     bin_visual_roughness = float(rng.uniform(0.45, 0.92))
@@ -891,6 +902,7 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         )
     return {
         "rng_seed": int(metadata["seed"]) + 1009,
+        "visual_resample_enabled": bool(args_cli.exact_visual_resample),
         "max_recorded_numeric_error": max_numeric_error,
         "numeric_errors": numeric_errors,
         "sampled_paths_match_recorded": bool(paths_match),
@@ -898,6 +910,7 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         "table_material_roughness": table_material_roughness,
         "tabletop_surround_roughness": surround_roughness,
         "table_texture_roughness": table_texture_roughness,
+        "table_texture_tiling": table_texture_tiling,
         "background_roughness": background_roughness,
         "bin_visual_roughness": bin_visual_roughness,
         "scene_eye": scene_eye,
@@ -976,11 +989,21 @@ def _apply_exact_demo_env_cfg(env_cfg: Any, exact_demo: dict[str, Any]) -> dict[
     env_cfg.exact_tabletop_surround_thickness = float(surround.get("thickness", 0.006))
     env_cfg.exact_tabletop_surround_color = tuple(float(v) for v in materials["tabletop_surround_color"])
     env_cfg.exact_tabletop_surround_roughness = float(visual_replay["tabletop_surround_roughness"])
-    env_cfg.exact_table_texture_enabled = bool(table_texture.get("enabled", False))
-    env_cfg.exact_table_texture_path = str(table_texture.get("table_texture_path") or "")
-    env_cfg.exact_table_texture_tiling = float(table_texture.get("table_texture_tiling", 2.4))
+    resampled_table_texture = str(visual_replay["paths"]["table_texture"]["sampled"] or "")
+    env_cfg.exact_table_texture_enabled = bool(table_texture.get("enabled", False) or resampled_table_texture)
+    env_cfg.exact_table_texture_path = (
+        resampled_table_texture
+        if args_cli.exact_visual_resample and resampled_table_texture
+        else str(table_texture.get("table_texture_path") or "")
+    )
+    env_cfg.exact_table_texture_tiling = float(visual_replay["table_texture_tiling"])
     env_cfg.exact_table_texture_roughness = float(visual_replay["table_texture_roughness"])
-    env_cfg.exact_dome_texture_path = str(lighting.get("dome_light_texture_path") or "")
+    resampled_dome_texture = str(visual_replay["paths"]["dome_texture"]["sampled"] or "")
+    env_cfg.exact_dome_texture_path = (
+        resampled_dome_texture
+        if args_cli.exact_visual_resample and resampled_dome_texture
+        else str(lighting.get("dome_light_texture_path") or "")
+    )
     env_cfg.exact_background_enabled = bool(background.get("enabled", False))
     if env_cfg.exact_background_enabled:
         raise ValueError("Exact-demo evaluator currently requires collection scenes without background walls")
@@ -3038,6 +3061,7 @@ def main() -> None:
                 "dataset_drop_release_height_mode": "above_bin_top",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "initial_render_warmup_frames": int(args_cli.initial_render_warmup_frames),
+                "exact_visual_resample": bool(args_cli.exact_visual_resample),
                 "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
                 "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
                 "dataset_drop_retract_gripper_width_m": float(
@@ -3124,6 +3148,7 @@ def main() -> None:
         "dataset_drop_settle_linear_speed": float(args_cli.dataset_drop_settle_linear_speed),
         "dataset_drop_settle_angular_speed": float(args_cli.dataset_drop_settle_angular_speed),
         "dataset_post_action_settle_steps": int(args_cli.dataset_post_action_settle_steps),
+        "exact_visual_resample": bool(args_cli.exact_visual_resample),
         "checkpoint": None if checkpoint is None else str(checkpoint),
         "official_workspace": None if workspace is None else workspace.__class__.__name__,
         "policy_class": None if policy is None else policy.__class__.__name__,

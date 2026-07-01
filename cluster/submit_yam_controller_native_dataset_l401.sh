@@ -104,6 +104,7 @@ payload = {
     "dynamics_mode": True,
     "recording_require_success": True,
     "recording_replay_gate": True,
+    "exact_visual_resample": True,
     "hide_robot_debug_sites": True,
 }
 Path("$CONFIG_JSON").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
