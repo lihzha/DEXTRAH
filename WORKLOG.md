@@ -14363,3 +14363,25 @@ Smoke follow-up:
 - L40S monitor PID `4092133` is pinned to eval commit `7d35a1be` and will test
   fresh 100k snapshots for 4,800 uninterrupted quality-rendered steps with
   action chunk eight and no failure or success early termination.
+
+## 2026-07-01T20:05:00Z Exact-Evaluation Visual-Parity Fix
+
+- The first matched-initialization matrix for the clean stage-10 step-20,464
+  snapshot exposed a second visual randomization during evaluation. Robot and
+  geometry state were restored exactly, but scene/wrist reset PSNR was only
+  `12.8/14.5 dB`: collection had retained the source shard's recorded table
+  and dome assets while writing `exact_visual_resample=true`, and pure exact
+  evaluation interpreted that nested-recording flag as permission to sample
+  the assets again. The resulting rollout was invalid as checkpoint evidence.
+- Added the pure `should_replay_resampled_assets` decision helper and changed
+  pure exact evaluation, where no output policy shard is being recorded, to
+  restore the authoritative recorded visual assets. Nested recording keeps its
+  existing deterministic resampling behavior. Six focused tests, Python
+  compilation, and the code-diff audit pass in commit `a9d9a74c`.
+- Staged the tested commit in L40S worktree
+  `yam-rgb-exact-parity-a9d9-20260701`. Parity smoke job `1090294` completed
+  with scene/wrist PSNR `62.04/59.97 dB` and exact robot state. Relaunched the
+  full two-train/one-validation matrix as
+  `yam_rgb_dp_stateobs_v15_n10_step0020464_exact_parityfixed_20260701T1951Z`;
+  entry zero started with scene/wrist PSNR `62.50/60.08 dB` and runs the full
+  4,800-step dynamics horizon with action chunk eight and no early termination.
