@@ -27,6 +27,30 @@ ACTION_NAMES = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"]
 YAM_POSE_ACTION_SCALE = (0.055, 0.055, 0.045, 0.22, 0.22, 0.25)
 SURFACE_TEXTURE_EXTS = (".jpg", ".jpeg", ".png")
 DOME_TEXTURE_EXTS = (".hdr", ".exr", ".jpg", ".jpeg", ".png")
+DATASET_DROP_CONTROLLER_VERSION = 13
+DATASET_DROP_ACCEPTANCE_MODE = "final_physical_success_plus_dynamics_replay"
+STAGED_DESCENT_PATH = "staged_descent"
+SOURCE_TRACKED_DROP_PATH = "source_tracked_drop"
+
+
+def _recording_controller_path(episode_summary: dict[str, Any]) -> str:
+    return (
+        STAGED_DESCENT_PATH
+        if bool(episode_summary["drop_descent_started"])
+        else SOURCE_TRACKED_DROP_PATH
+    )
+
+
+def _recording_episode_success(episode_summary: dict[str, Any]) -> bool:
+    fallback_release_valid = bool(
+        not episode_summary["drop_fallback_used"]
+        or episode_summary["drop_release_hold_started"]
+    )
+    return bool(
+        episode_summary["success"]
+        and float(episode_summary["final_success"] or 0.0) >= 0.5
+        and fallback_release_valid
+    )
 
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -3339,16 +3363,8 @@ def main() -> None:
             }
             episode_summaries.append(episode_summary)
             if record_policy_shard is not None:
-                release_hold_valid = bool(
-                    not episode_summary["drop_fallback_used"]
-                    or episode_summary["drop_release_hold_started"]
-                )
-                recording_success = bool(
-                    episode_summary["success"]
-                    and float(episode_summary["final_success"] or 0.0) >= 0.5
-                    and episode_summary["drop_descent_started"]
-                    and release_hold_valid
-                )
+                controller_path = _recording_controller_path(episode_summary)
+                recording_success = _recording_episode_success(episode_summary)
                 accepted = recording_success or not bool(args_cli.recording_require_success)
                 recording_decisions.append(
                     {
@@ -3361,6 +3377,7 @@ def main() -> None:
                         "drop_release_hold_started": bool(
                             episode_summary["drop_release_hold_started"]
                         ),
+                        "controller_path": controller_path,
                         "accepted_before_replay_gate": bool(accepted),
                         "num_steps": int(len(episode_recorded_actions)),
                     }
@@ -3378,6 +3395,7 @@ def main() -> None:
                             "robot_states": episode_recorded_robot_state,
                             "initial_state": episode_initial_state,
                             "drop_fallback_used": bool(episode_summary["drop_fallback_used"]),
+                            "controller_path": controller_path,
                             "reference_step_offset": int(reference_step_offset),
                             "recovery": None
                             if recovery_summary is None
@@ -3464,7 +3482,8 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-                "dataset_drop_controller_version": 12,
+                "dataset_drop_controller_version": DATASET_DROP_CONTROLLER_VERSION,
+                "dataset_drop_acceptance_mode": DATASET_DROP_ACCEPTANCE_MODE,
                 "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
                 "recording_gate_fallback_replay_mode": "robot_pose_target_dynamics",
                 "recording_gate_fallback_pose_lookahead": int(
@@ -3549,15 +3568,7 @@ def main() -> None:
                 "source_policy_shard": str(exact_demo["shard"]),
                 "code_commit": os.environ.get("CODE_COMMIT"),
                 "episode_success": [
-                    bool(
-                        item["success"]
-                        and float(item["final_success"] or 0.0) >= 0.5
-                        and item["drop_descent_started"]
-                        and (
-                            not item["drop_fallback_used"]
-                            or item["drop_release_hold_started"]
-                        )
-                    )
+                    _recording_episode_success(item)
                     for item in episode_summaries
                 ],
                 "episode_final_success": [
@@ -3565,6 +3576,9 @@ def main() -> None:
                 ],
                 "episode_drop_descent_started": [
                     bool(item["drop_descent_started"]) for item in episode_summaries
+                ],
+                "episode_controller_paths": [
+                    _recording_controller_path(item) for item in episode_summaries
                 ],
                 "episode_drop_fallback_used": [
                     bool(item["drop_fallback_used"]) for item in episode_summaries
@@ -3609,7 +3623,8 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-        "dataset_drop_controller_version": 12,
+        "dataset_drop_controller_version": DATASET_DROP_CONTROLLER_VERSION,
+        "dataset_drop_acceptance_mode": DATASET_DROP_ACCEPTANCE_MODE,
         "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
         "recording_gate_fallback_replay_mode": "robot_pose_target_dynamics",
         "recording_gate_fallback_pose_lookahead": int(

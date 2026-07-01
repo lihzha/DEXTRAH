@@ -139,6 +139,23 @@ fallback_release_valid = (
     and len(fallback_used) == len(release_hold)
     and all(not bool(fallback) or bool(held) for fallback, held in zip(fallback_used, release_hold))
 )
+controller_version = int(provenance.get("dataset_drop_controller_version") or 0)
+drop_descent = provenance.get("episode_drop_descent_started") or []
+controller_paths = provenance.get("episode_controller_paths") or []
+if controller_version == 12:
+    controller_path_valid = bool(drop_descent) and all(bool(value) for value in drop_descent)
+else:
+    expected_paths = [
+        "staged_descent" if bool(descent) else "source_tracked_drop"
+        for descent in drop_descent
+    ]
+    controller_path_valid = (
+        controller_version >= 13
+        and provenance.get("dataset_drop_acceptance_mode")
+        == "final_physical_success_plus_dynamics_replay"
+        and bool(controller_paths)
+        and [str(value) for value in controller_paths] == expected_paths
+    )
 valid = (
     recording.get("accepted")
     and gate.get("passed")
@@ -151,12 +168,12 @@ valid = (
     and provenance.get("object_material_randomization")
     and provenance.get("dataset_drop_targeting_mode") == "live_object_to_bin_center"
     and provenance.get("dataset_drop_release_height_mode") == "above_bin_top_then_contained_descent"
-    and int(provenance.get("dataset_drop_controller_version") or 0) >= 12
+    and controller_version >= 12
     and provenance.get("dataset_drop_release_criterion") == "gripper_open_or_hand_separated"
     and provenance.get("recording_gate_fallback_replay_mode") == "robot_pose_target_dynamics"
     and provenance.get("dataset_drop_spec_source") == "exact_stable_scene"
     and all(provenance.get("episode_final_success") or [])
-    and all(provenance.get("episode_drop_descent_started") or [])
+    and controller_path_valid
     and fallback_release_valid
     and all(bool(item.get("final_success")) for item in gate.get("episodes") or [])
 )

@@ -13654,3 +13654,29 @@ Smoke follow-up:
   replay success in both cases. The three-case qualification therefore covers
   normal, tall-bin, and reach-limited release regimes before the clean 500-run
   launch.
+- The immutable warm64 production run
+  `yam_controller_native_final500_v12_warm64_20260701T101315Z` started from
+  commit `75d63690` with an ordinary-job submitter capped at three concurrent
+  L40S jobs. Sources 0-3, 6, 7, and 9 passed nominal settled placement and
+  exact-reset raw-action dynamics replay. Sources 4, 5, and 8 were rejected,
+  so no invalid shard was written. The submitter was stopped after source 9
+  while the failure modes were audited.
+- Source 4 remained contained but alternated around the strict `1 rad/s`
+  settled angular-speed threshold after the bounded 30-step tail. Sources 5
+  and 8 were different: both ended in stable settled-bin success, but their
+  successful source-tracked drops never entered the staged-descent trigger and
+  were rejected before replay. A `40 mm` trigger-tolerance pilot changed the
+  closed-loop motion, added repeats beyond step 1,300, and displaced source 5
+  from its previously stable placement; jobs `1081962`, `1081965`, and the
+  associated source-4 pilot were canceled before writing shards.
+- Controller version 13 removes that artificial path requirement without
+  relaxing physical validation. Every accepted episode must still finish in
+  settled-bin success and pass exact-reset dynamics replay. Provenance now
+  identifies either `staged_descent` or `source_tracked_drop` under acceptance
+  mode `final_physical_success_plus_dynamics_replay`; fallback episodes retain
+  their latched-release requirement and pose-target dynamics replay. Version 12
+  shards remain valid only when staged descent occurred. The evaluator,
+  recorder resume gate, and curriculum validator enforce the same rule, and
+  five local unit tests plus Python/shell syntax checks pass. Next, requalify
+  source-tracked sources 5/8 and source 4 with its bounded 60-step settle tail
+  before resuming sources 10-499.

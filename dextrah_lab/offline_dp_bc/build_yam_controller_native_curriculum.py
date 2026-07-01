@@ -17,6 +17,8 @@ import numpy as np
 
 SOURCE_PATTERN = re.compile(r"source_(\d+)$")
 REQUIRED_ARRAYS = ("scene_rgb", "wrist_rgb", "robot_state", "action", "episode_ends")
+V13_ACCEPTANCE_MODE = "final_physical_success_plus_dynamics_replay"
+V13_CONTROLLER_PATHS = {"staged_descent", "source_tracked_drop"}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -74,7 +76,8 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
         != "above_bin_top_then_contained_descent"
     ):
         return None, "unsupported_drop_release_height_mode"
-    if int(recording.get("dataset_drop_controller_version") or 0) < 12:
+    controller_version = int(recording.get("dataset_drop_controller_version") or 0)
+    if controller_version < 12:
         return None, "unsupported_drop_controller_version"
     if str(recording.get("dataset_drop_release_criterion") or "") != "gripper_open_or_hand_separated":
         return None, "unsupported_drop_release_criterion"
@@ -93,9 +96,26 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
     if (
         not isinstance(episode_drop_descent, list)
         or not episode_drop_descent
-        or not all(bool(value) for value in episode_drop_descent)
     ):
+        return None, "recording_drop_path_missing"
+    if controller_version == 12 and not all(bool(value) for value in episode_drop_descent):
         return None, "recording_staged_descent_not_observed"
+    if controller_version >= 13:
+        if str(recording.get("dataset_drop_acceptance_mode") or "") != V13_ACCEPTANCE_MODE:
+            return None, "unsupported_drop_acceptance_mode"
+        episode_controller_paths = recording.get("episode_controller_paths")
+        if (
+            not isinstance(episode_controller_paths, list)
+            or len(episode_controller_paths) != len(episode_drop_descent)
+            or any(str(value) not in V13_CONTROLLER_PATHS for value in episode_controller_paths)
+        ):
+            return None, "recording_controller_paths_invalid"
+        expected_paths = [
+            "staged_descent" if bool(descent) else "source_tracked_drop"
+            for descent in episode_drop_descent
+        ]
+        if [str(value) for value in episode_controller_paths] != expected_paths:
+            return None, "recording_controller_paths_inconsistent"
     episode_fallback = recording.get("episode_drop_fallback_used")
     episode_release_hold = recording.get("episode_drop_release_hold_started")
     if (
