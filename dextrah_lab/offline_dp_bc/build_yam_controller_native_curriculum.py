@@ -59,6 +59,8 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
         return None, "not_exact_reset"
     if str(recording.get("rendering_mode") or "") != "quality":
         return None, "not_quality_rendering"
+    if int(recording.get("initial_render_warmup_frames") or 0) < 16:
+        return None, "insufficient_render_warmup"
     site_visibility = recording.get("robot_debug_site_visibility")
     if not isinstance(site_visibility, dict) or int(site_visibility.get("hidden_count") or 0) < 2:
         return None, "robot_debug_sites_not_hidden"

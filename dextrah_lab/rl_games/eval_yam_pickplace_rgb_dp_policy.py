@@ -151,7 +151,7 @@ parser.add_argument("--yam_gripper_damping_scale", type=float, default=0.25)
 parser.add_argument("--yam_gripper_effort_scale", type=float, default=5.0)
 parser.add_argument("--debug_obs_interval", type=int, default=0)
 parser.add_argument("--debug_obs_max_frames", type=int, default=120)
-parser.add_argument("--initial_render_warmup_frames", type=int, default=0)
+parser.add_argument("--initial_render_warmup_frames", type=int, default=16)
 parser.add_argument("--scene_rgb_capture_attempts", type=int, default=6)
 parser.add_argument("--scene_rgb_black_mean_threshold", type=float, default=3.0)
 parser.add_argument(
@@ -3037,6 +3037,7 @@ def main() -> None:
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
+                "initial_render_warmup_frames": int(args_cli.initial_render_warmup_frames),
                 "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
                 "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
                 "dataset_drop_retract_gripper_width_m": float(
@@ -3109,6 +3110,7 @@ def main() -> None:
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
+        "initial_render_warmup_frames": int(args_cli.initial_render_warmup_frames),
         "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
         "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
         "dataset_drop_retract_gripper_width_m": float(args_cli.dataset_drop_retract_gripper_width_m),
