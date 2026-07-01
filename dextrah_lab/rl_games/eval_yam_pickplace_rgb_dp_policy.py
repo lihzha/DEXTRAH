@@ -52,6 +52,8 @@ parser.add_argument("--dataset_precision_max_repeats", type=int, default=2)
 parser.add_argument("--dataset_drop_reference_inset_m", type=float, default=0.06)
 parser.add_argument("--dataset_drop_release_clearance_m", type=float, default=0.015)
 parser.add_argument("--dataset_drop_pose_max_correction_m", type=float, default=0.005)
+parser.add_argument("--dataset_drop_retract_height_m", type=float, default=0.08)
+parser.add_argument("--dataset_drop_retract_gripper_width_m", type=float, default=0.18)
 parser.add_argument("--dataset_drop_settle_max_steps", type=int, default=120)
 parser.add_argument("--dataset_drop_settle_containment_margin_m", type=float, default=0.01)
 parser.add_argument("--dataset_drop_settle_height_tolerance_m", type=float, default=0.01)
@@ -2255,6 +2257,7 @@ def _dataset_pose_target_action(
     target_quat = np.asarray(target[19:23], dtype=np.float64)
     pos_delta = np.asarray(target[16:19] - live[16:19], dtype=np.float64)
     object_reference = exact_demo.get("reference_object_trajectory")
+    gripper_label = float(exact_demo["actions"][min(int(step), int(exact_demo["actions"].shape[0]) - 1), 6])
     object_feedback_gain = max(0.0, float(args_cli.dataset_object_feedback_gain))
     if object_reference is not None and _is_precision_grasp_phase(phase):
         live_object = _tensor_numpy(task_env.cube_pos)[0]
@@ -2296,6 +2299,15 @@ def _dataset_pose_target_action(
             target_quat = np.asarray(reference[drop_idx, 19:23], dtype=np.float64)
     if drop_open_phase:
         pos_delta[:] = 0.0
+        if float(live[23]) >= max(0.0, float(args_cli.dataset_drop_retract_gripper_width_m)):
+            drop_idx = min(int(step), int(reference.shape[0]) - 1)
+            retract_target_z = float(reference[drop_idx, 18]) + max(
+                0.0, float(args_cli.dataset_drop_retract_height_m)
+            )
+            pos_delta = _bounded_position_correction(
+                np.asarray((0.0, 0.0, retract_target_z - float(live[18])), dtype=np.float64),
+                max_norm=float(args_cli.dataset_drop_pose_max_correction_m),
+            )
         rot_delta = np.zeros(3, dtype=np.float64)
     else:
         quat_delta = quat_mul_wxyz(
@@ -2306,7 +2318,7 @@ def _dataset_pose_target_action(
     pose_delta = np.concatenate((pos_delta, rot_delta), axis=0).astype(np.float32)
     action = np.empty((1, 7), dtype=np.float32)
     action[0, :6] = pose_delta / np.asarray(YAM_POSE_ACTION_SCALE, dtype=np.float32)
-    action[0, 6] = float(exact_demo["actions"][min(int(step), int(exact_demo["actions"].shape[0]) - 1), 6])
+    action[0, 6] = gripper_label
     return action, int(target_idx)
 
 
@@ -3008,6 +3020,10 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
+                "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
+                "dataset_drop_retract_gripper_width_m": float(
+                    args_cli.dataset_drop_retract_gripper_width_m
+                ),
                 "dataset_drop_settle_max_steps": int(args_cli.dataset_drop_settle_max_steps),
                 "dataset_drop_settle_containment_margin_m": float(
                     args_cli.dataset_drop_settle_containment_margin_m
@@ -3073,6 +3089,8 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
+        "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
+        "dataset_drop_retract_gripper_width_m": float(args_cli.dataset_drop_retract_gripper_width_m),
         "dataset_drop_settle_max_steps": int(args_cli.dataset_drop_settle_max_steps),
         "dataset_drop_settle_containment_margin_m": float(
             args_cli.dataset_drop_settle_containment_margin_m

@@ -13482,3 +13482,14 @@ Smoke follow-up:
   margins were `0.59 mm` for source 1 and `22.87 mm` for source 2. Promoted the
   `60 mm` cap to the production default and retained strict rejection so the
   broader pilot can measure and filter similarly marginal geometries.
+- The first production-root source 0 attempt under the low-release controller
+  ended physically inside the bin with `12.9 mm` minimum containment margin
+  and negligible motion, but `grasp_success` remained true because the open
+  fingers stayed around the object. No shard was written. Canceled only the
+  unstarted source 3-9 tasks while sources 1-2 finished their replay checks.
+- Added a deterministic post-open retreat: Cartesian motion remains zero until
+  measured gripper width reaches `0.18 m`, then the TCP rises toward a fixed
+  `80 mm` offset at the same `5 mm` command cap. This actively separates the
+  gripper from a placed object instead of adding a wait, and is recorded in the
+  action labels and provenance. Settled-bin success remains the acceptance
+  criterion after the retreat.
