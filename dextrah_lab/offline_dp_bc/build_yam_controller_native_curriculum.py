@@ -59,7 +59,7 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
         return None, "not_exact_reset"
     if str(recording.get("rendering_mode") or "") != "quality":
         return None, "not_quality_rendering"
-    if int(recording.get("initial_render_warmup_frames") or 0) < 16:
+    if int(recording.get("initial_render_warmup_frames") or 0) < 64:
         return None, "insufficient_render_warmup"
     if not bool(recording.get("exact_visual_resample")):
         return None, "visual_resample_not_enabled"

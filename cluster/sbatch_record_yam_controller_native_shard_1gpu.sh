@@ -56,6 +56,7 @@ RENDERING_MODE="${RENDERING_MODE:-quality}"
 CAPTURE_VIDEO="${CAPTURE_VIDEO:-False}"
 VIDEO_EVERY="${VIDEO_EVERY:-0}"
 PRINT_INTERVAL="${PRINT_INTERVAL:-100}"
+INITIAL_RENDER_WARMUP_FRAMES="${INITIAL_RENDER_WARMUP_FRAMES:-64}"
 SEED_BASE="${SEED_BASE:-79000001}"
 
 if [ ! -f "$SOURCE_MANIFEST" ]; then
@@ -126,7 +127,7 @@ valid = (
     and provenance.get("dynamics_mode")
     and provenance.get("exact_reset")
     and provenance.get("rendering_mode") == "quality"
-    and int(provenance.get("initial_render_warmup_frames") or 0) >= 16
+    and int(provenance.get("initial_render_warmup_frames") or 0) >= 64
     and provenance.get("exact_visual_resample")
     and provenance.get("dataset_drop_targeting_mode") == "live_object_to_bin_center"
     and provenance.get("dataset_drop_release_height_mode") == "above_bin_top_then_descend"
@@ -197,6 +198,7 @@ exec env \
   CAPTURE_VIDEO="$CAPTURE_VIDEO" \
   VIDEO_LENGTH="$NUM_STEPS" \
   PRINT_INTERVAL="$PRINT_INTERVAL" \
+  INITIAL_RENDER_WARMUP_FRAMES="$INITIAL_RENDER_WARMUP_FRAMES" \
   RENDERING_MODE="$RENDERING_MODE" \
   SEED="$((SEED_BASE + SOURCE_INDEX))" \
   HIDE_ROBOT_DEBUG_SITES=True \

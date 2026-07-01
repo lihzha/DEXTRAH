@@ -155,7 +155,7 @@ parser.add_argument("--yam_gripper_damping_scale", type=float, default=0.25)
 parser.add_argument("--yam_gripper_effort_scale", type=float, default=5.0)
 parser.add_argument("--debug_obs_interval", type=int, default=0)
 parser.add_argument("--debug_obs_max_frames", type=int, default=120)
-parser.add_argument("--initial_render_warmup_frames", type=int, default=16)
+parser.add_argument("--initial_render_warmup_frames", type=int, default=64)
 parser.add_argument("--scene_rgb_capture_attempts", type=int, default=6)
 parser.add_argument("--scene_rgb_black_mean_threshold", type=float, default=3.0)
 parser.add_argument(
