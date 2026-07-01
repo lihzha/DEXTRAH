@@ -13790,3 +13790,39 @@ Smoke follow-up:
   recovery retry job `1082807` passed the unchanged exact-reset dynamics and
   final settled-bin gates. Production reached 35 accepted shards while the
   three-way L40S submitter advanced through source 37.
+- Source 41 retained the object on an open gripper in both nominal job
+  `1082928` and recovery job `1082998`, so it was permanently excluded.
+  Replacement 504 reached nominal placement but failed raw-action dynamics
+  replay by `10.3 mm` on one object-aware bin margin. Replacement 505, derived
+  from qualified source 7, passed job `1083104` and replaces source 41.
+- Source 48 never lifted its object in nominal job `1083049` or recovery job
+  `1083132` (`5.2 mm` nominal maximum lift), so it was also permanently
+  excluded. Replacement 506 from qualified source 9 is running as job
+  `1083206`; it remains outside every curriculum until its full gate passes.
+- A 16-trajectory initial-observation audit at
+  `cluster_results/l401/yam_controller_native_v15_randomization_audit_20260701/randomization_initial_scene_wrist_montage.png`
+  showed table-only scene views, useful wrist framing, visible objects, varied
+  table/bin/robot appearance and shadows, and no black frames, clipping,
+  background, or debug markers.
+- The stage-50 gate was crossed while collection advanced from 50 to 52
+  accepted records. Rebuilding the persistent nested curriculum validated all
+  52 candidates with zero rejects and froze `manifest_0050.json` at SHA-256
+  `b45a268e1dd3a1dd93bffa2302fa58255cb8477a6a7d4d7944eed5e6d486466f`.
+  It contains 50 trajectories and 57,447 steps: 46 train / 4 validation,
+  36 / 4 unique object UUIDs, and no object overlap or excluded source.
+- Scratch stage-50 Diffusion Policy training started as A100 job `29707415`
+  under run `yam_rgb_dp_ctrl_native_v15_n50_bs80_300k_20260701T1228Z`.
+  It retains 256x256 scene/wrist RGB, 24-D robot state, horizon 16, one
+  observation step, eight trained actions, 100-step DDPM, batch 80, train-only
+  image augmentation, and no phase/progress/object state. Measured startup
+  throughput was about `1.87 updates/s`; the login submitter adopted the live
+  job under PID `1704471` with 16 resumable A100 allocations so the 300k target
+  remains feasible after wall-time checkpoint loss. L40S monitor PID `3428315`
+  will evaluate 50k increments with three 4,800-step quality-render episodes
+  and action chunk one.
+- Accepted source 50 produced a 1,202-step aligned shard. Its downsampled
+  601-frame, 20.03-second dual-camera inspection video is at
+  `cluster_results/l401/yam_controller_native_v15_source50_20260701/source_000050_scene_wrist.mp4`.
+  First/middle/last inspection confirms reset object visibility, close wrist
+  acquisition during manipulation, bin visibility, and no background or debug
+  geometry.
