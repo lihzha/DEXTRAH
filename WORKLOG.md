@@ -13772,3 +13772,21 @@ Smoke follow-up:
   `cluster_results/l401/yam_controller_native_v15_source13_20260701/source_000013_scene_wrist.mp4`.
   Milestone inspection confirms a table-only external view, bin left, visible
   randomized object and arm, useful close wrist view, and no debug markers.
+- Sources 19 and 22 were permanently excluded after both nominal and
+  `dataset_pose_recovery` attempts failed their physical gate. Source 19 ended
+  roughly 20 mm outside the object-aware bin margins in both modes. Source 22
+  never established a lifted grasp (`5.4 mm` maximum lift in recovery), so its
+  later source-tracked drop motion could not place the object. No acceptance
+  threshold or replay mode was weakened.
+- Recovery replacement source 501, duplicated from source 1 for excluded source
+  19, was also rejected after a valid grasp and transport ended about 20 mm
+  outside both bin margins. Replacement sources 502 and 503, duplicated from
+  qualified sources 2 and 3, passed in jobs `1082728` and `1082756` and now
+  replace excluded sources 22 and 19 respectively. Together with accepted
+  source 500, these retain an eventual target of exactly 500 accepted records;
+  failed source 501 remains absent from every curriculum manifest.
+- Original source 31 passed nominal settled placement but raw-action dynamics
+  replay diverged with zero common successful endpoints in job `1082755`. Its
+  recovery retry job `1082807` passed the unchanged exact-reset dynamics and
+  final settled-bin gates. Production reached 35 accepted shards while the
+  three-way L40S submitter advanced through source 37.
