@@ -13826,3 +13826,24 @@ Smoke follow-up:
   First/middle/last inspection confirms reset object visibility, close wrist
   acquisition during manipulation, bin visibility, and no background or debug
   geometry.
+
+## 2026-07-01T12:48:49Z Production Recovery Through Source 64
+
+- Replacement source 506 passed job `1083206`, restoring the slot for excluded
+  source 48. Original sources 53 and 57 also passed their first recovery jobs
+  `1083246` and `1083250`; neither required a replacement.
+- Source 61 lifted and transported its object in both nominal and recovery
+  attempts but settled `9.69 mm` outside the object-aware bin Y margin. Its
+  recovery job `1083300` was rejected with no shard, so the geometry is
+  permanently excluded under the same two-attempt rule used earlier.
+- Source 64 passed production job `1083298`. Sources 62 and 63 were rejected on
+  their first passes and entered recovery jobs `1083381` and `1083382`.
+- Added generated source manifest `replacement_source_manifest_508.json` under
+  the production root. Row 507 duplicates proven source 10 as a
+  post-perturbation teacher-recovery scene and records source 61 as the excluded
+  slot. Replacement job `1083383` is running; it must independently satisfy
+  settled placement and exact-reset dynamics replay before it contributes to
+  the 500-trajectory target.
+- Production had 62 accepted shards when these jobs launched. The ordinary-job
+  submitter remains pinned to commit `6ab46135` and continues its three-way
+  first-pass stream without interruption.
