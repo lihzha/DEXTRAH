@@ -15,6 +15,9 @@ MAX_CONCURRENT="${MAX_CONCURRENT:-3}"
 POLL_SECONDS="${POLL_SECONDS:-20}"
 NUM_STEPS="${NUM_STEPS:-1200}"
 ACTION_CHUNK_STEPS="${ACTION_CHUNK_STEPS:-1}"
+EXACT_VISUAL_RESAMPLE="${EXACT_VISUAL_RESAMPLE:-True}"
+YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION="${YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION:-True}"
+YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION="${YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION:-True}"
 CODE_COMMIT="${CODE_COMMIT:-$(git -C "$CODE_NFS" rev-parse HEAD)}"
 JOB_NAME_PREFIX="${JOB_NAME_PREFIX:-yamev_$(printf '%s' "$MATRIX_NAME" | cksum | awk '{print $1}')}"
 
@@ -94,6 +97,9 @@ payload = {
     "n_val": int("$N_VAL"),
     "num_steps": int("$NUM_STEPS"),
     "action_chunk_steps": int("$ACTION_CHUNK_STEPS"),
+    "exact_visual_resample": "$EXACT_VISUAL_RESAMPLE" == "True",
+    "robot_material_randomization": "$YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION" == "True",
+    "object_material_randomization": "$YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION" == "True",
     "matrix_tsv": "$MATRIX_TSV",
     "max_concurrent": int("$MAX_CONCURRENT"),
     "poll_seconds": int("$POLL_SECONDS"),
@@ -123,7 +129,7 @@ for entry_index in $(seq 0 "$((ENTRY_COUNT - 1))"); do
     sbatch --parsable \
       --job-name="$job_name" \
       --output="$NFS_ROOT/slurm_logs/dextrah/eval_yam_exact_${MATRIX_NAME}_${entry_index_padded}_%j.out" \
-      --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",CODE_COMMIT="$CODE_COMMIT",MATRIX_TSV="$MATRIX_TSV",ENTRY_INDEX="$entry_index",CHECKPOINT="$CHECKPOINT",NUM_STEPS="$NUM_STEPS",ACTION_CHUNK_STEPS="$ACTION_CHUNK_STEPS" \
+      --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",CODE_COMMIT="$CODE_COMMIT",MATRIX_TSV="$MATRIX_TSV",ENTRY_INDEX="$entry_index",CHECKPOINT="$CHECKPOINT",NUM_STEPS="$NUM_STEPS",ACTION_CHUNK_STEPS="$ACTION_CHUNK_STEPS",EXACT_VISUAL_RESAMPLE="$EXACT_VISUAL_RESAMPLE",YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION="$YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION",YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION="$YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION" \
       "$WRAPPER"
   )"
   printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$job_id" "$entry_index" "$job_name" "$CODE_COMMIT" \
