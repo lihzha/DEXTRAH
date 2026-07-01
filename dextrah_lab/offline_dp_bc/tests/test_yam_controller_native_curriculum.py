@@ -66,7 +66,10 @@ def _write_shard(
         recording["dataset_drop_acceptance_mode"] = V13_ACCEPTANCE_MODE
         recording["episode_controller_paths"] = [controller_path]
     if controller_version >= 14:
-        recording["dataset_drop_open_trigger"] = "contained_geometry_without_hidden_timeout"
+        recording["dataset_drop_open_trigger"] = {
+            14: "contained_geometry_without_hidden_timeout",
+            15: "contained_geometry_with_tcp_stall_recovery",
+        }[controller_version]
         recording["episode_drop_settle_timed_out"] = [drop_settle_timed_out]
     (shard / "metadata.json").write_text(
         json.dumps(
@@ -211,6 +214,20 @@ class YamControllerNativeCurriculumValidationTest(unittest.TestCase):
 
             self.assertIsNone(record)
             self.assertEqual(reason, "recording_drop_settle_timeout_invalid")
+
+    def test_v15_accepts_tcp_stall_recovery_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shard = _write_shard(
+                Path(directory),
+                controller_version=15,
+                descent_started=True,
+                controller_path="staged_descent",
+            )
+
+            record, reason = _validate_shard(shard)
+
+            self.assertIsNone(reason)
+            self.assertEqual(record["source_index"], 5)
 
 
 if __name__ == "__main__":

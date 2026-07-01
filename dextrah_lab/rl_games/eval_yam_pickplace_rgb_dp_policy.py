@@ -29,9 +29,10 @@ ACTION_NAMES = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"]
 YAM_POSE_ACTION_SCALE = (0.055, 0.055, 0.045, 0.22, 0.22, 0.25)
 SURFACE_TEXTURE_EXTS = (".jpg", ".jpeg", ".png")
 DOME_TEXTURE_EXTS = (".hdr", ".exr", ".jpg", ".jpeg", ".png")
-DATASET_DROP_CONTROLLER_VERSION = 14
+DATASET_DROP_CONTROLLER_VERSION = 15
 DATASET_DROP_ACCEPTANCE_MODE = "final_physical_success_plus_dynamics_replay"
-DATASET_DROP_OPEN_TRIGGER = "contained_geometry_without_hidden_timeout"
+DATASET_DROP_OPEN_TRIGGER = "contained_geometry_with_tcp_stall_recovery"
+DATASET_DROP_STALL_TCP_DELTA_M = 1.0e-5
 STAGED_DESCENT_PATH = "staged_descent"
 SOURCE_TRACKED_DROP_PATH = "source_tracked_drop"
 
@@ -2587,8 +2588,7 @@ def _dataset_pose_target_action(
             ):
                 controller_state["drop_release_hold_started"] = False
             elif (
-                controller_state["drop_descent_started"]
-                and containment_ready
+                containment_ready
                 and object_inside_bin_z
             ):
                 controller_state["drop_release_hold_started"] = True
@@ -2988,7 +2988,6 @@ def main() -> None:
             debug_interval = max(0, int(args_cli.debug_obs_interval))
             dataset_reference_step = int(reference_step_offset)
             precision_repeat_count = 0
-            drop_settle_repeat_count = 0
             dataset_controller_state: dict[str, Any] = {
                 "drop_descent_started": False,
                 "drop_descent_just_started": False,
@@ -3003,6 +3002,8 @@ def main() -> None:
                 "drop_transport_height_error_m": None,
                 "drop_xy_ready": False,
                 "drop_settle_timed_out": False,
+                "drop_stall_count": 0,
+                "drop_last_tcp_pos": None,
             }
             dataset_terminal_tail_steps = 0
             for step in range(int(args_cli.num_steps)):
@@ -3199,9 +3200,24 @@ def main() -> None:
                         drop_position_error = None
                         drop_containment_margin = None
                         drop_height_error = None
+                        drop_tcp_progress_m = None
                         drop_ready = True
                         dataset_controller_state["drop_fallback_just_started"] = False
                         if at_drop_hold_boundary and bin_drop_spec is not None:
+                            live_tcp = np.asarray(live_robot_state[16:19], dtype=np.float64)
+                            previous_tcp = dataset_controller_state["drop_last_tcp_pos"]
+                            if previous_tcp is not None:
+                                drop_tcp_progress_m = float(
+                                    np.linalg.norm(live_tcp - np.asarray(previous_tcp, dtype=np.float64))
+                                )
+                            if (
+                                drop_tcp_progress_m is not None
+                                and drop_tcp_progress_m < DATASET_DROP_STALL_TCP_DELTA_M
+                            ):
+                                dataset_controller_state["drop_stall_count"] += 1
+                            else:
+                                dataset_controller_state["drop_stall_count"] = 0
+                            dataset_controller_state["drop_last_tcp_pos"] = live_tcp.copy()
                             fallback_used = bool(dataset_controller_state["drop_fallback_used"])
                             release_clearance_m = (
                                 float(args_cli.dataset_drop_fallback_release_clearance_m)
@@ -3230,8 +3246,7 @@ def main() -> None:
                                 - _dataset_drop_release_z(bin_drop_spec, release_clearance_m)
                             )
                             drop_ready = bool(
-                                dataset_controller_state["drop_descent_started"]
-                                and drop_containment_margin
+                                drop_containment_margin
                                 >= max(0.0, float(args_cli.dataset_drop_settle_containment_margin_m))
                                 and float(bin_metrics.get("bin_inside_z") or 0.0) >= 0.5
                                 and (
@@ -3239,8 +3254,6 @@ def main() -> None:
                                     or dataset_controller_state["drop_release_hold_started"]
                                 )
                             )
-                        if dataset_controller_state["drop_descent_just_started"]:
-                            drop_settle_repeat_count = 0
                         fallback_after_steps = max(
                             0, int(args_cli.dataset_drop_fallback_after_steps)
                         )
@@ -3249,7 +3262,7 @@ def main() -> None:
                             and dataset_controller_state["drop_descent_started"]
                             and not dataset_controller_state["drop_fallback_used"]
                             and not drop_ready
-                            and drop_settle_repeat_count >= fallback_after_steps
+                            and dataset_controller_state["drop_stall_count"] >= fallback_after_steps
                             and drop_height_error is not None
                             and drop_height_error
                             >= max(
@@ -3261,13 +3274,14 @@ def main() -> None:
                             dataset_controller_state["drop_fallback_used"] = True
                             dataset_controller_state["drop_fallback_just_started"] = True
                             dataset_controller_state["drop_release_hold_started"] = False
-                            drop_settle_repeat_count = 0
+                            dataset_controller_state["drop_stall_count"] = 0
+                            dataset_controller_state["drop_last_tcp_pos"] = None
                             drop_ready = False
                         drop_settle_limit = max(0, int(args_cli.dataset_drop_settle_max_steps))
                         drop_settle_timed_out = bool(
                             at_drop_hold_boundary
                             and not drop_ready
-                            and drop_settle_repeat_count >= drop_settle_limit
+                            and dataset_controller_state["drop_stall_count"] >= drop_settle_limit
                         )
                         dataset_controller_state["drop_settle_timed_out"] = bool(
                             dataset_controller_state["drop_settle_timed_out"]
@@ -3323,6 +3337,10 @@ def main() -> None:
                         record["dataset_drop_settle_timed_out"] = float(
                             dataset_controller_state["drop_settle_timed_out"]
                         )
+                        record["dataset_drop_stall_count"] = int(
+                            dataset_controller_state["drop_stall_count"]
+                        )
+                        record["dataset_drop_tcp_progress_m"] = drop_tcp_progress_m
                         record["dataset_drop_settle_position_error"] = drop_position_error
                         record["dataset_drop_settle_containment_margin"] = drop_containment_margin
                         record["dataset_drop_settle_height_error"] = drop_height_error
@@ -3330,12 +3348,11 @@ def main() -> None:
                         if repeat_reference:
                             if repeat_precision:
                                 precision_repeat_count += 1
-                            if repeat_drop_settle:
-                                drop_settle_repeat_count += 1
                         else:
                             dataset_reference_step += 1
                             precision_repeat_count = 0
-                            drop_settle_repeat_count = 0
+                            dataset_controller_state["drop_stall_count"] = 0
+                            dataset_controller_state["drop_last_tcp_pos"] = None
                     else:
                         dataset_reference_step += 1
                 step_metrics.append(record)
@@ -3653,6 +3670,7 @@ def main() -> None:
                 "dataset_drop_controller_version": DATASET_DROP_CONTROLLER_VERSION,
                 "dataset_drop_acceptance_mode": DATASET_DROP_ACCEPTANCE_MODE,
                 "dataset_drop_open_trigger": DATASET_DROP_OPEN_TRIGGER,
+                "dataset_drop_stall_tcp_delta_m": DATASET_DROP_STALL_TCP_DELTA_M,
                 "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
                 "recording_gate_fallback_replay_mode": "robot_pose_target_dynamics",
                 "recording_select_replayable_success_prefix": bool(
@@ -3801,6 +3819,7 @@ def main() -> None:
         "dataset_drop_controller_version": DATASET_DROP_CONTROLLER_VERSION,
         "dataset_drop_acceptance_mode": DATASET_DROP_ACCEPTANCE_MODE,
         "dataset_drop_open_trigger": DATASET_DROP_OPEN_TRIGGER,
+        "dataset_drop_stall_tcp_delta_m": DATASET_DROP_STALL_TCP_DELTA_M,
         "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
         "recording_gate_fallback_replay_mode": "robot_pose_target_dynamics",
         "recording_gate_fallback_pose_lookahead": int(

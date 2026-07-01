@@ -14161,3 +14161,32 @@ Smoke follow-up:
   affected launch wrappers, and `git diff --check` pass. The four-source v14
   quality/dynamics integration matrix is the next gate before production
   submitters change.
+
+## 2026-07-01T17:14:00Z V14 Progress Diagnosis And Controller V15
+
+- Paused main v13 PID `3385083`, recovery PID `3587462`, and replacement PID
+  `3587463`, then canceled their four incomplete jobs. No v13 collector remains
+  active; production had 212 accepted records after already-finished jobs were
+  accounted for.
+- V14 matrix `1085033-1085036` produced one accepted source 32 and three
+  rejects. Sources 190 and 200 were rejected by the 60-step total-repeat cap,
+  but their terminal metrics showed ongoing TCP/object progress. Source 190 was
+  already geometrically inside the bin with `0.016 m` containment margin while
+  its internal descent flag remained false. The cap therefore conflated slow
+  correction with a true stop.
+- Implemented controller v15. The open trigger remains purely geometric and no
+  longer requires the internal descent flag. Fallback starts after 30
+  consecutive TCP displacements below `1e-5 m`; rejection occurs only after 60
+  consecutive stalled steps. Any meaningful TCP motion resets the stall count,
+  so long but flowing corrections can continue without hidden-time opening.
+  Fallback activation resets the stagnation detector and gets its own recovery
+  window.
+- V15 records `dataset_drop_open_trigger=contained_geometry_with_tcp_stall_recovery`,
+  `dataset_drop_stall_tcp_delta_m=1e-5`, per-step progress/stall diagnostics,
+  and the existing timeout flag. Recorder reuse and curriculum validation map
+  controller versions 14 and 15 to their exact contracts. Nine focused tests,
+  Python compilation, wrapper shell syntax, and diff checks pass. A fresh
+  four-source v15 integration matrix is required before collection resumes.
+- Source-104 visual inspection confirms its low wrist intensity is a real
+  near-black/occluded terminal view while the scene camera remains valid. It is
+  retained only as failure evidence and will not enter the final curriculum.

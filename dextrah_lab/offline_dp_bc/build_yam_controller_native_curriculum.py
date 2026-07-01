@@ -143,10 +143,11 @@ def _validate_shard(
         if [str(value) for value in episode_controller_paths] != expected_paths:
             return None, "recording_controller_paths_inconsistent"
     if controller_version >= 14:
-        if (
-            str(recording.get("dataset_drop_open_trigger") or "")
-            != "contained_geometry_without_hidden_timeout"
-        ):
+        expected_open_trigger = {
+            14: "contained_geometry_without_hidden_timeout",
+            15: "contained_geometry_with_tcp_stall_recovery",
+        }.get(controller_version)
+        if str(recording.get("dataset_drop_open_trigger") or "") != expected_open_trigger:
             return None, "unsupported_drop_open_trigger"
         episode_drop_timeouts = recording.get("episode_drop_settle_timed_out")
         if (

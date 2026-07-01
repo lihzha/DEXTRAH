@@ -157,14 +157,14 @@ else:
         and bool(controller_paths)
         and [str(value) for value in controller_paths] == expected_paths
     )
-observable_open_valid = (
-    controller_version < 14
-    or (
-        provenance.get("dataset_drop_open_trigger")
-        == "contained_geometry_without_hidden_timeout"
-        and len(drop_timeouts) == len(drop_descent)
-        and not any(bool(value) for value in drop_timeouts)
-    )
+expected_open_trigger = {
+    14: "contained_geometry_without_hidden_timeout",
+    15: "contained_geometry_with_tcp_stall_recovery",
+}.get(controller_version)
+observable_open_valid = controller_version < 14 or (
+    provenance.get("dataset_drop_open_trigger") == expected_open_trigger
+    and len(drop_timeouts) == len(drop_descent)
+    and not any(bool(value) for value in drop_timeouts)
 )
 valid = (
     recording.get("accepted")
