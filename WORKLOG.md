@@ -13501,3 +13501,10 @@ Smoke follow-up:
   settled-bin success row, so successful trajectories add only the evidence
   actually needed by the gate (one extra step for source 0) rather than a long
   wait segment.
+- Source-0 tail pilot `1080546` reached nominal success, but its replay contact
+  variation delayed release until the final recorded action. Final replay
+  geometry and speeds were valid (`89.1 mm`/`36.8 mm` containment margins and
+  `bin_drop_candidate=1`), but no replay dwell remained. Removed the early exit
+  on nominal success so the full bounded 30-step open-gripper tail is retained.
+  This provides at most `0.5 s` of replay stabilization after the active retreat
+  and remains far shorter than the long idle segments excluded from collection.

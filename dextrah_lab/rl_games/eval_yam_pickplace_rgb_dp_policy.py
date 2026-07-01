@@ -2898,11 +2898,6 @@ def main() -> None:
                     )
                 if done_now and bool(args_cli.stop_on_done):
                     break
-                if (
-                    control_mode in dataset_control_modes
-                    and float(bin_metrics.get("bin_drop_success") or 0.0) >= 0.5
-                ):
-                    break
             success_key = "bin_drop_success" if bin_drop_spec is not None else "in_success_region"
             success_values = [float(item[success_key]) for item in episode_records if item.get(success_key) is not None]
             lift_values = [float(item["cube_lift_height"]) for item in episode_records if item.get("cube_lift_height") is not None]
