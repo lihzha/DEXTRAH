@@ -49,6 +49,7 @@ parser.add_argument("--dataset_object_feedback_max_correction_m", type=float, de
 parser.add_argument("--dataset_precision_position_tolerance_m", type=float, default=0.01)
 parser.add_argument("--dataset_precision_rotation_tolerance_rad", type=float, default=0.20)
 parser.add_argument("--dataset_precision_max_repeats", type=int, default=2)
+parser.add_argument("--dataset_drop_center_max_correction_m", type=float, default=0.0025)
 parser.add_argument("--dataset_drop_settle_max_steps", type=int, default=60)
 parser.add_argument("--dataset_drop_settle_position_tolerance_m", type=float, default=0.01)
 parser.add_argument("--dataset_drop_settle_linear_speed", type=float, default=0.05)
@@ -2210,9 +2211,11 @@ def _is_precision_grasp_phase(phase: str) -> bool:
     )
 
 
-def _bounded_position_correction(correction: np.ndarray) -> np.ndarray:
+def _bounded_position_correction(correction: np.ndarray, max_norm: float | None = None) -> np.ndarray:
     correction = np.asarray(correction, dtype=np.float64)
-    max_norm = max(0.0, float(args_cli.dataset_object_feedback_max_correction_m))
+    if max_norm is None:
+        max_norm = float(args_cli.dataset_object_feedback_max_correction_m)
+    max_norm = max(0.0, float(max_norm))
     norm = float(np.linalg.norm(correction))
     if max_norm > 0.0 and norm > max_norm:
         correction = correction * (max_norm / norm)
@@ -2227,6 +2230,8 @@ def _dataset_pose_target_action(
     reference = exact_demo["reference_robot_trajectory"]
     phases = exact_demo.get("reference_phases")
     phase = "" if phases is None else str(phases[min(int(step), int(len(phases)) - 1)])
+    drop_hold_phase = "hold_above_bin" in phase
+    drop_open_phase = "open_fingers_to_drop" in phase
     lookahead = max(1, int(args_cli.dataset_target_lookahead))
     if _is_precision_grasp_phase(phase):
         lookahead = min(lookahead, max(1, int(args_cli.dataset_precision_lookahead)))
@@ -2250,22 +2255,35 @@ def _dataset_pose_target_action(
         and grasped
         and any(
             token in phase
-            for token in ("hold_after_close", "lift_object", "hold_after_lift", "move_to_above_bin", "hold_above_bin", "open_fingers_to_drop")
+            for token in ("hold_after_close", "lift_object", "hold_after_lift", "move_to_above_bin", "hold_above_bin")
         )
     ):
         live_object = _tensor_numpy(task_env.cube_pos)[0]
         desired_object = np.asarray(object_reference[target_idx], dtype=np.float64)
-        if any(token in phase for token in ("hold_above_bin", "open_fingers_to_drop")):
+        if drop_hold_phase:
             goal_bin = task_env._tabletop_goal_bin_info()
             if goal_bin is not None:
                 desired_object = desired_object.copy()
                 desired_object[:2] = (float(goal_bin["center_x"]), float(goal_bin["center_y"]))
         pos_delta += _bounded_position_correction(object_feedback_gain * (desired_object - live_object))
-    quat_delta = quat_mul_wxyz(
-        np.asarray(target[19:23], dtype=np.float64),
-        quat_inv_wxyz(np.asarray(live[19:23], dtype=np.float64)),
-    )
-    rot_delta = axis_angle_from_quat_wxyz(quat_delta)
+        if drop_hold_phase and goal_bin is not None:
+            center_error_xy = np.asarray(
+                (float(goal_bin["center_x"]), float(goal_bin["center_y"])), dtype=np.float64
+            ) - np.asarray(live_object[:2], dtype=np.float64)
+            pos_delta[:2] = _bounded_position_correction(
+                center_error_xy,
+                max_norm=float(args_cli.dataset_drop_center_max_correction_m),
+            )
+    if drop_open_phase:
+        pos_delta[:] = 0.0
+    if drop_hold_phase or drop_open_phase:
+        rot_delta = np.zeros(3, dtype=np.float64)
+    else:
+        quat_delta = quat_mul_wxyz(
+            np.asarray(target[19:23], dtype=np.float64),
+            quat_inv_wxyz(np.asarray(live[19:23], dtype=np.float64)),
+        )
+        rot_delta = axis_angle_from_quat_wxyz(quat_delta)
     pose_delta = np.concatenate((pos_delta, rot_delta), axis=0).astype(np.float32)
     action = np.empty((1, 7), dtype=np.float32)
     action[0, :6] = pose_delta / np.asarray(YAM_POSE_ACTION_SCALE, dtype=np.float32)
@@ -2953,6 +2971,9 @@ def main() -> None:
                     args_cli.dataset_precision_rotation_tolerance_rad
                 ),
                 "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
+                "dataset_drop_center_max_correction_m": float(
+                    args_cli.dataset_drop_center_max_correction_m
+                ),
                 "dataset_drop_settle_max_steps": int(args_cli.dataset_drop_settle_max_steps),
                 "dataset_drop_settle_position_tolerance_m": float(
                     args_cli.dataset_drop_settle_position_tolerance_m
@@ -3012,6 +3033,7 @@ def main() -> None:
         "dataset_precision_position_tolerance_m": float(args_cli.dataset_precision_position_tolerance_m),
         "dataset_precision_rotation_tolerance_rad": float(args_cli.dataset_precision_rotation_tolerance_rad),
         "dataset_precision_max_repeats": int(args_cli.dataset_precision_max_repeats),
+        "dataset_drop_center_max_correction_m": float(args_cli.dataset_drop_center_max_correction_m),
         "dataset_drop_settle_max_steps": int(args_cli.dataset_drop_settle_max_steps),
         "dataset_drop_settle_position_tolerance_m": float(
             args_cli.dataset_drop_settle_position_tolerance_m

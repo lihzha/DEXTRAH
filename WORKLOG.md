@@ -13446,3 +13446,16 @@ Smoke follow-up:
   centering and speed evidence, thresholds, and cap are written into metrics,
   shard metadata, and array config provenance. The success-only action replay
   gate remains unchanged and will reject any trajectory that still bounces out.
+- Pilot `1080400` showed that the release boundary was detected correctly but
+  exposed a control-law limitation. Repeating a source-frame target plus a
+  bounded absolute offset plateaued at `45.9 mm` center error for source 1 and
+  `76.6 mm` for source 2; after 60 repeats neither could satisfy readiness, and
+  both were correctly rejected without shards. Source 2 nevertheless reached
+  `0.1585 m` lift, confirming that grasp transport remained repaired.
+- Final hold now uses direct closed-loop XY error to the true randomized bin
+  center, limited to `2.5 mm` per control command, instead of adding a capped
+  displacement to the source-frame target. Wrist rotation is frozen during
+  final centering, and all Cartesian motion is zeroed while the source gripper
+  command opens. This preserves a continuous corrective approach while
+  removing the large simultaneous pose/open transient seen in the rejected
+  runs. The separate drop-centering rate limit is recorded in all provenance.
