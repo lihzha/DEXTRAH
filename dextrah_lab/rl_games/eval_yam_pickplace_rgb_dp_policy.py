@@ -69,6 +69,7 @@ parser.add_argument("--dataset_drop_fallback_height_tolerance_m", type=float, de
 parser.add_argument("--dataset_drop_fallback_linear_speed", type=float, default=0.03)
 parser.add_argument("--dataset_drop_fallback_angular_speed", type=float, default=4.0)
 parser.add_argument("--dataset_drop_fallback_open_steps", type=int, default=60)
+parser.add_argument("--dataset_drop_fallback_retract_lateral_m", type=float, default=0.08)
 parser.add_argument("--dataset_post_action_settle_steps", type=int, default=30)
 parser.add_argument("--recovery_phase_pattern", type=str, default="target/go_from_pre_grasp_to_grasp_pose")
 parser.add_argument("--recovery_phase_fraction", type=float, default=0.5)
@@ -2533,12 +2534,29 @@ def _dataset_pose_target_action(
             )
             gripper_label = -1.0 + 2.0 * open_fraction
         if float(live[23]) >= max(0.0, float(args_cli.dataset_drop_retract_gripper_width_m)):
-            drop_idx = min(int(step), int(reference.shape[0]) - 1)
-            retract_target_z = float(reference[drop_idx, 18]) + max(
-                0.0, float(args_cli.dataset_drop_retract_height_m)
-            )
+            if fallback_open_active:
+                if controller_state.get("drop_retract_target_tcp") is None:
+                    retract_target_tcp = np.asarray(live[16:19], dtype=np.float64).copy()
+                    retract_target_tcp[1] -= max(
+                        0.0, float(args_cli.dataset_drop_fallback_retract_lateral_m)
+                    )
+                    retract_target_tcp[2] += max(
+                        0.0, float(args_cli.dataset_drop_retract_height_m)
+                    )
+                    controller_state["drop_retract_target_tcp"] = retract_target_tcp
+                retract_delta = np.asarray(
+                    controller_state["drop_retract_target_tcp"], dtype=np.float64
+                ) - np.asarray(live[16:19], dtype=np.float64)
+            else:
+                drop_idx = min(int(step), int(reference.shape[0]) - 1)
+                retract_target_z = float(reference[drop_idx, 18]) + max(
+                    0.0, float(args_cli.dataset_drop_retract_height_m)
+                )
+                retract_delta = np.asarray(
+                    (0.0, 0.0, retract_target_z - float(live[18])), dtype=np.float64
+                )
             pos_delta = _bounded_position_correction(
-                np.asarray((0.0, 0.0, retract_target_z - float(live[18])), dtype=np.float64),
+                retract_delta,
                 max_norm=float(args_cli.dataset_drop_pose_max_correction_m),
             )
         rot_delta = np.zeros(3, dtype=np.float64)
@@ -2880,6 +2898,7 @@ def main() -> None:
                 "drop_fallback_just_started": False,
                 "drop_open_started": False,
                 "drop_open_elapsed_steps": 0,
+                "drop_retract_target_tcp": None,
                 "drop_release_hold_started": False,
                 "drop_center_error_m": None,
                 "drop_containment_margin_m": None,
@@ -3414,7 +3433,7 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-                "dataset_drop_controller_version": 9,
+                "dataset_drop_controller_version": 10,
                 "dataset_drop_spec_source": "exact_stable_scene",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_transport_clearance_m": float(
@@ -3470,6 +3489,9 @@ def main() -> None:
                 ),
                 "dataset_drop_fallback_open_steps": int(
                     args_cli.dataset_drop_fallback_open_steps
+                ),
+                "dataset_drop_fallback_retract_lateral_m": float(
+                    args_cli.dataset_drop_fallback_retract_lateral_m
                 ),
                 "dataset_post_action_settle_steps": int(args_cli.dataset_post_action_settle_steps),
                 "dataset_action_translation_gain": (
@@ -3551,7 +3573,7 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-        "dataset_drop_controller_version": 9,
+        "dataset_drop_controller_version": 10,
         "dataset_drop_spec_source": "exact_stable_scene",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),
@@ -3587,6 +3609,9 @@ def main() -> None:
         "dataset_drop_fallback_linear_speed": float(args_cli.dataset_drop_fallback_linear_speed),
         "dataset_drop_fallback_angular_speed": float(args_cli.dataset_drop_fallback_angular_speed),
         "dataset_drop_fallback_open_steps": int(args_cli.dataset_drop_fallback_open_steps),
+        "dataset_drop_fallback_retract_lateral_m": float(
+            args_cli.dataset_drop_fallback_retract_lateral_m
+        ),
         "dataset_post_action_settle_steps": int(args_cli.dataset_post_action_settle_steps),
         "exact_visual_resample": bool(args_cli.exact_visual_resample),
         "robot_material_randomization": bool(
