@@ -14020,3 +14020,49 @@ Smoke follow-up:
   resolved command has `training.resume=true` and loaded the durable
   `official_dp_train/checkpoints/latest.ckpt`. Stage-50 and stage-100 jobs were
   unaffected.
+
+## 2026-07-01T15:36:13Z Exact Closed-Loop Chunking Diagnosis And First Policy Success
+
+- Corrected exact-matrix jobs `1084009-1084011` completed one uninterrupted
+  4,800-step episode each from the actual stage-10 training manifest at
+  checkpoint step 20,170. All three used action chunk one, 100-step DDPM,
+  exact robot/object reset, quality rendering, and no early termination. Both
+  training shards and the held-out shard failed (`0/3`): source 3 lifted at
+  most `0.0083649 m`, source 5 `0.0058080 m`, and held-out source 7 only
+  numerical noise. Scene/wrist reset parity was `41.10/36.99 dB`,
+  `60.29/60.16 dB`, and `39.79/38.23 dB`, with exact 24-D robot state.
+- L40S offline-coherence job `1084255` failed before model load because
+  torchvision tried to cache ResNet-18 weights in the quota-limited container
+  overlay. Relaunch `1084265` redirected `TORCH_HOME` into the mounted cache
+  and completed. Across stored training observations, first-action pose cosine
+  was `0.9397`, gripper sign agreement `0.9924`, median first-action MSE
+  `0.0002107`, and predicted/label pose-amplitude ratio `1.0711`. On the one
+  held-out object those values degraded to `0.4061`, `0.6923`, `0.011841`, and
+  `0.8746`. This separates good train-observation imitation from closed-loop
+  compounding and weak 10-shot object generalization.
+- Exact source-3 ablation job `1084267` changed only
+  `ACTION_CHUNK_STEPS=1 -> 8`. It completed successfully: first settled-bin
+  success at step `1841`, maximum lift `0.208299 m`, 2,960 successful steps,
+  and final success through step 4,800. Policy calls fell from 4,800 to 600 and
+  mean applied pose-action jerk fell from `0.03977` to `0.02302`. The quality
+  overview video is 1024x1024, 60 FPS, 4,799 frames, and 79.98 seconds.
+  First/lift/transport/drop/final frames were inspected and show a physical
+  grasp, high lift, transport, release, and a stationary object in the bin.
+- The controlled result identifies independent DDPM resampling every simulator
+  step as a major failure mechanism for chunk-one execution. Stopped periodic
+  monitor PIDs `3531239`, `3531240`, and `3547838`; restarted the same ledgers
+  and thresholds as PIDs `3685141`, `3685145`, and `3685149` with action chunk
+  eight. Their configs retain 4,800 steps, one episode, quality rendering,
+  both material randomizers, no early termination, and resume stage 10 at the
+  next 40k threshold rather than duplicating its 20k eval.
+- Recovery job `1084242` accepted source 150 as a 944-step dynamics-replayable
+  trajectory. The fetched scene/wrist tensor video is 520x256, 30 FPS, 472
+  frames, and 15.73 seconds. First/middle/last inspection shows the object in
+  both cameras, table-only scene framing, wrist acquisition, transport, and a
+  settled drop. Only `0.21%` of pose actions are below `1e-3`; the longest such
+  run is two steps and the longest nearly stationary TCP run is 19 steps, so
+  this sample does not contain long artificial waits.
+- Launched deterministic dual-camera success replay job `1084395` with action
+  chunk eight, 4,800 quality-render steps, overview video, and scene/wrist
+  debug capture every 60 steps through the full horizon. It must reproduce the
+  source-3 success before its complete dual-camera artifact is accepted.
