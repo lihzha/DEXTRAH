@@ -8,7 +8,7 @@
 #SBATCH --time=00:30:00
 #SBATCH --mem=160G
 #SBATCH --cpus-per-task=16
-#SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/record_yam_controller_native_%A_%a.out
+#SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/record_yam_controller_native_%j.out
 
 set -euo pipefail
 
