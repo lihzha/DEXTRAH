@@ -14453,3 +14453,39 @@ Smoke follow-up:
   shadow and mesh edges. Added an opt-in final-curriculum gate that rejects any
   shard missing authoritative table or dome metadata while retaining legacy
   compatibility for the frozen v15 curricula.
+
+## 2026-07-01T22:18:00Z Mid-Collection Audit And Atomic 40k Evaluation
+
+- The clean v15 collector reached 256 accepted records and a fresh full audit
+  re-read every available shard. All 256 passed controller, strict success,
+  recorded-action dynamics replay, finite-array, nonblank RGB, hidden-marker,
+  and flow gates. The audit contains 225,981 control steps, 70 unique objects,
+  a 229/27 object-disjoint train/validation split, and a maximum stationary TCP
+  run of 54 steps versus the 60-step limit.
+- Inspected accepted stored trajectories at source 250, source 300, and source
+  351. They cover a thin black object, a purple object on dark wood, and a
+  complex bright-pink object; each starts with the object visible, maintains
+  nonblank scene/wrist observations, flows through grasp and transport, and
+  ends with release in the bin. Nominal source 350 and its recovery were
+  rejected after missing placement, confirming failed rollouts do not enter
+  the dataset.
+- Stage-10 A100 allocation `29712378` timed out normally at raw step 37,335.
+  Submitter job `29726377` loaded `latest.ckpt` with `training.resume=true` and
+  appended from step 37,411, preserving model, EMA, optimizer, and schedule
+  state. Stage 50 and 100 continued concurrently without nonfinite loss.
+- The first 40k periodic handoff copied `latest.ckpt` during a paused partial
+  write: snapshot `step_0040577.ckpt` was only 642,187,264 bytes and lacked a
+  ZIP central directory, while valid snapshots are 1,606,334,243 bytes. Eval
+  job `1090640` failed before policy loading, so it is not policy evidence.
+  Commit `70fb4485` now requires stable size and mtime, validates the source ZIP,
+  copies through a temporary file, rechecks the source after copying, validates
+  the copied ZIP, and only then atomically publishes the snapshot. The corrupt
+  snapshot/ledger row were removed and all 10/50/100 monitors restarted with
+  their prior ledgers and thresholds.
+- The repaired monitor produced valid full-size step-41,972 snapshot and eval
+  job `1090671`, which completed 4,800 uninterrupted quality-rendered steps.
+  Result remains zero success and effectively zero lift (`6.52e-7 m` maximum):
+  the policy closes early but moves the wrist away from the object. Both-camera
+  inspection confirms the object/bin are visible and observations are valid;
+  this is stage-10 random-scene generalization failure, not horizon, reset,
+  rendering, or checkpoint-integrity mismatch.
