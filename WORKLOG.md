@@ -13287,3 +13287,46 @@ Smoke follow-up:
   debug-site prims, no early reset, finite actions, visible approach behavior,
   and either settled-bin success or a diagnosed max-lift/closest-approach result
   from metrics and representative video frames.
+- Committed and pushed evaluator changes as
+  `7ee10210a8d3a0a8f227bed671c6f2cf46c1372a`; deployed the exact commit by Git
+  bundle to the clean agent-owned L40S worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624`.
+  Remote syntax checks passed and the generated single-YAM USD is present.
+- Initial four-hour job `1079313` was canceled while pending after historical
+  timing showed that a bounded 1200-step run fits a one-hour allocation.
+  Replacement `1079318` exposed a comparison bug during live inspection: it
+  inherited the task's unrestricted Objaverse manifest and bounds filtering
+  instead of the 120-object pool used by the dataset and prior chunk-8 eval.
+  It was canceled at `00:12:51` with no lift; its result is not used below.
+- Corrected marker-free job `1079435` pinned the exact 120-entry dataset
+  manifest, `max_objects=120`, and bounds validation off. It completed all
+  1200 steps in `00:13:57` with no reset. The target was visible in the scene
+  camera throughout, both policy streams were nonblank, and exactly the two
+  YAM debug sites were hidden. Settled-bin success was `0/1`, the gripper
+  command never fell below `0.997791`, max lift was numerical noise
+  (`6.482e-7 m`), and closest/final hand-object distance was `0.273161 m` from
+  an initial `0.320781 m`.
+- Marker-preserving A/B job `1079439` held every other setting fixed and
+  completed in `00:14:09`. It also had `0/1` success, no closure, the same
+  numerical-noise max lift, and closest/final distance `0.271900 m`. Keeping
+  the training-time green site cue therefore improved closest approach by only
+  `1.26 mm`; marker removal is not the cause of the failed chunk-1 rollout. A
+  saturated-green pixel audit found zero marker pixels in all 62 marker-free
+  diagnostic frames and detected the cue in all 62 marker-on frames.
+- Equal-horizon comparison against the prior chunk-8 seed-42 trace: over its
+  first 1200 steps, chunk 8 reduced hand-object distance from `0.320759 m` to
+  `0.261208 m`, versus `0.047620 m` progress marker-free and `0.048885 m`
+  marker-on for chunk 1. Mean reward was `2.838413` for chunk 8, versus
+  `2.824713` and `2.824929` for the chunk-1 runs. None had lifted or closed by
+  1200 steps, and the existing 48,000-step chunk-8 run ultimately also failed.
+- Diagnosis: chunk 1 is slower, not more accurate, for this checkpoint. In the
+  old chunk-8 trace, mean pose-command norm grows from `0.00658` at predicted
+  offset 0 to `0.01189` at offset 7. Replanning every step repeatedly executes
+  the conservative first action and discards the larger later actions. This
+  cadence change does not rescue the underfit full-dataset policy.
+- Inspected local artifacts are under
+  `cluster_results/l401/yam_full500_step1006379_chunk1_trainpool_quality_markerfree_seed42_1200_20260701T011000Z`
+  and the corresponding `...quality_markerson...` directory. Each contains
+  metrics, 1200-frame quality overview video, 62 scene/wrist diagnostics, and
+  a 20.67-second scene/wrist video. Slurm logs are in `cluster_logs/l401` for
+  jobs `1079318`, `1079435`, and `1079439`.
