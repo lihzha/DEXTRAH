@@ -12,13 +12,28 @@ MATRIX_NAME="${MATRIX_NAME:-yam_exact_eval_stage${STAGE_SIZE}_$(date -u +%Y%m%dT
 N_TRAIN="${N_TRAIN:-2}"
 N_VAL="${N_VAL:-3}"
 MAX_CONCURRENT="${MAX_CONCURRENT:-3}"
+POLL_SECONDS="${POLL_SECONDS:-20}"
 NUM_STEPS="${NUM_STEPS:-1200}"
 ACTION_CHUNK_STEPS="${ACTION_CHUNK_STEPS:-1}"
 CODE_COMMIT="${CODE_COMMIT:-$(git -C "$CODE_NFS" rev-parse HEAD)}"
+JOB_NAME_PREFIX="${JOB_NAME_PREFIX:-yamev_$(printf '%s' "$MATRIX_NAME" | cksum | awk '{print $1}')}"
 
 MATRIX_DIR="$RESULTS_NFS/evals/$MATRIX_NAME"
 MATRIX_TSV="$MATRIX_DIR/eval_matrix.tsv"
 mkdir -p "$MATRIX_DIR"
+if [ "$MAX_CONCURRENT" -lt 1 ] || [ "$POLL_SECONDS" -lt 1 ]; then
+  echo "MAX_CONCURRENT and POLL_SECONDS must be positive" >&2
+  exit 2
+fi
+if [[ ! "$JOB_NAME_PREFIX" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "JOB_NAME_PREFIX may contain only letters, digits, underscores, and hyphens" >&2
+  exit 2
+fi
+exec 9>"$MATRIX_DIR/submitter.lock"
+if ! flock -n 9; then
+  echo "Another submitter owns $MATRIX_DIR/submitter.lock" >&2
+  exit 2
+fi
 
 python3 - "$CURRICULUM_JSON" "$STAGE_SIZE" "$N_TRAIN" "$N_VAL" "$MATRIX_TSV" "$MATRIX_NAME" <<'PY'
 import json
@@ -80,17 +95,40 @@ payload = {
     "num_steps": int("$NUM_STEPS"),
     "action_chunk_steps": int("$ACTION_CHUNK_STEPS"),
     "matrix_tsv": "$MATRIX_TSV",
+    "max_concurrent": int("$MAX_CONCURRENT"),
+    "poll_seconds": int("$POLL_SECONDS"),
+    "job_name_prefix": "$JOB_NAME_PREFIX",
+    "submission_mode": "ordinary_jobs_with_submitter_throttle",
 }
 Path("$MATRIX_DIR/config.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
-job_id="$(
-  sbatch --parsable \
-    --array="0-$((ENTRY_COUNT - 1))%${MAX_CONCURRENT}" \
-    --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",CODE_COMMIT="$CODE_COMMIT",MATRIX_TSV="$MATRIX_TSV",CHECKPOINT="$CHECKPOINT",NUM_STEPS="$NUM_STEPS",ACTION_CHUNK_STEPS="$ACTION_CHUNK_STEPS" \
-    "$WRAPPER"
-)"
-printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$job_id" "$ENTRY_COUNT" \
-  | tee -a "$MATRIX_DIR/submissions.tsv"
-echo "eval_matrix_job_id=$job_id"
+SUBMISSIONS_TSV="$MATRIX_DIR/submissions.tsv"
+touch "$SUBMISSIONS_TSV"
+printf '%s\t%s\t%s\t%s\t%s\n' "timestamp_utc" "job_id" "entry_index" "job_name" "code_commit" > "$MATRIX_DIR/submissions_header.tsv"
+printf '%s\t%s\t%s\n' "$(hostname)" "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MATRIX_DIR/submitter_process.tsv"
+
+active_jobs() {
+  squeue -h -u "${USER:-lzha}" -t PENDING,RUNNING,CONFIGURING,COMPLETING -o "%j" \
+    | grep -c "^${JOB_NAME_PREFIX}_e" || true
+}
+
+for entry_index in $(seq 0 "$((ENTRY_COUNT - 1))"); do
+  while [ "$(active_jobs)" -ge "$MAX_CONCURRENT" ]; do
+    sleep "$POLL_SECONDS"
+  done
+  entry_index_padded="$(printf '%03d' "$entry_index")"
+  job_name="${JOB_NAME_PREFIX}_e${entry_index_padded}"
+  job_id="$(
+    sbatch --parsable \
+      --job-name="$job_name" \
+      --output="$NFS_ROOT/slurm_logs/dextrah/eval_yam_exact_${MATRIX_NAME}_${entry_index_padded}_%j.out" \
+      --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",CODE_COMMIT="$CODE_COMMIT",MATRIX_TSV="$MATRIX_TSV",ENTRY_INDEX="$entry_index",CHECKPOINT="$CHECKPOINT",NUM_STEPS="$NUM_STEPS",ACTION_CHUNK_STEPS="$ACTION_CHUNK_STEPS" \
+      "$WRAPPER"
+  )"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$job_id" "$entry_index" "$job_name" "$CODE_COMMIT" \
+    | tee -a "$SUBMISSIONS_TSV"
+done
+
+echo "submitted_jobs=$SUBMISSIONS_TSV"
 echo "matrix_dir=$MATRIX_DIR"
