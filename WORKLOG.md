@@ -13726,3 +13726,18 @@ Smoke follow-up:
   --check`, and all six dataset/curriculum unit tests pass. Qualify this behavior
   on source 4 and a normal staged-descent source before promoting it to remaining
   production records.
+- The simple first-success stop was superseded before its queued qualification
+  jobs consumed GPU time. Earlier source-0 evidence showed that contact variation
+  can delay replay success beyond the first nominal-success frame, so selecting
+  that frame alone is not a valid general replay gate.
+- The replacement records the existing bounded nominal rollout and performs one
+  full exact-reset dynamics replay while tracking every successful action-prefix
+  endpoint in both executions. It accepts only if the two sets intersect, chooses
+  their earliest common settled-success endpoint, and trims scene RGB, wrist RGB,
+  24-D state, actions, and `episode_ends` to that exact prefix before writing.
+  Full-rollout and selected-prefix results remain separately visible in metrics.
+  This preserves the strict physical/replay contract, handles replay timing
+  variation, removes all later idle or rocking labels, and requires no repeated
+  rendering or replay sweep. Python compilation, shell syntax, diff checks, and
+  all six dataset/curriculum unit tests pass. Requalify sources 0 and 4 using this
+  adaptive prefix gate before restarting production from missing source 4/11.

@@ -191,6 +191,7 @@ payload = {
     "dynamics_mode": True,
     "recording_require_success": True,
     "recording_replay_gate": True,
+    "recording_select_replayable_success_prefix": True,
     "exact_visual_resample": True,
     "hide_robot_debug_sites": True,
 }

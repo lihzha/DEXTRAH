@@ -41,14 +41,19 @@ def _recording_controller_path(episode_summary: dict[str, Any]) -> str:
     )
 
 
-def _recording_episode_success(episode_summary: dict[str, Any]) -> bool:
+def _recording_episode_success(
+    episode_summary: dict[str, Any], *, require_final_success: bool = True
+) -> bool:
     fallback_release_valid = bool(
         not episode_summary["drop_fallback_used"]
         or episode_summary["drop_release_hold_started"]
     )
     return bool(
         episode_summary["success"]
-        and float(episode_summary["final_success"] or 0.0) >= 0.5
+        and (
+            not require_final_success
+            or float(episode_summary["final_success"] or 0.0) >= 0.5
+        )
         and fallback_release_valid
     )
 
@@ -119,6 +124,15 @@ parser.add_argument(
     action=argparse.BooleanOptionalAction,
     default=False,
     help="Replay recorded commands from the exact reset under dynamics and require the placement to succeed.",
+)
+parser.add_argument(
+    "--recording_select_replayable_success_prefix",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help=(
+        "Trim accepted recordings at the earliest action prefix where both the nominal "
+        "rollout and exact-reset dynamics replay satisfy settled-bin success."
+    ),
 )
 parser.add_argument("--recording_gate_max_tcp_error_m", type=float, default=0.01)
 parser.add_argument("--recording_gate_max_joint_error_rad", type=float, default=0.05)
@@ -2140,6 +2154,8 @@ def _replay_recorded_episode_gate(
     max_joint_error = 0.0
     bin_drop_time_s = 0.0
     success_step = None
+    success_steps: list[int] = []
+    success_step_metrics: list[dict[str, Any]] = []
     done_step = None
     finite_actions = True
     steps_completed = 0
@@ -2186,11 +2202,21 @@ def _replay_recorded_episode_gate(
             bin_drop_time_s += float(task_env.dt)
         else:
             bin_drop_time_s = 0.0
-        if (
-            success_step is None
+        step_success = bool(
+            final_bin_metrics.get("bin_drop_candidate", 0.0) >= 0.5
             and bin_drop_time_s + 1.0e-9 >= float(bin_drop_spec["settled_duration_s"])
-        ):
-            success_step = steps_completed
+        )
+        if step_success:
+            if success_step is None:
+                success_step = steps_completed
+            success_steps.append(steps_completed)
+            success_step_metrics.append(
+                {
+                    "step": int(steps_completed),
+                    "bin_drop_time_s": float(bin_drop_time_s),
+                    "bin_metrics": dict(final_bin_metrics),
+                }
+            )
     final_success = bool(
         success_step is not None
         and final_bin_metrics.get("bin_drop_candidate", 0.0) >= 0.5
@@ -2220,6 +2246,8 @@ def _replay_recorded_episode_gate(
         "success": bool(success),
         "final_success": bool(final_success),
         "success_step": success_step,
+        "success_steps": success_steps,
+        "success_step_metrics": success_step_metrics,
         "done_step": done_step,
         "max_tcp_position_error_m": float(max_tcp_error),
         "max_tcp_position_error_threshold_m": max_tcp_threshold,
@@ -3357,6 +3385,11 @@ def main() -> None:
                 "success_metric": success_key,
                 "final_success": None if not success_values else float(success_values[-1]),
                 "max_success": None if not success_values else float(max(success_values)),
+                "success_steps": [
+                    int(item["step"])
+                    for item in episode_records
+                    if float(item.get(success_key) or 0.0) >= 0.5
+                ],
                 "drop_descent_started": bool(descent_values and max(descent_values) >= 0.5),
                 "drop_fallback_used": bool(fallback_values and max(fallback_values) >= 0.5),
                 "drop_release_hold_started": bool(
@@ -3375,7 +3408,13 @@ def main() -> None:
             episode_summaries.append(episode_summary)
             if record_policy_shard is not None:
                 controller_path = _recording_controller_path(episode_summary)
-                recording_success = _recording_episode_success(episode_summary)
+                select_success_prefix = bool(
+                    args_cli.recording_select_replayable_success_prefix
+                )
+                recording_success = _recording_episode_success(
+                    episode_summary,
+                    require_final_success=not select_success_prefix,
+                )
                 accepted = recording_success or not bool(args_cli.recording_require_success)
                 recording_decisions.append(
                     {
@@ -3390,20 +3429,21 @@ def main() -> None:
                         ),
                         "controller_path": controller_path,
                         "accepted_before_replay_gate": bool(accepted),
+                        "selected_prefix_steps": None,
+                        "selected_final_success": False,
                         "num_steps": int(len(episode_recorded_actions)),
                     }
                 )
                 if accepted:
-                    recorded_scene_rgb.extend(episode_recorded_scene_rgb)
-                    recorded_wrist_rgb.extend(episode_recorded_wrist_rgb)
-                    recorded_robot_state.extend(episode_recorded_robot_state)
-                    recorded_actions.extend(episode_recorded_actions)
-                    recorded_episode_ends.append(len(recorded_actions))
                     accepted_recordings.append(
                         {
                             "episode": int(episode),
+                            "scene_rgb": episode_recorded_scene_rgb,
+                            "wrist_rgb": episode_recorded_wrist_rgb,
                             "actions": episode_recorded_actions,
                             "robot_states": episode_recorded_robot_state,
+                            "nominal_success_steps": list(episode_summary["success_steps"]),
+                            "selected_prefix_steps": None,
                             "initial_state": episode_initial_state,
                             "drop_fallback_used": bool(episode_summary["drop_fallback_used"]),
                             "controller_path": controller_path,
@@ -3440,6 +3480,80 @@ def main() -> None:
                         pose_target_replay=bool(recording["drop_fallback_used"]),
                     )
                     gate_result["episode"] = int(recording["episode"])
+                    if bool(args_cli.recording_select_replayable_success_prefix):
+                        nominal_success_steps = {
+                            int(step) for step in recording["nominal_success_steps"]
+                        }
+                        replay_success_steps = {
+                            int(step) for step in gate_result.get("success_steps") or []
+                        }
+                        common_success_steps = sorted(
+                            nominal_success_steps.intersection(replay_success_steps)
+                        )
+                        selected_prefix_steps = (
+                            common_success_steps[0] if common_success_steps else None
+                        )
+                        full_rollout_passed = bool(gate_result["passed"])
+                        full_rollout_final_success = bool(gate_result["final_success"])
+                        full_rollout_num_actions = int(gate_result["num_actions"])
+                        prefix_passed = bool(
+                            gate_result["finite_actions"]
+                            and int(gate_result["steps_completed"])
+                            == full_rollout_num_actions
+                            and selected_prefix_steps is not None
+                            and (
+                                gate_result["tracking_pass"]
+                                or not gate_result["trajectory_match_required"]
+                            )
+                        )
+                        selected_metrics = next(
+                            (
+                                item
+                                for item in gate_result.get("success_step_metrics") or []
+                                if int(item["step"]) == selected_prefix_steps
+                            ),
+                            None,
+                        )
+                        gate_result.update(
+                            {
+                                "passed": prefix_passed,
+                                "success": selected_prefix_steps is not None,
+                                "final_success": selected_prefix_steps is not None,
+                                "num_actions": (
+                                    int(selected_prefix_steps)
+                                    if selected_prefix_steps is not None
+                                    else full_rollout_num_actions
+                                ),
+                                "selected_prefix_steps": selected_prefix_steps,
+                                "selected_prefix_bin_metrics": selected_metrics,
+                                "common_success_step_count": len(common_success_steps),
+                                "common_success_step_first": (
+                                    common_success_steps[0]
+                                    if common_success_steps
+                                    else None
+                                ),
+                                "common_success_step_last": (
+                                    common_success_steps[-1]
+                                    if common_success_steps
+                                    else None
+                                ),
+                                "full_rollout_passed": full_rollout_passed,
+                                "full_rollout_final_success": full_rollout_final_success,
+                                "full_rollout_num_actions": full_rollout_num_actions,
+                            }
+                        )
+                        recording["selected_prefix_steps"] = selected_prefix_steps
+                    else:
+                        recording["selected_prefix_steps"] = len(recording["actions"])
+                    decision = next(
+                        item
+                        for item in recording_decisions
+                        if int(item["episode"]) == int(recording["episode"])
+                    )
+                    decision["selected_prefix_steps"] = recording[
+                        "selected_prefix_steps"
+                    ]
+                    decision["selected_final_success"] = bool(gate_result["final_success"])
                     gate_episodes.append(gate_result)
                     _stage("recording_replay_gate_episode", **gate_result)
                 recording_acceptance_pass = bool(gate_episodes) and all(
@@ -3453,6 +3567,18 @@ def main() -> None:
                 }
             else:
                 recording_acceptance_pass = True
+                for recording in accepted_recordings:
+                    selected_prefix_steps = len(recording["actions"])
+                    if bool(args_cli.recording_select_replayable_success_prefix):
+                        selected_prefix_steps = int(recording["nominal_success_steps"][0])
+                    recording["selected_prefix_steps"] = selected_prefix_steps
+                    decision = next(
+                        item
+                        for item in recording_decisions
+                        if int(item["episode"]) == int(recording["episode"])
+                    )
+                    decision["selected_prefix_steps"] = selected_prefix_steps
+                    decision["selected_final_success"] = True
                 recording_replay_gate_summary = {
                     "enabled": False,
                     "passed": True,
@@ -3466,6 +3592,13 @@ def main() -> None:
     recorded_policy_shard_summary = None
     if record_policy_shard is not None and recording_acceptance_pass:
         assert exact_demo is not None
+        for recording in accepted_recordings:
+            selected_prefix_steps = int(recording["selected_prefix_steps"])
+            recorded_scene_rgb.extend(recording["scene_rgb"][:selected_prefix_steps])
+            recorded_wrist_rgb.extend(recording["wrist_rgb"][:selected_prefix_steps])
+            recorded_robot_state.extend(recording["robot_states"][:selected_prefix_steps])
+            recorded_actions.extend(recording["actions"][:selected_prefix_steps])
+            recorded_episode_ends.append(len(recorded_actions))
         recorded_policy_shard_summary = _write_recorded_policy_shard(
             record_policy_shard,
             exact_demo=exact_demo,
@@ -3497,6 +3630,9 @@ def main() -> None:
                 "dataset_drop_acceptance_mode": DATASET_DROP_ACCEPTANCE_MODE,
                 "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
                 "recording_gate_fallback_replay_mode": "robot_pose_target_dynamics",
+                "recording_select_replayable_success_prefix": bool(
+                    args_cli.recording_select_replayable_success_prefix
+                ),
                 "recording_gate_fallback_pose_lookahead": int(
                     args_cli.recording_gate_fallback_pose_lookahead
                 ),
@@ -3579,11 +3715,11 @@ def main() -> None:
                 "source_policy_shard": str(exact_demo["shard"]),
                 "code_commit": os.environ.get("CODE_COMMIT"),
                 "episode_success": [
-                    _recording_episode_success(item)
-                    for item in episode_summaries
+                    bool(item["success"]) for item in recording_decisions
                 ],
                 "episode_final_success": [
-                    bool(float(item["final_success"] or 0.0) >= 0.5) for item in episode_summaries
+                    bool(item["selected_final_success"])
+                    for item in recording_decisions
                 ],
                 "episode_drop_descent_started": [
                     bool(item["drop_descent_started"]) for item in episode_summaries
@@ -3719,6 +3855,9 @@ def main() -> None:
         "num_steps_requested": int(args_cli.num_steps),
         "action_chunk_steps": int(args_cli.action_chunk_steps),
         "stop_on_bin_drop_success": bool(args_cli.stop_on_bin_drop_success),
+        "recording_select_replayable_success_prefix": bool(
+            args_cli.recording_select_replayable_success_prefix
+        ),
         "num_inference_steps": int(args_cli.num_inference_steps),
         "num_action_samples": int(args_cli.num_action_samples),
         "episode_success_rate": sum(success_flags) / len(success_flags) if success_flags else None,
