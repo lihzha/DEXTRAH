@@ -14190,3 +14190,39 @@ Smoke follow-up:
 - Source-104 visual inspection confirms its low wrist intensity is a real
   near-black/occluded terminal view while the scene camera remains valid. It is
   retained only as failure evidence and will not enter the final curriculum.
+
+## 2026-07-01T17:10:00Z V15 Integration Pass And Clean Production Scale-Up
+
+- V15 quality-render jobs `1085117-1085120` completed on one four-L40S node.
+  Sources 32, 190, and 200 passed nominal final placement plus strict dynamics
+  replay; source 15 was correctly rejected. Source 15 exercised fallback and
+  reached a nominal placement but did not reproduce under the replay gate, so
+  no shard was written.
+- Accepted shards contain 962, 896, and 960 steps. Their longest consecutive
+  TCP runs below `1e-5 m` are only 12, 20, and 8 steps, compared with 185, 140,
+  and 128 in the v13 versions. All metadata reports controller version 15,
+  state-observable open trigger, no timeout, quality rendering, exact visual
+  resampling, and a passed dynamics replay gate.
+- Fetched metrics, parity images, 1024x1024 quality videos, and full stored
+  scene/wrist tensors. Encoded 520x256 side-by-side videos at 30 FPS: source 32
+  has 481 frames / 16.03 s, source 190 has 448 / 14.93 s, and source 200 has
+  480 / 16.00 s. First/middle/last inspection confirms table-only scene views,
+  visible initial objects, wrist acquisition during grasp/transport, and final
+  released objects inside the bins.
+- The fixed-length Gym overview video also captures the internal replay-gate
+  rollout after nominal recording, so its tail is not a training-data tail.
+  Stored tensor videos are authoritative and end at the first success shared by
+  nominal dynamics and replay dynamics. Representative source-200 tensor video:
+  `cluster_results/l401/yam_drop_stateobs_v15_20260701T1716Z_source_000200/source_000200_scene_wrist.mp4`.
+- The clean production run will use root
+  `yam_controller_stateobs_v15_final500_20260701T1710Z`, tested commit
+  `7d35a1be`, all 500 source rows, six concurrent nominal L40S jobs, three
+  recovery jobs, two replacement jobs, 8/10-minute allocation limits, and
+  videos every 50 sources. It intentionally does not reuse v13 shards. Final
+  curriculum admission still requires strict replay, v15 metadata, full RGB
+  validity, and the one-second stationary-TCP flow gate.
+- Launched main PID `3757408`, recovery PID `3757481`, and replacement PID
+  `3758042`. The first replacement process exited because a clean root had no
+  seed replacement manifest; copied the immutable 500-row source manifest to
+  `replacement_source_manifest_500.json` and restarted it successfully. Main
+  jobs `1085219-1085224` cover sources 0-5 and are pinned to `7d35a1be`.
