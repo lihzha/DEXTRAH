@@ -13883,3 +13883,38 @@ Smoke follow-up:
   simulator startup. The evaluator now enables Bash auto-export while resolving
   launch defaults, so every scalar consumed by the quoted `srun` container
   shell crosses the boundary and future options cannot fail one at a time.
+
+## 2026-07-01T13:49:09Z Stage-100 Curriculum And Training Launch
+
+- Production crossed exactly 100 accepted shards while the first-pass stream
+  reached source 104. The persistent nested curriculum audit accepted all 100
+  candidates with zero rejects and froze `manifest_0100.json` at SHA-256
+  `f804fd3493fea812a8b303384263ebf4aa960cd8ebdf6fde7981ea30a7840878`.
+  It contains 110,574 steps, 90 train / 10 validation trajectories, 44 / 6
+  unique object UUIDs, and zero UUID overlap. Stage-10 and stage-50 hashes remain
+  byte-identical at `8acd2b06...` and `b45a268e...`.
+- Replacements 515 and 516 restored excluded sources 79 and 80, replacement 517
+  restored source 72 after three rejected candidates, replacement 518 restored
+  source 89, and source 92 passed recovery. Replacements 519 and 520 are running
+  for excluded sources 95 and 97. Every failed original/candidate remains
+  outside all curriculum manifests.
+- Scratch stage-100 training run
+  `yam_rgb_dp_ctrl_native_v15_n100_bs80_600k_20260701T1342Z` was launched from
+  commit `195901b6` with A100 job `29708202`, submitter PID `2097388`, batch 80,
+  600k updates, 600 epoch cap, 100-step DDPM, horizon 16, one observation step,
+  eight trained action steps, two 256x256 cameras, 24-D robot state, and no
+  phase/progress/object state. The job is pending only on the two-job per-user
+  QOS limit while stage 10 and stage 50 occupy the active slots.
+- L40S stage-100 monitor PID `3547838` will evaluate fresh 100k increments with
+  one full 4,800-step quality-render episode per allocation, action chunk one,
+  and no failure/success early termination. Stage-10 and stage-50 monitors now
+  run as PIDs `3531239` and `3531240` from the detached operations worktree at
+  commit `195901b6`; their resolved configs record the same long-horizon
+  semantics.
+- The final stage-10 20k exact matrix is running as jobs `1083642-1083644` from
+  the fully patched operations commit. At about 1,500 steps, neither train scene
+  nor the held-out scene had lifted; debug frames show the policy approaching
+  and contacting source-3's object before pushing it roughly 66 mm. Three
+  randomized jobs `1083600-1083602` likewise had no lift by about 2,000 steps.
+  This is closed-loop undertraining/compounding-error evidence, not an initial
+  state, camera, termination, or horizon mismatch.
