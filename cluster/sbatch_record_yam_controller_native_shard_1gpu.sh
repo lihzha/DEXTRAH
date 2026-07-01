@@ -53,6 +53,8 @@ RECOVERY_PERTURBATION_STEPS="${RECOVERY_PERTURBATION_STEPS:-2}"
 RECOVERY_TRANSLATION_ACTION_MAX="${RECOVERY_TRANSLATION_ACTION_MAX:-0.18}"
 RECOVERY_ROTATION_ACTION_MAX="${RECOVERY_ROTATION_ACTION_MAX:-0.12}"
 RENDERING_MODE="${RENDERING_MODE:-quality}"
+YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION="${YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION:-True}"
+YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION="${YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION:-True}"
 CAPTURE_VIDEO="${CAPTURE_VIDEO:-False}"
 VIDEO_EVERY="${VIDEO_EVERY:-0}"
 PRINT_INTERVAL="${PRINT_INTERVAL:-100}"
@@ -129,6 +131,8 @@ valid = (
     and provenance.get("rendering_mode") == "quality"
     and int(provenance.get("initial_render_warmup_frames") or 0) >= 64
     and provenance.get("exact_visual_resample")
+    and provenance.get("robot_material_randomization")
+    and provenance.get("object_material_randomization")
     and provenance.get("dataset_drop_targeting_mode") == "live_object_to_bin_center"
     and provenance.get("dataset_drop_release_height_mode") == "above_bin_top_then_descend"
 )
@@ -159,6 +163,8 @@ exec env \
   CONTROL_MODE="$CONTROL_MODE" \
   EXACT_POLICY_SHARD="$SOURCE_SHARD" \
   EXACT_VISUAL_RESAMPLE=True \
+  YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION="$YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION" \
+  YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION="$YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION" \
   RECORD_POLICY_SHARD="$RECORD_POLICY_SHARD" \
   NUM_EPISODES=1 \
   NUM_STEPS="$NUM_STEPS" \

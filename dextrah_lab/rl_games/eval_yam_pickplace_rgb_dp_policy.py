@@ -144,6 +144,16 @@ parser.add_argument("--yam_policy_material_value_range", type=float, nargs=2, de
 parser.add_argument("--yam_policy_table_texture_dir", type=str, default="")
 parser.add_argument("--yam_policy_table_texture_tiling_range", type=float, nargs=2, default=(1.4, 3.8))
 parser.add_argument("--yam_policy_dome_light_texture_dir", type=str, default="")
+parser.add_argument(
+    "--yam_policy_robot_material_randomization",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+)
+parser.add_argument(
+    "--yam_policy_object_material_randomization",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+)
 parser.add_argument("--yam_policy_object_asset_manifest_path", type=str, default="")
 parser.add_argument("--yam_policy_object_assets_dir", type=str, default="")
 parser.add_argument("--yam_policy_max_objects", type=int, default=0)
@@ -1100,15 +1110,146 @@ def _usd_solid_material(
     color: tuple[float, float, float],
     *,
     roughness: float,
+    metallic: float = 0.0,
 ) -> UsdShade.Material:
     mat = UsdShade.Material.Define(stage, path)
     shader = UsdShade.Shader.Define(stage, f"{path}/Shader")
     shader.CreateIdAttr("UsdPreviewSurface")
     shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*color))
     shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(roughness))
-    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(float(metallic))
     mat.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
     return mat
+
+
+def _bind_material_to_gprims(
+    stage: Any,
+    root_path: str,
+    material: UsdShade.Material,
+    *,
+    path_token: str | None = None,
+) -> list[str]:
+    bound: list[str] = []
+    root_prefix = root_path.rstrip("/") + "/"
+    token = None if path_token is None else path_token.lower()
+    for prim in stage.Traverse():
+        prim_path = str(prim.GetPath())
+        if not prim_path.startswith(root_prefix) or not prim.IsA(UsdGeom.Gprim):
+            continue
+        if token is not None and token not in prim_path.lower():
+            continue
+        _usd_bind(prim, material)
+        bound.append(prim_path)
+    return bound
+
+
+def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
+    enabled = bool(args_cli.exact_visual_resample)
+    robot_enabled = enabled and bool(args_cli.yam_policy_robot_material_randomization)
+    object_enabled = enabled and bool(args_cli.yam_policy_object_material_randomization)
+    if not robot_enabled and not object_enabled:
+        return {
+            "enabled": False,
+            "robot_enabled": robot_enabled,
+            "object_enabled": object_enabled,
+        }
+
+    visual_replay = exact_demo["visual_replay"]
+    rng = np.random.default_rng(int(visual_replay["rng_seed"]) ^ 0x59414D5F)
+    looks_root = "/World/Looks/YAMPolicyMaterialRandomization"
+    UsdGeom.Xform.Define(stage, looks_root)
+    summary: dict[str, Any] = {
+        "enabled": True,
+        "robot_enabled": robot_enabled,
+        "object_enabled": object_enabled,
+    }
+    if robot_enabled:
+        body_value = float(rng.uniform(0.025, 0.18) if rng.random() < 0.85 else rng.uniform(0.20, 0.45))
+        body_color = tuple(
+            float(np.clip(body_value * value, 0.015, 0.52))
+            for value in rng.uniform(0.82, 1.18, size=3)
+        )
+        accent_palette = (
+            (0.02, 0.14, 0.55),
+            (0.95, 0.18, 0.015),
+            (0.035, 0.045, 0.055),
+            (0.28, 0.32, 0.36),
+        )
+        left_color = accent_palette[int(rng.integers(0, len(accent_palette)))]
+        right_color = accent_palette[int(rng.integers(0, len(accent_palette)))]
+        robot_roughness = float(rng.uniform(0.32, 0.88))
+        robot_metallic = float(rng.uniform(0.0, 0.28))
+        body_mat = _usd_solid_material(
+            stage,
+            f"{looks_root}/robot_body",
+            body_color,
+            roughness=robot_roughness,
+            metallic=robot_metallic,
+        )
+        left_mat = _usd_solid_material(
+            stage,
+            f"{looks_root}/left_finger",
+            left_color,
+            roughness=float(rng.uniform(0.40, 0.92)),
+            metallic=float(rng.uniform(0.0, 0.18)),
+        )
+        right_mat = _usd_solid_material(
+            stage,
+            f"{looks_root}/right_finger",
+            right_color,
+            roughness=float(rng.uniform(0.40, 0.92)),
+            metallic=float(rng.uniform(0.0, 0.18)),
+        )
+        robot_root = "/World/envs/env_0/Robot"
+        body_paths = _bind_material_to_gprims(stage, robot_root, body_mat)
+        left_paths = _bind_material_to_gprims(
+            stage, robot_root, left_mat, path_token="link_left_finger"
+        )
+        right_paths = _bind_material_to_gprims(
+            stage, robot_root, right_mat, path_token="link_right_finger"
+        )
+        if not body_paths:
+            raise RuntimeError(f"Robot material randomization found no Gprims under {robot_root}")
+        summary["robot"] = {
+            "body_color": list(body_color),
+            "left_finger_color": list(left_color),
+            "right_finger_color": list(right_color),
+            "roughness": robot_roughness,
+            "metallic": robot_metallic,
+            "body_gprim_count": len(body_paths),
+            "left_finger_gprim_count": len(left_paths),
+            "right_finger_gprim_count": len(right_paths),
+        }
+
+    if object_enabled:
+        override_applied = bool(rng.random() < 0.65)
+        object_summary: dict[str, Any] = {"override_applied": override_applied}
+        if override_applied:
+            object_color = tuple(float(v) for v in rng.uniform(0.08, 0.92, size=3))
+            object_roughness = float(rng.uniform(0.18, 0.95))
+            object_metallic = float(rng.uniform(0.0, 0.65))
+            object_mat = _usd_solid_material(
+                stage,
+                f"{looks_root}/object",
+                object_color,
+                roughness=object_roughness,
+                metallic=object_metallic,
+            )
+            object_root = "/World/envs/env_0/object"
+            object_paths = _bind_material_to_gprims(stage, object_root, object_mat)
+            if not object_paths:
+                raise RuntimeError(f"Object material randomization found no Gprims under {object_root}")
+            object_summary.update(
+                {
+                    "color": list(object_color),
+                    "roughness": object_roughness,
+                    "metallic": object_metallic,
+                    "gprim_count": len(object_paths),
+                }
+            )
+        summary["object"] = object_summary
+    visual_replay["material_randomization"] = summary
+    return summary
 
 
 def _usd_add_box(
@@ -1202,6 +1343,7 @@ def _apply_exact_demo_appearance(task_env: Any, exact_demo: dict[str, Any]) -> d
             attr = light_prim.CreateAttribute("inputs:texture:file", Sdf.ValueTypeNames.Asset)
         attr.Set(Sdf.AssetPath(dome_texture_path))
         dome_summary = {"enabled": True, "texture_path": dome_texture_path}
+    material_summary = _apply_exact_material_randomization(stage, exact_demo)
     task_env.sim.forward()
     return {
         "enabled": True,
@@ -1211,6 +1353,7 @@ def _apply_exact_demo_appearance(task_env: Any, exact_demo: dict[str, Any]) -> d
         "spawned": spawned,
         "table_texture_quads": texture_quads,
         "dome_light_texture": dome_summary,
+        "material_randomization": material_summary,
         "rng_replay": exact_demo["visual_replay"],
     }
 
@@ -3097,6 +3240,14 @@ def main() -> None:
                 ),
                 "initial_render_warmup_frames": int(args_cli.initial_render_warmup_frames),
                 "exact_visual_resample": bool(args_cli.exact_visual_resample),
+                "robot_material_randomization": bool(
+                    args_cli.exact_visual_resample
+                    and args_cli.yam_policy_robot_material_randomization
+                ),
+                "object_material_randomization": bool(
+                    args_cli.exact_visual_resample
+                    and args_cli.yam_policy_object_material_randomization
+                ),
                 "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
                 "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
                 "dataset_drop_retract_gripper_width_m": float(
@@ -3191,6 +3342,12 @@ def main() -> None:
         "dataset_drop_settle_angular_speed": float(args_cli.dataset_drop_settle_angular_speed),
         "dataset_post_action_settle_steps": int(args_cli.dataset_post_action_settle_steps),
         "exact_visual_resample": bool(args_cli.exact_visual_resample),
+        "robot_material_randomization": bool(
+            args_cli.exact_visual_resample and args_cli.yam_policy_robot_material_randomization
+        ),
+        "object_material_randomization": bool(
+            args_cli.exact_visual_resample and args_cli.yam_policy_object_material_randomization
+        ),
         "checkpoint": None if checkpoint is None else str(checkpoint),
         "official_workspace": None if workspace is None else workspace.__class__.__name__,
         "policy_class": None if policy is None else policy.__class__.__name__,

@@ -63,6 +63,10 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
         return None, "insufficient_render_warmup"
     if not bool(recording.get("exact_visual_resample")):
         return None, "visual_resample_not_enabled"
+    if not bool(recording.get("robot_material_randomization")):
+        return None, "robot_material_randomization_not_enabled"
+    if not bool(recording.get("object_material_randomization")):
+        return None, "object_material_randomization_not_enabled"
     if str(recording.get("dataset_drop_targeting_mode") or "") != "live_object_to_bin_center":
         return None, "unsupported_drop_targeting_mode"
     if str(recording.get("dataset_drop_release_height_mode") or "") != "above_bin_top_then_descend":
