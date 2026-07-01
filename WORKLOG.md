@@ -13874,6 +13874,12 @@ Smoke follow-up:
 - Updated the exact-matrix entry wrapper to export that flag, made matrix wall
   time configurable with a 90-minute default, and changed periodic monitors to
   one episode per allocation with all early termination disabled and recorded
-  in monitor config. Stage-10 and stage-50 monitor PIDs `3526506` and `3527068`
-  now use those semantics for future 40k/50k+ evaluations. Shell syntax and
-  diff checks pass.
+  in monitor config. Stage-10 and stage-50 monitor PIDs `3529195` and `3529196`
+  run from the detached L40S operations worktree at commit `0e08c097` and use
+  those semantics for future 40k/50k+ evaluations. Shell syntax and diff checks
+  pass.
+- Corrected matrix jobs `1083629-1083631` then exposed another host/container
+  export omission (`RECORDING_SELECT_REPLAYABLE_SUCCESS_PREFIX`) before
+  simulator startup. The evaluator now enables Bash auto-export while resolving
+  launch defaults, so every scalar consumed by the quoted `srun` container
+  shell crosses the boundary and future options cannot fail one at a time.

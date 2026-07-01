@@ -11,6 +11,9 @@
 #SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_yam_pickplace_rgb_dp_policy_%j.out
 
 set -euo pipefail
+# Every resolved launcher setting is consumed inside the quoted container shell.
+# Auto-export assignments so new defaults cannot become unbound at the srun boundary.
+set -a
 
 NFS_ROOT="${NFS_ROOT:-/lustre/fsw/portfolios/nvr/users/lzha}"
 CODE_NFS="${CODE_NFS:-$NFS_ROOT/src/DEXTRAH}"
