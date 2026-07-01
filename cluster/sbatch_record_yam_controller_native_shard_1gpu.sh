@@ -108,14 +108,27 @@ RUN_NAME="${DATASET_RUN_NAME}_source_${SOURCE_INDEX_PADDED}"
 METRICS_PATH="$RESULTS_NFS/evals/$RUN_NAME/metrics.json"
 
 if [ -s "$RECORD_POLICY_SHARD/metadata.json" ] && [ -s "$METRICS_PATH" ]; then
-  if python3 - "$METRICS_PATH" <<'PY'
+  if python3 - "$METRICS_PATH" "$RECORD_POLICY_SHARD/metadata.json" <<'PY'
 import json
 import sys
 
 summary = json.load(open(sys.argv[1], "r", encoding="utf-8")).get("summary", {})
 recording = summary.get("recording") or {}
 gate = recording.get("replay_gate") or {}
-raise SystemExit(0 if recording.get("accepted") and gate.get("passed") else 1)
+metadata = json.load(open(sys.argv[2], "r", encoding="utf-8"))
+provenance = metadata.get("recording") or {}
+valid = (
+    recording.get("accepted")
+    and gate.get("passed")
+    and provenance.get("dynamics_mode")
+    and provenance.get("exact_reset")
+    and provenance.get("rendering_mode") == "quality"
+    and int(provenance.get("initial_render_warmup_frames") or 0) >= 16
+    and provenance.get("exact_visual_resample")
+    and provenance.get("dataset_drop_targeting_mode") == "live_object_to_bin_center"
+    and provenance.get("dataset_drop_release_height_mode") == "above_bin_top"
+)
+raise SystemExit(0 if valid else 1)
 PY
   then
     echo "Controller-native shard already passed: $RECORD_POLICY_SHARD"
