@@ -135,6 +135,7 @@ valid = (
     and provenance.get("object_material_randomization")
     and provenance.get("dataset_drop_targeting_mode") == "live_object_to_bin_center"
     and provenance.get("dataset_drop_release_height_mode") == "above_bin_top_then_contained_descent"
+    and int(provenance.get("dataset_drop_controller_version") or 0) >= 2
     and provenance.get("dataset_drop_spec_source") == "exact_stable_scene"
     and all(provenance.get("episode_final_success") or [])
     and all(provenance.get("episode_drop_descent_started") or [])

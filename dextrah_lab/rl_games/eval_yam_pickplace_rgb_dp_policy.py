@@ -2418,6 +2418,7 @@ def _dataset_pose_target_action(
         desired_object = np.asarray(object_reference[target_idx], dtype=np.float64)
         pos_delta += _bounded_position_correction(object_feedback_gain * (desired_object - live_object))
     if drop_hold_phase and object_reference is not None:
+        controller_state["drop_descent_just_started"] = False
         active_drop_spec = drop_spec if drop_spec is not None else _live_bin_drop_spec(task_env)
         if active_drop_spec is not None:
             drop_idx = min(int(step), int(reference.shape[0]) - 1)
@@ -2454,6 +2455,7 @@ def _dataset_pose_target_action(
                 <= max(0.0, float(args_cli.dataset_drop_descent_height_tolerance_m))
             ):
                 controller_state["drop_descent_started"] = True
+                controller_state["drop_descent_just_started"] = True
             inward_shift_xy = center_error_xy
             inward_shift_xy = _bounded_position_correction(
                 inward_shift_xy,
@@ -2817,6 +2819,7 @@ def main() -> None:
             drop_settle_repeat_count = 0
             dataset_controller_state: dict[str, Any] = {
                 "drop_descent_started": False,
+                "drop_descent_just_started": False,
                 "drop_center_error_m": None,
                 "drop_containment_margin_m": None,
                 "drop_transport_height_error_m": None,
@@ -3049,6 +3052,8 @@ def main() -> None:
                                 and float(task_metrics.get("cube_angular_speed") or 0.0)
                                 <= max(0.0, float(args_cli.dataset_drop_settle_angular_speed))
                             )
+                        if dataset_controller_state["drop_descent_just_started"]:
+                            drop_settle_repeat_count = 0
                         repeat_drop_settle = bool(
                             at_drop_hold_boundary
                             and not drop_ready
@@ -3061,6 +3066,9 @@ def main() -> None:
                         record["dataset_drop_settle_boundary"] = float(at_drop_hold_boundary)
                         record["dataset_drop_descent_started"] = float(
                             dataset_controller_state["drop_descent_started"]
+                        )
+                        record["dataset_drop_descent_just_started"] = float(
+                            dataset_controller_state["drop_descent_just_started"]
                         )
                         record["dataset_drop_xy_ready"] = float(dataset_controller_state["drop_xy_ready"])
                         record["dataset_drop_center_error"] = dataset_controller_state["drop_center_error_m"]
@@ -3251,6 +3259,7 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
+                "dataset_drop_controller_version": 2,
                 "dataset_drop_spec_source": "exact_stable_scene",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_transport_clearance_m": float(
@@ -3356,6 +3365,7 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
+        "dataset_drop_controller_version": 2,
         "dataset_drop_spec_source": "exact_stable_scene",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),
