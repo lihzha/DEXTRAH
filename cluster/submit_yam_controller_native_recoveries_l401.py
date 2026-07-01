@@ -57,6 +57,10 @@ def _run(command: list[str], *, check: bool = True) -> subprocess.CompletedProce
     return subprocess.run(command, check=check, capture_output=True, text=True)
 
 
+def _absolute_without_resolving_symlinks(path: Path) -> Path:
+    return Path(os.path.abspath(os.path.expanduser(str(path))))
+
+
 def _normalized_state(raw_state: str) -> str:
     return raw_state.strip().split("|", 1)[0].split("+", 1)[0].split(" ", 1)[0]
 
@@ -189,9 +193,10 @@ def _utc_now() -> str:
 
 def main() -> None:
     args = _parser().parse_args()
-    args.output_root = args.output_root.expanduser().resolve()
-    args.source_manifest = args.source_manifest.expanduser().resolve()
-    args.code_nfs = args.code_nfs.expanduser().resolve()
+    # Preserve the /lustre/fsw spelling expected by host-to-container path mapping.
+    args.output_root = _absolute_without_resolving_symlinks(args.output_root)
+    args.source_manifest = _absolute_without_resolving_symlinks(args.source_manifest)
+    args.code_nfs = _absolute_without_resolving_symlinks(args.code_nfs)
     if args.max_concurrent < 1 or args.poll_seconds < 1:
         raise SystemExit("max-concurrent and poll-seconds must be positive")
     if not 0 <= args.start_source <= args.stop_source:

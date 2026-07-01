@@ -79,3 +79,14 @@ def test_latest_manifest_uses_numeric_suffix(tmp_path: Path) -> None:
 
     assert path.name == "replacement_source_manifest_12.json"
     assert len(payload["shards"]) == 12
+
+
+def test_absolute_path_preserves_symlink_spelling(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(target, target_is_directory=True)
+
+    actual = MODULE._absolute_without_resolving_symlinks(alias / "records")
+
+    assert str(actual).startswith(str(alias))

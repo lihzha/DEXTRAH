@@ -68,6 +68,10 @@ def _run(command: list[str], *, check: bool = True) -> subprocess.CompletedProce
     return subprocess.run(command, check=check, capture_output=True, text=True)
 
 
+def _absolute_without_resolving_symlinks(path: Path) -> Path:
+    return Path(os.path.abspath(os.path.expanduser(str(path))))
+
+
 def _normalized_state(raw_state: str) -> str:
     return raw_state.strip().split("|", 1)[0].split("+", 1)[0].split(" ", 1)[0]
 
@@ -294,8 +298,9 @@ def _utc_now() -> str:
 
 def main() -> None:
     args = _parser().parse_args()
-    args.output_root = args.output_root.expanduser().resolve()
-    args.code_nfs = args.code_nfs.expanduser().resolve()
+    # Preserve the /lustre/fsw spelling expected by host-to-container path mapping.
+    args.output_root = _absolute_without_resolving_symlinks(args.output_root)
+    args.code_nfs = _absolute_without_resolving_symlinks(args.code_nfs)
     donor_sources = [int(value) for value in args.donor_sources.split(",") if value.strip()]
     if not donor_sources:
         raise SystemExit("donor-sources must not be empty")

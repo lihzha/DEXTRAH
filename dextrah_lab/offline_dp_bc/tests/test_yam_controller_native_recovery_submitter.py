@@ -50,3 +50,14 @@ def test_accepted_marker_uses_padded_source_index(tmp_path: Path) -> None:
         / "yam_rgb_policy_000103"
         / "metadata.json"
     )
+
+
+def test_absolute_path_preserves_symlink_spelling(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(target, target_is_directory=True)
+
+    actual = MODULE._absolute_without_resolving_symlinks(alias / "records")
+
+    assert str(actual).startswith(str(alias))
