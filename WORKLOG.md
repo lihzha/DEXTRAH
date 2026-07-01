@@ -13330,3 +13330,30 @@ Smoke follow-up:
   metrics, 1200-frame quality overview video, 62 scene/wrist diagnostics, and
   a 20.67-second scene/wrist video. Slurm logs are in `cluster_logs/l401` for
   jobs `1079318`, `1079435`, and `1079439`.
+
+## 2026-07-01T04:53:19Z Controller-Native Dataset Repair
+
+- Root cause of the singleton/full-dataset gap is now established. The old
+  500-trajectory converter labels each frame with the next realized TCP state
+  delta. Those labels are plant outputs, not the pose-controller commands that
+  produced the motion. Exact-reset replay of the old labels achieved no lift;
+  live feedback to the recorded pose waypoints succeeded, and exact replay of
+  its recorded controller commands independently reproduced the placement.
+- On shard 0, old action norms have mean `0.02978` and median `0.01848`; the
+  successful controller-native commands have mean `0.46093` and median
+  `0.38143`. The first command is about 30 times larger. The successful
+  singleton overfit and the failed full-500 model therefore used different
+  action semantics despite sharing the same seven-dimensional schema.
+- Canceled obsolete A100 job `29693624` after `03:27:39`; it was continuing to
+  optimize the invalid full-dataset labels and had no remaining diagnostic
+  value.
+- Added success-only recording and an in-process dynamics replay gate to the
+  YAM RGB evaluator. Each episode is buffered separately; no shard is written
+  unless settled-bin success occurs. With the replay gate enabled, the exact
+  reset is restored and only the clipped recorded commands are executed. The
+  gate requires a second settled placement plus bounded TCP/joint trajectory
+  error and records all evidence in `metrics.json` and shard metadata.
+- Recorded metadata now carries the source policy shard and target UUID, which
+  will support object-grouped curriculum splits and exact train/held-out scene
+  evaluation. Debug sites remain hidden by default and phase/progress remains
+  excluded from policy inputs.

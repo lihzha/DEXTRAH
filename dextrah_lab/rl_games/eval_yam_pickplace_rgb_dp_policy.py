@@ -52,6 +52,20 @@ parser.add_argument(
     help="Optional output directory for pre-action RGB/state observations and the controller commands applied.",
 )
 parser.add_argument(
+    "--recording_require_success",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help="Only accept and write recorded episodes that achieve settled-bin success.",
+)
+parser.add_argument(
+    "--recording_replay_gate",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="Replay recorded commands from the exact reset under dynamics and require the placement to succeed.",
+)
+parser.add_argument("--recording_gate_max_tcp_error_m", type=float, default=0.01)
+parser.add_argument("--recording_gate_max_joint_error_rad", type=float, default=0.05)
+parser.add_argument(
     "--exact_policy_shard",
     type=str,
     default="",
@@ -326,6 +340,7 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
         source_metadata = json.loads(str(np.asarray(source["metadata_json"]).item()))
         rgb_step_idx = np.asarray(source["rgb_step_idx"], dtype=np.int64).reshape(-1)
         step_idx = np.asarray(source["step_idx"], dtype=np.int64).reshape(-1)
+        source_phases = np.asarray(source["phase"]).astype(str) if "phase" in source.files else None
         if not 0 <= policy_first_rgb_row < int(rgb_step_idx.shape[0]):
             raise IndexError(f"Exact shard trim row {policy_first_rgb_row} is outside source RGB rows")
         source_step_id = int(rgb_step_idx[policy_first_rgb_row])
@@ -362,6 +377,15 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
         "robot_state": reference_robot_trajectory[0].copy(),
     }
     actions = np.asarray(_policy_shard_array(shard, "action", mmap=True), dtype=np.float32).copy()
+    reference_phases = None
+    if source_phases is not None:
+        phase_end = policy_first_rgb_row + int(actions.shape[0])
+        if phase_end > int(source_phases.shape[0]):
+            raise ValueError(
+                f"Exact shard phase range [{policy_first_rgb_row}, {phase_end}) exceeds source phases "
+                f"with length {source_phases.shape[0]}"
+            )
+        reference_phases = source_phases[policy_first_rgb_row:phase_end].copy()
     return {
         "shard": shard,
         "shard_metadata": shard_metadata,
@@ -377,6 +401,7 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
         "initial_state": initial_state,
         "reference": reference,
         "reference_robot_trajectory": reference_robot_trajectory,
+        "reference_phases": reference_phases,
         "actions": actions,
     }
 
@@ -1795,6 +1820,89 @@ def _bin_drop_metrics(task_env: Any, spec: dict[str, float] | None) -> dict[str,
     }
 
 
+def _replay_recorded_episode_gate(
+    gym_env: Any,
+    task_env: Any,
+    exact_demo: dict[str, Any],
+    bin_drop_spec: dict[str, float],
+    *,
+    actions: list[np.ndarray],
+    robot_states: list[np.ndarray],
+    seed: int,
+) -> dict[str, Any]:
+    if len(actions) != len(robot_states) or not actions:
+        raise ValueError(
+            f"Replay gate requires equal non-empty action/state sequences, got {len(actions)}/{len(robot_states)}"
+        )
+    _policy_obs_from_reset(gym_env.reset(seed=int(seed)))
+    reset_summary = _restore_exact_demo_state(task_env, exact_demo)
+    max_tcp_error = 0.0
+    max_joint_error = 0.0
+    bin_drop_time_s = 0.0
+    success_step = None
+    done_step = None
+    finite_actions = True
+    steps_completed = 0
+    final_bin_metrics: dict[str, float] = {}
+    for step, (action, reference_state) in enumerate(zip(actions, robot_states, strict=True)):
+        if not simulation_app.is_running():
+            break
+        live_state = _robot_state(task_env)
+        reference_state = np.asarray(reference_state, dtype=np.float32)
+        max_tcp_error = max(max_tcp_error, float(np.linalg.norm(live_state[16:19] - reference_state[16:19])))
+        max_joint_error = max(
+            max_joint_error,
+            float(np.max(np.abs(live_state[:8] - reference_state[:8]), initial=0.0)),
+        )
+        action_np = np.asarray(action, dtype=np.float32).reshape(1, 7)
+        finite_actions = finite_actions and bool(np.isfinite(action_np).all())
+        if not finite_actions:
+            break
+        action_tensor = torch.as_tensor(action_np, dtype=torch.float32, device=task_env.device)
+        _, _, terminated, truncated, _ = _policy_obs_from_step(gym_env.step(action_tensor))
+        steps_completed = step + 1
+        if bool(torch.logical_or(terminated, truncated).any()) and done_step is None:
+            done_step = steps_completed
+        final_bin_metrics = _bin_drop_metrics(task_env, bin_drop_spec)
+        if final_bin_metrics.get("bin_drop_candidate", 0.0) >= 0.5:
+            bin_drop_time_s += float(task_env.dt)
+        else:
+            bin_drop_time_s = 0.0
+        if (
+            success_step is None
+            and bin_drop_time_s + 1.0e-9 >= float(bin_drop_spec["settled_duration_s"])
+        ):
+            success_step = steps_completed
+    success = success_step is not None
+    max_tcp_threshold = float(args_cli.recording_gate_max_tcp_error_m)
+    max_joint_threshold = float(args_cli.recording_gate_max_joint_error_rad)
+    tracking_pass = max_tcp_error <= max_tcp_threshold and max_joint_error <= max_joint_threshold
+    passed = bool(
+        finite_actions
+        and steps_completed == len(actions)
+        and success
+        and tracking_pass
+    )
+    return {
+        "enabled": True,
+        "passed": passed,
+        "dynamics_mode": True,
+        "num_actions": int(len(actions)),
+        "steps_completed": int(steps_completed),
+        "finite_actions": bool(finite_actions),
+        "success": bool(success),
+        "success_step": success_step,
+        "done_step": done_step,
+        "max_tcp_position_error_m": float(max_tcp_error),
+        "max_tcp_position_error_threshold_m": max_tcp_threshold,
+        "max_joint_position_error_rad": float(max_joint_error),
+        "max_joint_position_error_threshold_rad": max_joint_threshold,
+        "tracking_pass": bool(tracking_pass),
+        "final_bin_metrics": final_bin_metrics,
+        "reset": reset_summary,
+    }
+
+
 def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -> dict[str, dict[str, float | int]]:
     summaries: dict[str, dict[str, float | int]] = {}
     for name in sorted({key for item in step_metrics for key in item.keys()} - {"episode", "step"}):
@@ -1853,6 +1961,8 @@ def _write_recorded_policy_shard(
     metadata = {
         "source_dataset": str(exact_demo["source_dataset"]),
         "source_row": source_metadata.get("source_row"),
+        "source_policy_shard": str(exact_demo["shard"]),
+        "target_uuid": str(exact_demo["target_uuid"]),
         "policy_inputs": ["scene_rgb", "wrist_rgb", "robot_state"],
         "excluded_inputs": ["phase", "progress", "object_state", "bin_state", "target_state", "privileged_obs"],
         "trim": {
@@ -2095,6 +2205,8 @@ def main() -> None:
         exact_config=exact_config_summary,
         bin_drop_spec=bin_drop_spec,
         record_policy_shard=None if record_policy_shard is None else str(record_policy_shard),
+        recording_require_success=bool(args_cli.recording_require_success),
+        recording_replay_gate=bool(args_cli.recording_replay_gate),
     )
 
     workspace = None
@@ -2152,6 +2264,11 @@ def main() -> None:
     recorded_robot_state: list[np.ndarray] = []
     recorded_actions: list[np.ndarray] = []
     recorded_episode_ends: list[int] = []
+    accepted_recordings: list[dict[str, Any]] = []
+    recording_decisions: list[dict[str, Any]] = []
+    recording_replay_gate_summary: dict[str, Any] = {"enabled": False, "passed": True, "episodes": []}
+    recording_acceptance_pass = record_policy_shard is None
+    recording_failure_reason = None
     try:
         for episode in range(int(args_cli.num_episodes)):
             _policy_obs_from_reset(gym_env.reset(seed=int(args_cli.seed) + episode))
@@ -2184,6 +2301,10 @@ def main() -> None:
             done_count = 0
             first_done: dict[str, Any] | None = None
             episode_records: list[dict[str, float | int | None]] = []
+            episode_recorded_scene_rgb: list[np.ndarray] = []
+            episode_recorded_wrist_rgb: list[np.ndarray] = []
+            episode_recorded_robot_state: list[np.ndarray] = []
+            episode_recorded_actions: list[np.ndarray] = []
             bin_drop_time_s = 0.0
             chunk_steps_requested = max(1, int(args_cli.action_chunk_steps))
             debug_interval = max(0, int(args_cli.debug_obs_interval))
@@ -2235,10 +2356,12 @@ def main() -> None:
                 if math.isfinite(clip) and clip > 0.0:
                     action_np = np.clip(action_np, -clip, clip)
                 if record_policy_shard is not None:
-                    recorded_scene_rgb.append(np.asarray(current_obs["scene_rgb"], dtype=np.uint8).copy())
-                    recorded_wrist_rgb.append(np.asarray(current_obs["wrist_rgb"], dtype=np.uint8).copy())
-                    recorded_robot_state.append(np.asarray(current_obs["robot_state"], dtype=np.float32).copy())
-                    recorded_actions.append(np.asarray(action_np[0], dtype=np.float32).copy())
+                    episode_recorded_scene_rgb.append(np.asarray(current_obs["scene_rgb"], dtype=np.uint8).copy())
+                    episode_recorded_wrist_rgb.append(np.asarray(current_obs["wrist_rgb"], dtype=np.uint8).copy())
+                    episode_recorded_robot_state.append(
+                        np.asarray(current_obs["robot_state"], dtype=np.float32).copy()
+                    )
+                    episode_recorded_actions.append(np.asarray(action_np[0], dtype=np.float32).copy())
                 if debug_interval > 0 and (step == 0 or (step + 1) % debug_interval == 0):
                     _save_debug_obs_frame(
                         output_dir,
@@ -2350,8 +2473,6 @@ def main() -> None:
                     )
                 if done_now and bool(args_cli.stop_on_done):
                     break
-            if record_policy_shard is not None:
-                recorded_episode_ends.append(len(recorded_actions))
             success_key = "bin_drop_success" if bin_drop_spec is not None else "in_success_region"
             success_values = [float(item[success_key]) for item in episode_records if item.get(success_key) is not None]
             lift_values = [float(item["cube_lift_height"]) for item in episode_records if item.get("cube_lift_height") is not None]
@@ -2361,30 +2482,96 @@ def main() -> None:
                     success_values.append(float(done_metrics["in_success_region"]))
                 if done_metrics.get("cube_lift_height") is not None:
                     lift_values.append(float(done_metrics["cube_lift_height"]))
-            episode_summaries.append(
-                {
-                    "episode": int(episode),
-                    "steps_completed": int(len(episode_records)),
-                    "done_count": int(done_count),
-                    "first_done": first_done,
-                    "success": bool(success_values and max(success_values) >= 0.5),
-                    "success_metric": success_key,
-                    "final_success": None if not success_values else float(success_values[-1]),
-                    "max_success": None if not success_values else float(max(success_values)),
-                    "max_lift_height": None if not lift_values else float(max(lift_values)),
-                    "final_object_pos": _tensor_list(task_env.cube_pos[0]) if hasattr(task_env, "cube_pos") else None,
-                    "final_goal_pos": _tensor_list(task_env.cube_goal_pos[0]) if hasattr(task_env, "cube_goal_pos") else None,
-                    "final_gripper_width": _mean_float(getattr(task_env, "gripper_width", None)),
-                    "final_robot_state": _robot_state(task_env).astype(float).tolist(),
-                    "exact_reset": exact_reset_summary,
+            episode_summary = {
+                "episode": int(episode),
+                "steps_completed": int(len(episode_records)),
+                "done_count": int(done_count),
+                "first_done": first_done,
+                "success": bool(success_values and max(success_values) >= 0.5),
+                "success_metric": success_key,
+                "final_success": None if not success_values else float(success_values[-1]),
+                "max_success": None if not success_values else float(max(success_values)),
+                "max_lift_height": None if not lift_values else float(max(lift_values)),
+                "final_object_pos": _tensor_list(task_env.cube_pos[0]) if hasattr(task_env, "cube_pos") else None,
+                "final_goal_pos": _tensor_list(task_env.cube_goal_pos[0]) if hasattr(task_env, "cube_goal_pos") else None,
+                "final_gripper_width": _mean_float(getattr(task_env, "gripper_width", None)),
+                "final_robot_state": _robot_state(task_env).astype(float).tolist(),
+                "exact_reset": exact_reset_summary,
+            }
+            episode_summaries.append(episode_summary)
+            if record_policy_shard is not None:
+                accepted = bool(episode_summary["success"]) or not bool(args_cli.recording_require_success)
+                recording_decisions.append(
+                    {
+                        "episode": int(episode),
+                        "success": bool(episode_summary["success"]),
+                        "accepted_before_replay_gate": bool(accepted),
+                        "num_steps": int(len(episode_recorded_actions)),
+                    }
+                )
+                if accepted:
+                    recorded_scene_rgb.extend(episode_recorded_scene_rgb)
+                    recorded_wrist_rgb.extend(episode_recorded_wrist_rgb)
+                    recorded_robot_state.extend(episode_recorded_robot_state)
+                    recorded_actions.extend(episode_recorded_actions)
+                    recorded_episode_ends.append(len(recorded_actions))
+                    accepted_recordings.append(
+                        {
+                            "episode": int(episode),
+                            "actions": episode_recorded_actions,
+                            "robot_states": episode_recorded_robot_state,
+                        }
+                    )
+        if record_policy_shard is not None:
+            if not accepted_recordings:
+                recording_acceptance_pass = False
+                recording_failure_reason = "no_successful_recorded_episode"
+                recording_replay_gate_summary = {
+                    "enabled": bool(args_cli.recording_replay_gate),
+                    "passed": False,
+                    "episodes": [],
+                    "reason": recording_failure_reason,
                 }
-            )
+            elif bool(args_cli.recording_replay_gate):
+                assert exact_demo is not None
+                assert bin_drop_spec is not None
+                gate_episodes = []
+                for gate_idx, recording in enumerate(accepted_recordings):
+                    gate_result = _replay_recorded_episode_gate(
+                        gym_env,
+                        task_env,
+                        exact_demo,
+                        bin_drop_spec,
+                        actions=recording["actions"],
+                        robot_states=recording["robot_states"],
+                        seed=int(args_cli.seed) + 100_000 + gate_idx,
+                    )
+                    gate_result["episode"] = int(recording["episode"])
+                    gate_episodes.append(gate_result)
+                    _stage("recording_replay_gate_episode", **gate_result)
+                recording_acceptance_pass = bool(gate_episodes) and all(
+                    bool(item["passed"]) for item in gate_episodes
+                )
+                recording_failure_reason = None if recording_acceptance_pass else "recorded_action_replay_gate_failed"
+                recording_replay_gate_summary = {
+                    "enabled": True,
+                    "passed": bool(recording_acceptance_pass),
+                    "episodes": gate_episodes,
+                }
+            else:
+                recording_acceptance_pass = True
+                recording_replay_gate_summary = {
+                    "enabled": False,
+                    "passed": True,
+                    "episodes": [],
+                    "reason": "disabled",
+                }
     finally:
         gym_env.close()
         env_closed = True
 
     recorded_policy_shard_summary = None
-    if record_policy_shard is not None:
+    if record_policy_shard is not None and recording_acceptance_pass:
         assert exact_demo is not None
         recorded_policy_shard_summary = _write_recorded_policy_shard(
             record_policy_shard,
@@ -2413,6 +2600,9 @@ def main() -> None:
                 "code_commit": os.environ.get("CODE_COMMIT"),
                 "episode_success": [bool(item["success"]) for item in episode_summaries],
                 "success_metric": "bin_drop_success",
+                "require_success": bool(args_cli.recording_require_success),
+                "recording_decisions": recording_decisions,
+                "replay_gate": recording_replay_gate_summary,
             },
         )
 
@@ -2480,6 +2670,14 @@ def main() -> None:
         "video_files": _latest_video_files(video_folder if args_cli.video else None),
         "debug_obs_files": debug_obs_paths,
         "recorded_policy_shard": recorded_policy_shard_summary,
+        "recording": {
+            "requested": record_policy_shard is not None,
+            "require_success": bool(args_cli.recording_require_success),
+            "accepted": bool(recording_acceptance_pass),
+            "failure_reason": recording_failure_reason,
+            "decisions": recording_decisions,
+            "replay_gate": recording_replay_gate_summary,
+        },
         "env_closed": env_closed,
         "output_dir": str(output_dir),
         "metrics_path": str(metrics_path),
@@ -2490,6 +2688,8 @@ def main() -> None:
         encoding="utf-8",
     )
     print("YAM_RGB_DP_POLICY_EVAL_DONE " + json.dumps(summary, sort_keys=True, default=str), flush=True)
+    if record_policy_shard is not None and not recording_acceptance_pass:
+        raise RuntimeError(f"Recording rejected: {recording_failure_reason}")
 
 
 if __name__ == "__main__":
