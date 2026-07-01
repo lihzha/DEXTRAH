@@ -13,6 +13,7 @@ N_TRAIN="${N_TRAIN:-2}"
 N_VAL="${N_VAL:-3}"
 MAX_CONCURRENT="${MAX_CONCURRENT:-3}"
 POLL_SECONDS="${POLL_SECONDS:-20}"
+SBATCH_TIME="${SBATCH_TIME:-01:30:00}"
 NUM_STEPS="${NUM_STEPS:-1200}"
 ACTION_CHUNK_STEPS="${ACTION_CHUNK_STEPS:-1}"
 EXACT_VISUAL_RESAMPLE="${EXACT_VISUAL_RESAMPLE:-True}"
@@ -103,6 +104,7 @@ payload = {
     "matrix_tsv": "$MATRIX_TSV",
     "max_concurrent": int("$MAX_CONCURRENT"),
     "poll_seconds": int("$POLL_SECONDS"),
+    "sbatch_time": "$SBATCH_TIME",
     "job_name_prefix": "$JOB_NAME_PREFIX",
     "submission_mode": "ordinary_jobs_with_submitter_throttle",
 }
@@ -128,6 +130,7 @@ for entry_index in $(seq 0 "$((ENTRY_COUNT - 1))"); do
   job_id="$(
     sbatch --parsable \
       --job-name="$job_name" \
+      --time="$SBATCH_TIME" \
       --output="$NFS_ROOT/slurm_logs/dextrah/eval_yam_exact_${MATRIX_NAME}_${entry_index_padded}_%j.out" \
       --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",CODE_COMMIT="$CODE_COMMIT",MATRIX_TSV="$MATRIX_TSV",ENTRY_INDEX="$entry_index",CHECKPOINT="$CHECKPOINT",NUM_STEPS="$NUM_STEPS",ACTION_CHUNK_STEPS="$ACTION_CHUNK_STEPS",EXACT_VISUAL_RESAMPLE="$EXACT_VISUAL_RESAMPLE",YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION="$YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION",YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION="$YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION" \
       "$WRAPPER"

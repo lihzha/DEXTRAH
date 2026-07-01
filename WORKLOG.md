@@ -13847,3 +13847,33 @@ Smoke follow-up:
 - Production had 62 accepted shards when these jobs launched. The ordinary-job
   submitter remains pinned to commit `6ab46135` and continues its three-way
   first-pass stream without interruption.
+
+## 2026-07-01T13:18:18Z Stage-10 20k Evaluation And Long-Horizon Fix
+
+- Recovery source 62 and replacement 507 passed, restoring the source-61 slot.
+  Source 63 failed nominal and recovery, then replacement 508 passed. Sources
+  69, 70, and 72 also failed both attempts; replacements 509 and 510 passed,
+  replacement 511 failed, and second source-72 candidate 512 is running. Source
+  67 recovered successfully. Production reached 77 accepted shards while the
+  first-pass stream advanced through source 81.
+- Stage-10 training crossed 20k updates without nonfinite loss. The periodic
+  monitor made a byte-stable copy at step 20,170 under
+  `dp_bc/checkpoints/yam_rgb_dp_ctrl_native_v13_n10_bs80_70k_20260701T1057Z/periodic_eval_snapshots/step_0020170.ckpt`.
+- Early timing of combined random-eval job `1083515` showed that three
+  sequential 4,800-step quality episodes could not fit its 90-minute
+  allocation. It was canceled after 140 steps and replaced by independent
+  one-episode jobs `1083600-1083602` for seeds 42-44. Each explicitly disables
+  failure and success termination, uses `STOP_ON_DONE=False`, action chunk one,
+  100 DDPM steps, two cameras, and a full 4,800-step horizon.
+- Launched an exact-scene matrix from the same snapshot: two stage-10 train
+  scenes and the one object-disjoint validation scene, each with an independent
+  90-minute, 4,800-step quality-render allocation. Initial jobs
+  `1083559-1083561` exposed a missing `STOP_ON_BIN_DROP_SUCCESS` container
+  export before simulation; corrected jobs `1083629-1083631` were submitted
+  with the flag explicit. No failed entry produced policy metrics or video.
+- Updated the exact-matrix entry wrapper to export that flag, made matrix wall
+  time configurable with a 90-minute default, and changed periodic monitors to
+  one episode per allocation with all early termination disabled and recorded
+  in monitor config. Stage-10 and stage-50 monitor PIDs `3526506` and `3527068`
+  now use those semantics for future 40k/50k+ evaluations. Shell syntax and
+  diff checks pass.
