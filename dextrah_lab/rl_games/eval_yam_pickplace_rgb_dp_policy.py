@@ -59,9 +59,9 @@ parser.add_argument("--dataset_drop_retract_height_m", type=float, default=0.08)
 parser.add_argument("--dataset_drop_retract_gripper_width_m", type=float, default=0.18)
 parser.add_argument("--dataset_drop_settle_max_steps", type=int, default=120)
 parser.add_argument("--dataset_drop_settle_containment_margin_m", type=float, default=0.01)
-parser.add_argument("--dataset_drop_settle_height_tolerance_m", type=float, default=0.01)
+parser.add_argument("--dataset_drop_settle_height_tolerance_m", type=float, default=0.015)
 parser.add_argument("--dataset_drop_settle_linear_speed", type=float, default=0.03)
-parser.add_argument("--dataset_drop_settle_angular_speed", type=float, default=1.0)
+parser.add_argument("--dataset_drop_settle_angular_speed", type=float, default=4.0)
 parser.add_argument("--dataset_post_action_settle_steps", type=int, default=30)
 parser.add_argument("--recovery_phase_pattern", type=str, default="target/go_from_pre_grasp_to_grasp_pose")
 parser.add_argument("--recovery_phase_fraction", type=float, default=0.5)
@@ -3290,7 +3290,7 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-                "dataset_drop_controller_version": 5,
+                "dataset_drop_controller_version": 6,
                 "dataset_drop_spec_source": "exact_stable_scene",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_transport_clearance_m": float(
@@ -3400,7 +3400,7 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-        "dataset_drop_controller_version": 5,
+        "dataset_drop_controller_version": 6,
         "dataset_drop_spec_source": "exact_stable_scene",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),
