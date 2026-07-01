@@ -555,6 +555,7 @@ class YamRgbShardedDataset(BaseImageDataset):
         self,
         manifest_path: str,
         horizon: int = 16,
+        n_obs_steps: int | None = None,
         pad_before: int = 0,
         pad_after: int = 15,
         seed: int = 42,
@@ -571,6 +572,11 @@ class YamRgbShardedDataset(BaseImageDataset):
         super().__init__()
         self.manifest_path = str(manifest_path)
         self.horizon = int(horizon)
+        self.n_obs_steps = None if n_obs_steps is None else int(n_obs_steps)
+        if self.n_obs_steps is not None and not 1 <= self.n_obs_steps <= self.horizon:
+            raise ValueError(
+                f"n_obs_steps must lie in [1, horizon], got {self.n_obs_steps}/{self.horizon}"
+            )
         self.pad_before = int(pad_before)
         self.pad_after = int(pad_after)
         self.seed = int(seed)
@@ -857,13 +863,14 @@ class YamRgbShardedDataset(BaseImageDataset):
         seq_start = int(center) - self.pad_before
         frame_ids = np.arange(seq_start, seq_start + self.horizon, dtype=np.int64)
         frame_ids = np.clip(frame_ids, 0, length - 1)
+        obs_frame_ids = frame_ids if self.n_obs_steps is None else frame_ids[: self.n_obs_steps]
         shard = self._load_shard(shard_idx)
         obs = {}
         for key in self.image_keys:
-            frames = torch.from_numpy(self._image_chw_float(shard[key], frame_ids))
+            frames = torch.from_numpy(self._image_chw_float(shard[key], obs_frame_ids))
             obs[key] = self._augment_image_sequence(frames)
         obs[self.obs_robot_state_name] = torch.from_numpy(
-            np.asarray(shard[self.robot_state_key], dtype=np.float32)[frame_ids]
+            np.asarray(shard[self.robot_state_key], dtype=np.float32)[obs_frame_ids]
         )
         return {
             "obs": obs,

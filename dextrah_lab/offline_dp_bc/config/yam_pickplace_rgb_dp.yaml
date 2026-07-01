@@ -109,6 +109,7 @@ task:
     _target_: dextrah_lab.offline_dp_bc.dp_dataset.YamRgbShardedDataset
     manifest_path: ${task.manifest_path}
     horizon: ${horizon}
+    n_obs_steps: ${dataset_obs_steps}
     pad_before: 0
     pad_after: 15
     seed: 42
