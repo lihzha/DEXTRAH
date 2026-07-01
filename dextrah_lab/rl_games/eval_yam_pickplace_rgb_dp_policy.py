@@ -507,20 +507,12 @@ def _load_exact_demo(shard: Path, output_dir: Path) -> dict[str, Any]:
     reference_object_trajectory = None
     if source_phases is not None:
         phase_end = policy_first_rgb_row + int(actions.shape[0])
-        if phase_end > int(source_phases.shape[0]):
-            raise ValueError(
-                f"Exact shard phase range [{policy_first_rgb_row}, {phase_end}) exceeds source phases "
-                f"with length {source_phases.shape[0]}"
-            )
-        reference_phases = source_phases[policy_first_rgb_row:phase_end].copy()
+        if phase_end <= int(source_phases.shape[0]):
+            reference_phases = source_phases[policy_first_rgb_row:phase_end].copy()
     if source_object_centers is not None:
         object_end = policy_first_rgb_row + int(actions.shape[0])
-        if object_end > int(source_object_centers.shape[0]):
-            raise ValueError(
-                f"Exact shard object range [{policy_first_rgb_row}, {object_end}) exceeds source object rows "
-                f"with length {source_object_centers.shape[0]}"
-            )
-        reference_object_trajectory = source_object_centers[policy_first_rgb_row:object_end].copy()
+        if object_end <= int(source_object_centers.shape[0]):
+            reference_object_trajectory = source_object_centers[policy_first_rgb_row:object_end].copy()
     return {
         "shard": shard,
         "shard_metadata": shard_metadata,
@@ -857,6 +849,14 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
     table_texture = scene.get("tabletop_texture") if isinstance(scene.get("tabletop_texture"), dict) else {}
     background = scene.get("background_walls") if isinstance(scene.get("background_walls"), dict) else {}
     lighting = scene.get("lighting") if isinstance(scene.get("lighting"), dict) else {}
+    shard_recording = (
+        exact_demo["shard_metadata"].get("recording")
+        if isinstance(exact_demo["shard_metadata"].get("recording"), dict)
+        else {}
+    )
+    replay_resampled_assets = bool(
+        args_cli.exact_visual_resample and shard_recording.get("exact_visual_resample", False)
+    )
 
     rng = np.random.default_rng(int(metadata["seed"]) + 1009)
     for _ in range(5):
@@ -948,14 +948,17 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         "table_texture": select_exact_visual_asset(
             recorded=table_texture.get("table_texture_path"),
             sampled=sampled_table_texture,
+            replay_resampled_asset=replay_resampled_assets,
         ),
         "background_texture": select_exact_visual_asset(
             recorded=background.get("background_texture_path"),
             sampled=sampled_background_texture,
+            replay_resampled_asset=replay_resampled_assets,
         ),
         "dome_texture": select_exact_visual_asset(
             recorded=lighting.get("dome_light_texture_path"),
             sampled=sampled_dome_texture,
+            replay_resampled_asset=replay_resampled_assets,
         ),
     }
     paths_match = all(
@@ -968,6 +971,12 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         or Path(record["recorded"]).resolve() == Path(record["selected"]).resolve()
         for record in paths.values()
     )
+    expected_path_key = "sampled" if replay_resampled_assets else "recorded"
+    selected_paths_match_recording_mode = all(
+        (not record[expected_path_key] and not record["selected"])
+        or Path(record[expected_path_key]).resolve() == Path(record["selected"]).resolve()
+        for record in paths.values()
+    )
     if not math.isfinite(max_numeric_error) or max_numeric_error > 1.0e-6:
         raise RuntimeError(
             "Could not deterministically replay exact-demo visual RNG; "
@@ -976,10 +985,13 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
     return {
         "rng_seed": int(metadata["seed"]) + 1009,
         "visual_resample_enabled": bool(args_cli.exact_visual_resample),
+        "shard_recorded_visual_resample": bool(shard_recording.get("exact_visual_resample", False)),
+        "asset_selection_mode": "rng_resample" if replay_resampled_assets else "recorded",
         "max_recorded_numeric_error": max_numeric_error,
         "numeric_errors": numeric_errors,
         "sampled_paths_match_recorded": bool(paths_match),
         "selected_paths_match_recorded": bool(selected_paths_match_recorded),
+        "selected_paths_match_recording_mode": bool(selected_paths_match_recording_mode),
         "paths": paths,
         "table_material_roughness": table_material_roughness,
         "tabletop_surround_roughness": surround_roughness,

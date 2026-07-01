@@ -17,6 +17,7 @@ SBATCH_TIME="${SBATCH_TIME:-01:30:00}"
 NUM_STEPS="${NUM_STEPS:-1200}"
 ACTION_CHUNK_STEPS="${ACTION_CHUNK_STEPS:-1}"
 EXACT_VISUAL_RESAMPLE="${EXACT_VISUAL_RESAMPLE:-True}"
+EXACT_SHARD_KIND="${EXACT_SHARD_KIND:-training}"
 YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION="${YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION:-True}"
 YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION="${YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION:-True}"
 CODE_COMMIT="${CODE_COMMIT:-$(git -C "$CODE_NFS" rev-parse HEAD)}"
@@ -39,7 +40,7 @@ if ! flock -n 9; then
   exit 2
 fi
 
-python3 - "$CURRICULUM_JSON" "$STAGE_SIZE" "$N_TRAIN" "$N_VAL" "$MATRIX_TSV" "$MATRIX_NAME" <<'PY'
+python3 - "$CURRICULUM_JSON" "$STAGE_SIZE" "$N_TRAIN" "$N_VAL" "$MATRIX_TSV" "$MATRIX_NAME" "$EXACT_SHARD_KIND" <<'PY'
 import json
 import re
 import sys
@@ -51,26 +52,56 @@ n_train = int(sys.argv[3])
 n_val = int(sys.argv[4])
 output_path = Path(sys.argv[5])
 matrix_name = sys.argv[6]
+shard_kind = sys.argv[7]
 payload = json.loads(curriculum_path.read_text(encoding="utf-8"))
 stage = next((row for row in payload.get("stages", []) if int(row["size"]) == stage_size), None)
 if stage is None:
     raise SystemExit(f"No stage {stage_size} in {curriculum_path}")
+if shard_kind not in {"training", "source"}:
+    raise SystemExit(f"EXACT_SHARD_KIND must be training or source, got {shard_kind}")
+
+
+def container_path(path: Path) -> str:
+    text = str(path.resolve())
+    marker = "/results/dextrah/"
+    if marker in text:
+        return "/results/" + text.split(marker, 1)[1]
+    if text.startswith("/results/"):
+        return text
+    raise SystemExit(f"Cannot map exact shard into the results container: {text}")
 
 selected = []
-for split, key, count in (
-    ("train", "train_source_policy_shards", n_train),
-    ("val", "val_source_policy_shards", n_val),
-):
-    paths = [str(path) for path in stage.get(key, [])]
-    if len(paths) < count:
-        raise SystemExit(f"Stage {stage_size} has only {len(paths)} {split} shards, requested {count}")
-    for split_index, path in enumerate(paths[:count]):
-        match = re.search(r"(\d+)$", Path(path).name)
-        if match is None:
-            raise SystemExit(f"Cannot infer source index from {path}")
-        source_index = int(match.group(1))
-        run_name = f"{matrix_name}_{split}_src{source_index:06d}"
-        selected.append((split, source_index, path, run_name, split_index == 0))
+if shard_kind == "training":
+    stage_manifest_path = Path(stage["manifest"])
+    stage_manifest = json.loads(stage_manifest_path.read_text(encoding="utf-8"))
+    for split, count in (("train", n_train), ("val", n_val)):
+        rows = [row for row in stage_manifest.get("shards", []) if row.get("split") == split]
+        if len(rows) < count:
+            raise SystemExit(f"Stage {stage_size} has only {len(rows)} {split} shards, requested {count}")
+        for split_index, row in enumerate(rows[:count]):
+            source_index = int(row["source_index"])
+            path = Path(str(row["path"]))
+            if not path.is_absolute():
+                path = stage_manifest_path.parent / path
+            run_name = f"{matrix_name}_{split}_src{source_index:06d}"
+            selected.append(
+                (split, source_index, container_path(path), run_name, split_index == 0)
+            )
+else:
+    for split, key, count in (
+        ("train", "train_source_policy_shards", n_train),
+        ("val", "val_source_policy_shards", n_val),
+    ):
+        paths = [str(path) for path in stage.get(key, [])]
+        if len(paths) < count:
+            raise SystemExit(f"Stage {stage_size} has only {len(paths)} {split} shards, requested {count}")
+        for split_index, path in enumerate(paths[:count]):
+            match = re.search(r"(\d+)$", Path(path).name)
+            if match is None:
+                raise SystemExit(f"Cannot infer source index from {path}")
+            source_index = int(match.group(1))
+            run_name = f"{matrix_name}_{split}_src{source_index:06d}"
+            selected.append((split, source_index, path, run_name, split_index == 0))
 
 lines = ["matrix_index\tsplit\tsource_index\texact_policy_shard\trun_name\tcapture_video"]
 for index, (split, source_index, path, run_name, capture_video) in enumerate(selected):
@@ -99,6 +130,7 @@ payload = {
     "num_steps": int("$NUM_STEPS"),
     "action_chunk_steps": int("$ACTION_CHUNK_STEPS"),
     "exact_visual_resample": "$EXACT_VISUAL_RESAMPLE" == "True",
+    "exact_shard_kind": "$EXACT_SHARD_KIND",
     "robot_material_randomization": "$YAM_POLICY_ROBOT_MATERIAL_RANDOMIZATION" == "True",
     "object_material_randomization": "$YAM_POLICY_OBJECT_MATERIAL_RANDOMIZATION" == "True",
     "matrix_tsv": "$MATRIX_TSV",

@@ -19,6 +19,16 @@ class ExactVisualReplayTest(unittest.TestCase):
         self.assertEqual(selection["selected"], "/assets/fallback.hdr")
         self.assertEqual(selection["selected_source"], "sampled_fallback")
 
+    def test_resampled_recording_replays_rng_asset(self):
+        selection = select_exact_visual_asset(
+            recorded="/code/textures/source.jpg",
+            sampled="/assets/textures/controller-recording.jpg",
+            replay_resampled_asset=True,
+        )
+
+        self.assertEqual(selection["selected"], "/assets/textures/controller-recording.jpg")
+        self.assertEqual(selection["selected_source"], "rng_resample")
+
 
 if __name__ == "__main__":
     unittest.main()
