@@ -125,6 +125,10 @@ if [ -n "$NORMALIZER_CHECKPOINT" ] && [ ! -f "$NORMALIZER_CHECKPOINT_HOST" ]; th
   echo "Missing normalizer checkpoint: $NORMALIZER_CHECKPOINT_HOST"
   exit 2
 fi
+if [ "$VAL_EVERY" -lt 1 ] || [ "$CHECKPOINT_EVERY" -lt 1 ] || [ $((CHECKPOINT_EVERY % VAL_EVERY)) -ne 0 ]; then
+  echo "CHECKPOINT_EVERY must be a positive multiple of VAL_EVERY: $CHECKPOINT_EVERY/$VAL_EVERY" >&2
+  exit 2
+fi
 
 mkdir -p \
   "$TRAIN_DIR_HOST/checkpoints" \
