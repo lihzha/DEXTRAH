@@ -14290,3 +14290,38 @@ Smoke follow-up:
   4,800-step quality episode using action chunk eight, both material
   randomizers, and no failure or success early termination. Its resolved
   monitor config and pinned eval commit `7d35a1be` were inspected after launch.
+
+## 2026-07-01T18:32:00Z Stage-50 Diversity Audit And Old-Data Cleanup
+
+- Rendered a 16-trajectory initial-observation montage from evenly spaced rows
+  of the frozen clean stage-50 manifest. Every external view is table-only with
+  the initial object and bin visible; wrist views consistently show the
+  down-pointing gripper and local tabletop. Objects, bin geometry/colors,
+  shadows, robot appearance, and tabletop lighting vary without blank frames
+  or debug markers. Artifact:
+  `cluster_results/l401/yam_controller_stateobs_v15_final500_20260701T1710Z_stage0050_audit/initial_scene_wrist_montage.png`.
+- Quantitative metadata audit found 35 unique objects and 38 distinct indoor
+  HDR maps among 50 shards. Scene-camera eye ranges are
+  `x=[-0.5178,-0.4823]`, `y=[0.0290,0.0519]`, and
+  `z=[0.6627,0.6979] m`. Randomized bins span
+  `x=[-0.3195,-0.1225]`, `y=[0.1051,0.2556] m`, inner sizes
+  `0.2203-0.3167 x 0.1718-0.2381 m`, and wall heights
+  `0.0820-0.1371 m`. Initial scene/wrist means span `35.9-170.4` and
+  `30.5-155.9`, respectively.
+- The configured tabletop directory contains three files but only two visual
+  wood patterns because one diffuse map is duplicated as PNG/JPEG. Tiling,
+  roughness, HDR lighting, robot/bin/object appearance, and train-time image
+  augmentation still vary independently, and one pattern closely matches the
+  intended real light-wood table. Kept the pool fixed for this immutable run:
+  changing its candidate ordering mid-run would break deterministic exact
+  visual RNG replay across the nested manifests.
+- Preserved stable obsolete-data comparison snapshots at steps `60,564`
+  (v13 stage 10) and `50,856` (old stage 50). Stopped A100 submitters
+  `1064460`/`1704471`, canceled jobs `29709315`/`29710841`, and stopped their
+  L40S monitors after each fresh snapshot was copied. Their newly submitted
+  rollouts `1087738` and `1087801` were canceled at zero runtime because those
+  datasets retain the hidden-timeout labels removed from clean v15.
+- Clean stage-50 validation loss improved over its first four epochs from
+  `0.16189` to `0.05752`, with finite training loss throughout. Only the clean
+  stage-10 and stage-50 A100 runs now consume training capacity; the freed slots
+  are reserved for clean stages 100 and 500.
