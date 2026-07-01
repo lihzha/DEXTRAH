@@ -21,6 +21,7 @@ def _write_shard(
     descent_started: bool,
     controller_path: str | None,
     stationary_tcp: bool = False,
+    drop_settle_timed_out: bool = False,
 ) -> Path:
     shard = root / "source_000005" / "policy_dataset" / "yam_rgb_policy_000005"
     shard.mkdir(parents=True)
@@ -64,6 +65,9 @@ def _write_shard(
     if controller_version >= 13:
         recording["dataset_drop_acceptance_mode"] = V13_ACCEPTANCE_MODE
         recording["episode_controller_paths"] = [controller_path]
+    if controller_version >= 14:
+        recording["dataset_drop_open_trigger"] = "contained_geometry_without_hidden_timeout"
+        recording["episode_drop_settle_timed_out"] = [drop_settle_timed_out]
     (shard / "metadata.json").write_text(
         json.dumps(
             {
@@ -178,6 +182,35 @@ class YamControllerNativeCurriculumValidationTest(unittest.TestCase):
 
             self.assertIsNone(reason)
             self.assertEqual(record["longest_stationary_tcp_steps"], 0)
+
+    def test_v14_accepts_state_observable_drop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shard = _write_shard(
+                Path(directory),
+                controller_version=14,
+                descent_started=True,
+                controller_path="staged_descent",
+            )
+
+            record, reason = _validate_shard(shard)
+
+            self.assertIsNone(reason)
+            self.assertEqual(record["source_index"], 5)
+
+    def test_v14_rejects_drop_settle_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shard = _write_shard(
+                Path(directory),
+                controller_version=14,
+                descent_started=True,
+                controller_path="staged_descent",
+                drop_settle_timed_out=True,
+            )
+
+            record, reason = _validate_shard(shard)
+
+            self.assertIsNone(record)
+            self.assertEqual(reason, "recording_drop_settle_timeout_invalid")
 
 
 if __name__ == "__main__":

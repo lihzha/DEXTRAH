@@ -14130,3 +14130,34 @@ Smoke follow-up:
   changes only `dataset_drop_settle_max_steps=240 -> 0`, writes to isolated run
   `yam_drop_nohold_ablation_v1_20260701T1642Z`, and must pass final physical
   success plus the same replay gate before the production controller changes.
+
+## 2026-07-01T17:00:00Z No-Hold Result And State-Observable Controller V14
+
+- No-hold jobs `1084885-1084888` completed with only `1/4` accepted. Source 190
+  happened to drop successfully and passed strict dynamics replay; sources 15,
+  32, and 200 lifted and transported but advanced into the open phase before
+  state readiness and missed the bin. This rules out a zero-repeat timeout as
+  the production fix.
+- Deployed flow-gate commit `a8914401` to remote worktree
+  `yam-rgb-flow-a891-20260701` and audited the live records in an isolated
+  output. At 205 candidates it found 168 valid, 36 excessive stationary runs,
+  and one additional source-104 wrist stream whose terminal frames fall below
+  mean intensity 1.0. No frozen stage-100 row references source 104; it will be
+  excluded or replayed before the final curriculum.
+- Implemented controller v14. Opening is now triggered only when descent has
+  started, object-aware XY containment margin is at least `0.01 m`, and the
+  object is geometrically inside the bin height. Held-object linear/angular
+  speed and an elapsed timeout no longer decide when to open. The unwedging
+  fallback starts after 30 steps when vertical error remains at least `0.03 m`;
+  a still-unready rollout is rejected after 60 steps instead of advancing to
+  the open phase. Fallback release-hold state uses the same contained geometry.
+- V14 metadata records
+  `dataset_drop_open_trigger=contained_geometry_without_hidden_timeout` and an
+  episode timeout flag. Both the recorder reuse check and final curriculum
+  validator require this contract for v14 and reject any timed-out episode.
+  Wrapper defaults are `settle_max=60`, `fallback_after=30`, and
+  `fallback_trigger_height_error=0.03 m`.
+- Python compilation, eight focused curriculum tests, shell syntax for all
+  affected launch wrappers, and `git diff --check` pass. The four-source v14
+  quality/dynamics integration matrix is the next gate before production
+  submitters change.

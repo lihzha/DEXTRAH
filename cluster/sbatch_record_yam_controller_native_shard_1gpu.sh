@@ -38,13 +38,13 @@ DATASET_DROP_DESCENT_HEIGHT_TOLERANCE_M="${DATASET_DROP_DESCENT_HEIGHT_TOLERANCE
 DATASET_DROP_POSE_MAX_CORRECTION_M="${DATASET_DROP_POSE_MAX_CORRECTION_M:-0.008}"
 DATASET_DROP_RETRACT_HEIGHT_M="${DATASET_DROP_RETRACT_HEIGHT_M:-0.08}"
 DATASET_DROP_RETRACT_GRIPPER_WIDTH_M="${DATASET_DROP_RETRACT_GRIPPER_WIDTH_M:-0.18}"
-DATASET_DROP_SETTLE_MAX_STEPS="${DATASET_DROP_SETTLE_MAX_STEPS:-240}"
+DATASET_DROP_SETTLE_MAX_STEPS="${DATASET_DROP_SETTLE_MAX_STEPS:-60}"
 DATASET_DROP_SETTLE_CONTAINMENT_MARGIN_M="${DATASET_DROP_SETTLE_CONTAINMENT_MARGIN_M:-0.01}"
 DATASET_DROP_SETTLE_HEIGHT_TOLERANCE_M="${DATASET_DROP_SETTLE_HEIGHT_TOLERANCE_M:-0.01}"
 DATASET_DROP_SETTLE_LINEAR_SPEED="${DATASET_DROP_SETTLE_LINEAR_SPEED:-0.10}"
 DATASET_DROP_SETTLE_ANGULAR_SPEED="${DATASET_DROP_SETTLE_ANGULAR_SPEED:-10.0}"
-DATASET_DROP_FALLBACK_AFTER_STEPS="${DATASET_DROP_FALLBACK_AFTER_STEPS:-240}"
-DATASET_DROP_FALLBACK_TRIGGER_HEIGHT_ERROR_M="${DATASET_DROP_FALLBACK_TRIGGER_HEIGHT_ERROR_M:-0.10}"
+DATASET_DROP_FALLBACK_AFTER_STEPS="${DATASET_DROP_FALLBACK_AFTER_STEPS:-30}"
+DATASET_DROP_FALLBACK_TRIGGER_HEIGHT_ERROR_M="${DATASET_DROP_FALLBACK_TRIGGER_HEIGHT_ERROR_M:-0.03}"
 DATASET_DROP_FALLBACK_RELEASE_CLEARANCE_M="${DATASET_DROP_FALLBACK_RELEASE_CLEARANCE_M:-0.055}"
 DATASET_DROP_FALLBACK_HEIGHT_TOLERANCE_M="${DATASET_DROP_FALLBACK_HEIGHT_TOLERANCE_M:-0.015}"
 DATASET_DROP_FALLBACK_LINEAR_SPEED="${DATASET_DROP_FALLBACK_LINEAR_SPEED:-0.03}"
@@ -142,6 +142,7 @@ fallback_release_valid = (
 controller_version = int(provenance.get("dataset_drop_controller_version") or 0)
 drop_descent = provenance.get("episode_drop_descent_started") or []
 controller_paths = provenance.get("episode_controller_paths") or []
+drop_timeouts = provenance.get("episode_drop_settle_timed_out") or []
 if controller_version == 12:
     controller_path_valid = bool(drop_descent) and all(bool(value) for value in drop_descent)
 else:
@@ -156,6 +157,15 @@ else:
         and bool(controller_paths)
         and [str(value) for value in controller_paths] == expected_paths
     )
+observable_open_valid = (
+    controller_version < 14
+    or (
+        provenance.get("dataset_drop_open_trigger")
+        == "contained_geometry_without_hidden_timeout"
+        and len(drop_timeouts) == len(drop_descent)
+        and not any(bool(value) for value in drop_timeouts)
+    )
+)
 valid = (
     recording.get("accepted")
     and gate.get("passed")
@@ -174,6 +184,7 @@ valid = (
     and provenance.get("dataset_drop_spec_source") == "exact_stable_scene"
     and all(provenance.get("episode_final_success") or [])
     and controller_path_valid
+    and observable_open_valid
     and fallback_release_valid
     and all(bool(item.get("final_success")) for item in gate.get("episodes") or [])
 )

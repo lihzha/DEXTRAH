@@ -29,8 +29,9 @@ ACTION_NAMES = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"]
 YAM_POSE_ACTION_SCALE = (0.055, 0.055, 0.045, 0.22, 0.22, 0.25)
 SURFACE_TEXTURE_EXTS = (".jpg", ".jpeg", ".png")
 DOME_TEXTURE_EXTS = (".hdr", ".exr", ".jpg", ".jpeg", ".png")
-DATASET_DROP_CONTROLLER_VERSION = 13
+DATASET_DROP_CONTROLLER_VERSION = 14
 DATASET_DROP_ACCEPTANCE_MODE = "final_physical_success_plus_dynamics_replay"
+DATASET_DROP_OPEN_TRIGGER = "contained_geometry_without_hidden_timeout"
 STAGED_DESCENT_PATH = "staged_descent"
 SOURCE_TRACKED_DROP_PATH = "source_tracked_drop"
 
@@ -52,6 +53,7 @@ def _recording_episode_success(
     )
     return bool(
         episode_summary["success"]
+        and not episode_summary["drop_settle_timed_out"]
         and (
             not require_final_success
             or float(episode_summary["final_success"] or 0.0) >= 0.5
@@ -88,13 +90,13 @@ parser.add_argument("--dataset_drop_descent_height_tolerance_m", type=float, def
 parser.add_argument("--dataset_drop_pose_max_correction_m", type=float, default=0.005)
 parser.add_argument("--dataset_drop_retract_height_m", type=float, default=0.08)
 parser.add_argument("--dataset_drop_retract_gripper_width_m", type=float, default=0.18)
-parser.add_argument("--dataset_drop_settle_max_steps", type=int, default=240)
+parser.add_argument("--dataset_drop_settle_max_steps", type=int, default=60)
 parser.add_argument("--dataset_drop_settle_containment_margin_m", type=float, default=0.01)
 parser.add_argument("--dataset_drop_settle_height_tolerance_m", type=float, default=0.01)
 parser.add_argument("--dataset_drop_settle_linear_speed", type=float, default=0.10)
 parser.add_argument("--dataset_drop_settle_angular_speed", type=float, default=10.0)
-parser.add_argument("--dataset_drop_fallback_after_steps", type=int, default=240)
-parser.add_argument("--dataset_drop_fallback_trigger_height_error_m", type=float, default=0.10)
+parser.add_argument("--dataset_drop_fallback_after_steps", type=int, default=30)
+parser.add_argument("--dataset_drop_fallback_trigger_height_error_m", type=float, default=0.03)
 parser.add_argument("--dataset_drop_fallback_release_clearance_m", type=float, default=0.055)
 parser.add_argument("--dataset_drop_fallback_height_tolerance_m", type=float, default=0.015)
 parser.add_argument("--dataset_drop_fallback_linear_speed", type=float, default=0.03)
@@ -2571,25 +2573,23 @@ def _dataset_pose_target_action(
                 else float(args_cli.dataset_drop_release_clearance_m)
             )
             release_z = _dataset_drop_release_z(active_drop_spec, release_clearance_m)
-            release_height_error = abs(float(live_object[2]) - release_z)
-            release_height_tolerance = max(
-                0.0,
-                float(
-                    args_cli.dataset_drop_fallback_height_tolerance_m
-                    if fallback_used
-                    else args_cli.dataset_drop_settle_height_tolerance_m
-                ),
+            object_inside_bin_z = bool(
+                float(active_drop_spec["inner_floor_z"]) - 0.02
+                <= float(live_object[2])
+                <= float(active_drop_spec["inner_top_z"])
+                + float(active_drop_spec["object_half_z"])
             )
             if not fallback_used:
                 controller_state["drop_release_hold_started"] = False
             elif (
                 controller_state["drop_release_hold_started"]
-                and release_height_error > 2.0 * release_height_tolerance
+                and not (containment_ready and object_inside_bin_z)
             ):
                 controller_state["drop_release_hold_started"] = False
             elif (
                 controller_state["drop_descent_started"]
-                and release_height_error <= release_height_tolerance
+                and containment_ready
+                and object_inside_bin_z
             ):
                 controller_state["drop_release_hold_started"] = True
             inward_shift_xy = _bounded_position_correction(
@@ -3002,6 +3002,7 @@ def main() -> None:
                 "drop_containment_margin_m": None,
                 "drop_transport_height_error_m": None,
                 "drop_xy_ready": False,
+                "drop_settle_timed_out": False,
             }
             dataset_terminal_tail_steps = 0
             for step in range(int(args_cli.num_steps)):
@@ -3207,21 +3208,6 @@ def main() -> None:
                                 if fallback_used
                                 else float(args_cli.dataset_drop_release_clearance_m)
                             )
-                            height_tolerance_m = (
-                                float(args_cli.dataset_drop_fallback_height_tolerance_m)
-                                if fallback_used
-                                else float(args_cli.dataset_drop_settle_height_tolerance_m)
-                            )
-                            linear_speed_limit = (
-                                float(args_cli.dataset_drop_fallback_linear_speed)
-                                if fallback_used
-                                else float(args_cli.dataset_drop_settle_linear_speed)
-                            )
-                            angular_speed_limit = (
-                                float(args_cli.dataset_drop_fallback_angular_speed)
-                                if fallback_used
-                                else float(args_cli.dataset_drop_settle_angular_speed)
-                            )
                             live_object = _tensor_numpy(task_env.cube_pos)[0]
                             drop_position_error = float(
                                 np.linalg.norm(
@@ -3244,14 +3230,10 @@ def main() -> None:
                                 - _dataset_drop_release_z(bin_drop_spec, release_clearance_m)
                             )
                             drop_ready = bool(
-                                drop_containment_margin
+                                dataset_controller_state["drop_descent_started"]
+                                and drop_containment_margin
                                 >= max(0.0, float(args_cli.dataset_drop_settle_containment_margin_m))
-                                and drop_height_error
-                                <= max(0.0, height_tolerance_m)
-                                and float(task_metrics.get("cube_linear_speed") or 0.0)
-                                <= max(0.0, linear_speed_limit)
-                                and float(task_metrics.get("cube_angular_speed") or 0.0)
-                                <= max(0.0, angular_speed_limit)
+                                and float(bin_metrics.get("bin_inside_z") or 0.0) >= 0.5
                                 and (
                                     not fallback_used
                                     or dataset_controller_state["drop_release_hold_started"]
@@ -3281,10 +3263,20 @@ def main() -> None:
                             dataset_controller_state["drop_release_hold_started"] = False
                             drop_settle_repeat_count = 0
                             drop_ready = False
+                        drop_settle_limit = max(0, int(args_cli.dataset_drop_settle_max_steps))
+                        drop_settle_timed_out = bool(
+                            at_drop_hold_boundary
+                            and not drop_ready
+                            and drop_settle_repeat_count >= drop_settle_limit
+                        )
+                        dataset_controller_state["drop_settle_timed_out"] = bool(
+                            dataset_controller_state["drop_settle_timed_out"]
+                            or drop_settle_timed_out
+                        )
                         repeat_drop_settle = bool(
                             at_drop_hold_boundary
                             and not drop_ready
-                            and drop_settle_repeat_count < max(0, int(args_cli.dataset_drop_settle_max_steps))
+                            and not drop_settle_timed_out
                         )
                         repeat_fallback_open = bool(
                             dataset_controller_state["drop_open_started"]
@@ -3328,6 +3320,9 @@ def main() -> None:
                             "drop_transport_height_error_m"
                         ]
                         record["dataset_drop_settle_ready"] = float(drop_ready)
+                        record["dataset_drop_settle_timed_out"] = float(
+                            dataset_controller_state["drop_settle_timed_out"]
+                        )
                         record["dataset_drop_settle_position_error"] = drop_position_error
                         record["dataset_drop_settle_containment_margin"] = drop_containment_margin
                         record["dataset_drop_settle_height_error"] = drop_height_error
@@ -3358,6 +3353,13 @@ def main() -> None:
                     )
                 if done_now and bool(args_cli.stop_on_done):
                     break
+                if dataset_controller_state["drop_settle_timed_out"]:
+                    print(
+                        "[YAM_RGB_DP_EVAL] "
+                        f"episode={episode} step={step + 1} drop_settle_timed_out=1",
+                        flush=True,
+                    )
+                    break
                 if (
                     bool(args_cli.stop_on_bin_drop_success)
                     and float(bin_metrics.get("bin_drop_success", 0.0)) >= 0.5
@@ -3379,6 +3381,11 @@ def main() -> None:
                 float(item["dataset_drop_fallback_used"])
                 for item in episode_records
                 if item.get("dataset_drop_fallback_used") is not None
+            ]
+            timeout_values = [
+                float(item["dataset_drop_settle_timed_out"])
+                for item in episode_records
+                if item.get("dataset_drop_settle_timed_out") is not None
             ]
             lift_values = [float(item["cube_lift_height"]) for item in episode_records if item.get("cube_lift_height") is not None]
             if first_done is not None:
@@ -3403,6 +3410,9 @@ def main() -> None:
                 ],
                 "drop_descent_started": bool(descent_values and max(descent_values) >= 0.5),
                 "drop_fallback_used": bool(fallback_values and max(fallback_values) >= 0.5),
+                "drop_settle_timed_out": bool(
+                    timeout_values and max(timeout_values) >= 0.5
+                ),
                 "drop_release_hold_started": bool(
                     release_hold_values and max(release_hold_values) >= 0.5
                 ),
@@ -3435,6 +3445,9 @@ def main() -> None:
                         "final_success": bool(float(episode_summary["final_success"] or 0.0) >= 0.5),
                         "drop_descent_started": bool(episode_summary["drop_descent_started"]),
                         "drop_fallback_used": bool(episode_summary["drop_fallback_used"]),
+                        "drop_settle_timed_out": bool(
+                            episode_summary["drop_settle_timed_out"]
+                        ),
                         "drop_release_hold_started": bool(
                             episode_summary["drop_release_hold_started"]
                         ),
@@ -3639,6 +3652,7 @@ def main() -> None:
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
                 "dataset_drop_controller_version": DATASET_DROP_CONTROLLER_VERSION,
                 "dataset_drop_acceptance_mode": DATASET_DROP_ACCEPTANCE_MODE,
+                "dataset_drop_open_trigger": DATASET_DROP_OPEN_TRIGGER,
                 "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
                 "recording_gate_fallback_replay_mode": "robot_pose_target_dynamics",
                 "recording_select_replayable_success_prefix": bool(
@@ -3741,6 +3755,9 @@ def main() -> None:
                 "episode_drop_fallback_used": [
                     bool(item["drop_fallback_used"]) for item in episode_summaries
                 ],
+                "episode_drop_settle_timed_out": [
+                    bool(item["drop_settle_timed_out"]) for item in episode_summaries
+                ],
                 "episode_drop_release_hold_started": [
                     bool(item["drop_release_hold_started"]) for item in episode_summaries
                 ],
@@ -3783,6 +3800,7 @@ def main() -> None:
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
         "dataset_drop_controller_version": DATASET_DROP_CONTROLLER_VERSION,
         "dataset_drop_acceptance_mode": DATASET_DROP_ACCEPTANCE_MODE,
+        "dataset_drop_open_trigger": DATASET_DROP_OPEN_TRIGGER,
         "dataset_drop_release_criterion": "gripper_open_or_hand_separated",
         "recording_gate_fallback_replay_mode": "robot_pose_target_dynamics",
         "recording_gate_fallback_pose_lookahead": int(
