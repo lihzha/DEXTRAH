@@ -1122,25 +1122,20 @@ def _usd_solid_material(
     return mat
 
 
-def _bind_material_to_gprims(
-    stage: Any,
-    root_path: str,
-    material: UsdShade.Material,
-    *,
-    path_token: str | None = None,
-) -> list[str]:
-    bound: list[str] = []
-    root_prefix = root_path.rstrip("/") + "/"
-    token = None if path_token is None else path_token.lower()
-    for prim in stage.Traverse():
-        prim_path = str(prim.GetPath())
-        if not prim_path.startswith(root_prefix) or not prim.IsA(UsdGeom.Gprim):
-            continue
-        if token is not None and token not in prim_path.lower():
-            continue
-        _usd_bind(prim, material)
-        bound.append(prim_path)
-    return bound
+def _bind_material_hierarchy(stage: Any, root_path: str, material: UsdShade.Material) -> str:
+    root = stage.GetPrimAtPath(root_path)
+    if not root.IsValid():
+        raise RuntimeError(f"Material randomization root does not exist: {root_path}")
+    binding_api = (
+        UsdShade.MaterialBindingAPI(root)
+        if root.HasAPI(UsdShade.MaterialBindingAPI)
+        else UsdShade.MaterialBindingAPI.Apply(root)
+    )
+    binding_api.Bind(
+        material,
+        bindingStrength=UsdShade.Tokens.strongerThanDescendants,
+    )
+    return root_path
 
 
 def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
@@ -1169,14 +1164,6 @@ def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) 
             float(np.clip(body_value * value, 0.015, 0.52))
             for value in rng.uniform(0.82, 1.18, size=3)
         )
-        accent_palette = (
-            (0.02, 0.14, 0.55),
-            (0.95, 0.18, 0.015),
-            (0.035, 0.045, 0.055),
-            (0.28, 0.32, 0.36),
-        )
-        left_color = accent_palette[int(rng.integers(0, len(accent_palette)))]
-        right_color = accent_palette[int(rng.integers(0, len(accent_palette)))]
         robot_roughness = float(rng.uniform(0.32, 0.88))
         robot_metallic = float(rng.uniform(0.0, 0.28))
         body_mat = _usd_solid_material(
@@ -1186,39 +1173,13 @@ def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) 
             roughness=robot_roughness,
             metallic=robot_metallic,
         )
-        left_mat = _usd_solid_material(
-            stage,
-            f"{looks_root}/left_finger",
-            left_color,
-            roughness=float(rng.uniform(0.40, 0.92)),
-            metallic=float(rng.uniform(0.0, 0.18)),
-        )
-        right_mat = _usd_solid_material(
-            stage,
-            f"{looks_root}/right_finger",
-            right_color,
-            roughness=float(rng.uniform(0.40, 0.92)),
-            metallic=float(rng.uniform(0.0, 0.18)),
-        )
         robot_root = "/World/envs/env_0/Robot"
-        body_paths = _bind_material_to_gprims(stage, robot_root, body_mat)
-        left_paths = _bind_material_to_gprims(
-            stage, robot_root, left_mat, path_token="link_left_finger"
-        )
-        right_paths = _bind_material_to_gprims(
-            stage, robot_root, right_mat, path_token="link_right_finger"
-        )
-        if not body_paths:
-            raise RuntimeError(f"Robot material randomization found no Gprims under {robot_root}")
+        bound_root = _bind_material_hierarchy(stage, robot_root, body_mat)
         summary["robot"] = {
             "body_color": list(body_color),
-            "left_finger_color": list(left_color),
-            "right_finger_color": list(right_color),
             "roughness": robot_roughness,
             "metallic": robot_metallic,
-            "body_gprim_count": len(body_paths),
-            "left_finger_gprim_count": len(left_paths),
-            "right_finger_gprim_count": len(right_paths),
+            "bound_root": bound_root,
         }
 
     if object_enabled:
@@ -1236,15 +1197,13 @@ def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) 
                 metallic=object_metallic,
             )
             object_root = "/World/envs/env_0/object"
-            object_paths = _bind_material_to_gprims(stage, object_root, object_mat)
-            if not object_paths:
-                raise RuntimeError(f"Object material randomization found no Gprims under {object_root}")
+            bound_root = _bind_material_hierarchy(stage, object_root, object_mat)
             object_summary.update(
                 {
                     "color": list(object_color),
                     "roughness": object_roughness,
                     "metallic": object_metallic,
-                    "gprim_count": len(object_paths),
+                    "bound_root": bound_root,
                 }
             )
         summary["object"] = object_summary
