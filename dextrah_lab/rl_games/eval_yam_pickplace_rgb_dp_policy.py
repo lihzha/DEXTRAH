@@ -19,6 +19,8 @@ from typing import Any
 
 from isaaclab.app import AppLauncher
 
+from dextrah_lab.offline_dp_bc.exact_visual_replay import select_exact_visual_asset
+
 
 DEFAULT_SCENE_CAMERA_EYE = (-0.50, 0.04, 0.68)
 DEFAULT_SCENE_CAMERA_TARGET = (-0.25, 0.04, 0.03)
@@ -943,22 +945,27 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
     }
     max_numeric_error = max(numeric_errors.values(), default=float("inf"))
     paths = {
-        "table_texture": {
-            "sampled": sampled_table_texture,
-            "recorded": str(table_texture.get("table_texture_path") or ""),
-        },
-        "background_texture": {
-            "sampled": sampled_background_texture,
-            "recorded": str(background.get("background_texture_path") or ""),
-        },
-        "dome_texture": {
-            "sampled": sampled_dome_texture,
-            "recorded": str(lighting.get("dome_light_texture_path") or ""),
-        },
+        "table_texture": select_exact_visual_asset(
+            recorded=table_texture.get("table_texture_path"),
+            sampled=sampled_table_texture,
+        ),
+        "background_texture": select_exact_visual_asset(
+            recorded=background.get("background_texture_path"),
+            sampled=sampled_background_texture,
+        ),
+        "dome_texture": select_exact_visual_asset(
+            recorded=lighting.get("dome_light_texture_path"),
+            sampled=sampled_dome_texture,
+        ),
     }
     paths_match = all(
         (not record["recorded"] and not record["sampled"])
         or Path(record["recorded"]).resolve() == Path(record["sampled"]).resolve()
+        for record in paths.values()
+    )
+    selected_paths_match_recorded = all(
+        (not record["recorded"] and not record["selected"])
+        or Path(record["recorded"]).resolve() == Path(record["selected"]).resolve()
         for record in paths.values()
     )
     if not math.isfinite(max_numeric_error) or max_numeric_error > 1.0e-6:
@@ -972,6 +979,7 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         "max_recorded_numeric_error": max_numeric_error,
         "numeric_errors": numeric_errors,
         "sampled_paths_match_recorded": bool(paths_match),
+        "selected_paths_match_recorded": bool(selected_paths_match_recorded),
         "paths": paths,
         "table_material_roughness": table_material_roughness,
         "tabletop_surround_roughness": surround_roughness,
@@ -1055,21 +1063,12 @@ def _apply_exact_demo_env_cfg(env_cfg: Any, exact_demo: dict[str, Any]) -> dict[
     env_cfg.exact_tabletop_surround_thickness = float(surround.get("thickness", 0.006))
     env_cfg.exact_tabletop_surround_color = tuple(float(v) for v in materials["tabletop_surround_color"])
     env_cfg.exact_tabletop_surround_roughness = float(visual_replay["tabletop_surround_roughness"])
-    resampled_table_texture = str(visual_replay["paths"]["table_texture"]["sampled"] or "")
-    env_cfg.exact_table_texture_enabled = bool(table_texture.get("enabled", False) or resampled_table_texture)
-    env_cfg.exact_table_texture_path = (
-        resampled_table_texture
-        if args_cli.exact_visual_resample and resampled_table_texture
-        else str(table_texture.get("table_texture_path") or "")
-    )
+    selected_table_texture = str(visual_replay["paths"]["table_texture"]["selected"] or "")
+    env_cfg.exact_table_texture_enabled = bool(table_texture.get("enabled", False) or selected_table_texture)
+    env_cfg.exact_table_texture_path = selected_table_texture
     env_cfg.exact_table_texture_tiling = float(visual_replay["table_texture_tiling"])
     env_cfg.exact_table_texture_roughness = float(visual_replay["table_texture_roughness"])
-    resampled_dome_texture = str(visual_replay["paths"]["dome_texture"]["sampled"] or "")
-    env_cfg.exact_dome_texture_path = (
-        resampled_dome_texture
-        if args_cli.exact_visual_resample and resampled_dome_texture
-        else str(lighting.get("dome_light_texture_path") or "")
-    )
+    env_cfg.exact_dome_texture_path = str(visual_replay["paths"]["dome_texture"]["selected"] or "")
     env_cfg.exact_background_enabled = bool(background.get("enabled", False))
     if env_cfg.exact_background_enabled:
         raise ValueError("Exact-demo evaluator currently requires collection scenes without background walls")
