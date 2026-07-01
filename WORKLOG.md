@@ -13741,3 +13741,34 @@ Smoke follow-up:
   rendering or replay sweep. Python compilation, shell syntax, diff checks, and
   all six dataset/curriculum unit tests pass. Requalify sources 0 and 4 using this
   adaptive prefix gate before restarting production from missing source 4/11.
+- Adaptive-prefix source-0 qualification job `1082411` passed. Nominal and
+  raw-action dynamics replay shared 50 settled-success endpoints, so the writer
+  selected step 1,049 and removed 49 later frames from the previous 1,098-step
+  record. Both RGB arrays are exactly `(1049,256,256,3)`, robot state is
+  `(1049,24)`, actions are `(1049,7)`, and `episode_ends=[1049]`.
+- Source 4 remained a strict rejection after full replay in job `1082428`.
+  Nominal had multiple settled windows, but raw-action replay had zero success
+  steps and ended `12.90 mm` outside one object-aware margin. This sparse,
+  contact-sensitive object will not be admitted through a weaker replay mode.
+- Production resumed from pinned commit `6ab46135` with six-minute first-pass
+  jobs and submitter PID `3385083`. Sources 11, 13, and 14 passed in jobs
+  `1082432-1082434`; their selected/full lengths are respectively `925/991`,
+  `1185/1264`, and `1228/1235`. Source 11's full replay failed but shared 61
+  successful prefixes with nominal, directly validating the adaptive gate's
+  purpose. Source 15 was moved preemptively to eight-minute job `1082479` based
+  on its known reach-limited fallback; it passed in 4:53 with pose-target
+  dynamics replay, latched release hold, 59 common endpoints, and selected/full
+  lengths `1480/1554`.
+- Replaced rejected source 4 with source 500 from a duplicated robust source-0
+  scene under `dataset_pose_recovery`. Job `1082510` warm-started 119 controller
+  steps, applied a two-step unrecorded bounded perturbation, then recorded only
+  the corrective trajectory. It passed exact-reset dynamics replay with 46
+  common endpoints and selected/full lengths `836/881`. This retains 500 total
+  accepted trajectories while adding off-trajectory recovery coverage instead
+  of duplicate idle labels. The immutable replacement source manifest records
+  the source/exclusion rationale.
+- Fetched accepted source-13 tensors and rendered a 593-frame, 19.77-second
+  side-by-side scene/wrist video at
+  `cluster_results/l401/yam_controller_native_v15_source13_20260701/source_000013_scene_wrist.mp4`.
+  Milestone inspection confirms a table-only external view, bin left, visible
+  randomized object and arm, useful close wrist view, and no debug markers.
