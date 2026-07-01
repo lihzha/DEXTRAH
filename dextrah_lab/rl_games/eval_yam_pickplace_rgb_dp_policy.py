@@ -19,7 +19,10 @@ from typing import Any
 
 from isaaclab.app import AppLauncher
 
-from dextrah_lab.offline_dp_bc.exact_visual_replay import select_exact_visual_asset
+from dextrah_lab.offline_dp_bc.exact_visual_replay import (
+    select_exact_visual_asset,
+    should_replay_resampled_assets,
+)
 
 
 DEFAULT_SCENE_CAMERA_EYE = (-0.50, 0.04, 0.68)
@@ -857,8 +860,10 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         if isinstance(exact_demo["shard_metadata"].get("recording"), dict)
         else {}
     )
-    replay_resampled_assets = bool(
-        args_cli.exact_visual_resample and shard_recording.get("exact_visual_resample", False)
+    replay_resampled_assets = should_replay_resampled_assets(
+        visual_resample_requested=bool(args_cli.exact_visual_resample),
+        shard_recorded_visual_resample=bool(shard_recording.get("exact_visual_resample", False)),
+        recording_output_requested=bool(args_cli.record_policy_shard),
     )
 
     rng = np.random.default_rng(int(metadata["seed"]) + 1009)
