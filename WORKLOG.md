@@ -14226,3 +14226,35 @@ Smoke follow-up:
   seed replacement manifest; copied the immutable 500-row source manifest to
   `replacement_source_manifest_500.json` and restarted it successfully. Main
   jobs `1085219-1085224` cover sources 0-5 and are pinned to `7d35a1be`.
+
+## 2026-07-01T17:31:00Z Clean V15 Stage-10 Freeze And Training Start
+
+- The clean v15 collector reached 16 strict accepted shards while the main
+  stream advanced through source 23. Main, first-recovery, and one-for-one
+  replacement launchers remain alive on `l401` as PIDs `3757408`, `3757481`,
+  and `3758042`; every submitted simulator job is pinned to tested production
+  commit `7d35a1be`. First-pass rejections are ordinary physical-policy
+  failures rather than renderer or device loss and are entering the unchanged
+  recovery and replacement gates.
+- Froze clean `curriculum/manifest_0010.json` at SHA-256
+  `0411444efaed6af8f7f3cc4bcc432b88bb896ace90556f0f1b224202182fde03`.
+  It contains 10 replay-qualified, flow-gated shards, 9 train / 1 validation
+  trajectories, 9 / 1 object UUIDs, zero UUID overlap, and 9,780 total steps.
+  Its maximum nearly stationary TCP run is 48 transitions, below the 60-step
+  admission limit.
+- Inspected clean source 0 from the stored scene/wrist tensors. The 15.8-second
+  side-by-side video has a table-only scene view, visible initial object,
+  wrist-camera acquisition through grasp and transport, and a settled released
+  object in the bin. Its longest stationary TCP run is 19 steps and longest
+  near-zero pose-action run is two steps.
+- Launched clean stage-10 A100 job `29712378` through persistent submitter PID
+  `3401435`. Run `yam_rgb_dp_stateobs_v15_n10_bs80_70k_20260701T1725Z` uses
+  batch 80, 70k updates, 100-step DDPM, horizon 16, one observation step,
+  eight action steps, two 256x256 cameras, 24-D robot state, EMA, ImageNet
+  initialization, and image augmentation. The resolved Hydra config contains
+  no phase, progress, or privileged object state.
+- At step 554, validation loss decreased monotonically from `0.88625` to
+  `0.20570`; no nonfinite loss was emitted. L40S periodic monitor PID `3767240`
+  will evaluate fresh 20k snapshots for a full 4,800-step quality-render
+  episode with action chunk eight and all early termination disabled. The
+  obsolete stopped stage-100 monitor PID `3685149` was cleaned up.
