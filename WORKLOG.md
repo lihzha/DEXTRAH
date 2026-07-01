@@ -13432,3 +13432,17 @@ Smoke follow-up:
   a displaced target carries its grasp frame with it, and explicit live-bin XY
   centering during hold/release so source near-edge drop points cannot amplify
   into a bounce outside the randomized bin.
+- Live-object-relative pilot `1080384` closed the source-2 grasp gap: it lifted
+  the object `0.16988 m` and transported it to the bin. Its final object-aware
+  containment margins were `+9.64 mm/-1.70 mm`, so the remaining failure was a
+  release transient rather than grasp or transport. The final held-to-open
+  transition reached `0.83 m/s` object linear speed and `9.1 rad/s` angular
+  speed, allowing the object to bounce across the near edge. A no-retiming A/B
+  job (`1080393`) was canceled once this release-specific cause was measured.
+- The teacher now limits each object-frame correction to `15 mm` per command
+  and holds the final closed-gripper bin waypoint until the object is within
+  `10 mm` of the true randomized bin center and below `0.05 m/s` linear and
+  `1.0 rad/s` angular speed, for at most 60 corrective steps. The per-step
+  centering and speed evidence, thresholds, and cap are written into metrics,
+  shard metadata, and array config provenance. The success-only action replay
+  gate remains unchanged and will reject any trajectory that still bounces out.
