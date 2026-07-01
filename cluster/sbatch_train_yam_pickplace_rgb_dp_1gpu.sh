@@ -31,6 +31,7 @@ MANIFEST="${MANIFEST:?Set MANIFEST to the YAM RGB policy manifest.json path.}"
 INIT_CHECKPOINT="${INIT_CHECKPOINT:-}"
 NORMALIZER_CHECKPOINT="${NORMALIZER_CHECKPOINT:-$INIT_CHECKPOINT}"
 COPY_FINAL_CHECKPOINT="${COPY_FINAL_CHECKPOINT:-True}"
+CODE_COMMIT="${CODE_COMMIT:-}"
 
 ROBOT_STATE_DIM="${ROBOT_STATE_DIM:-24}"
 IMAGE_SIZE="${IMAGE_SIZE:-256}"
@@ -40,8 +41,8 @@ NUM_EPOCHS="${NUM_EPOCHS:-50}"
 MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-2000000}"
 MAX_VAL_STEPS="${MAX_VAL_STEPS:-200}"
 LR_WARMUP_STEPS="${LR_WARMUP_STEPS:-500}"
-BATCH_SIZE="${BATCH_SIZE:-8}"
-VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-8}"
+BATCH_SIZE="${BATCH_SIZE:-80}"
+VAL_BATCH_SIZE="${VAL_BATCH_SIZE:-80}"
 USE_EMA="${USE_EMA:-true}"
 TRAINING_DEVICE="${TRAINING_DEVICE:-cuda:0}"
 RESUME="${RESUME:-false}"
@@ -107,6 +108,13 @@ if [ ! -f "$MANIFEST_HOST" ]; then
   echo "Missing YAM RGB policy manifest: $MANIFEST_HOST"
   exit 2
 fi
+if [ -n "$CODE_COMMIT" ]; then
+  actual_commit="$(git -C "$CODE_NFS" rev-parse HEAD)"
+  if [ "$actual_commit" != "$CODE_COMMIT" ]; then
+    echo "CODE_COMMIT mismatch: expected $CODE_COMMIT got $actual_commit" >&2
+    exit 2
+  fi
+fi
 if [ -n "$INIT_CHECKPOINT" ] && [ ! -f "$INIT_CHECKPOINT_HOST" ]; then
   echo "Missing init checkpoint: $INIT_CHECKPOINT_HOST"
   exit 2
@@ -140,6 +148,7 @@ export SAMPLE_EVERY CHECKPOINT_EVERY VAL_EVERY ROLLOUT_EVERY TOPK_CHECKPOINTS SE
 echo "Running YAM pick-place RGB Diffusion Policy training"
 echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
 echo "CODE_NFS=$CODE_NFS"
+echo "CODE_COMMIT=${CODE_COMMIT:-}"
 echo "OFFICIAL_DP_NFS=$OFFICIAL_DP_NFS"
 echo "RUN_NAME=$RUN_NAME"
 echo "TRAIN_DIR_HOST=$TRAIN_DIR_HOST"

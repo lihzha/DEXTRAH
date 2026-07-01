@@ -13508,3 +13508,8 @@ Smoke follow-up:
   on nominal success so the full bounded 30-step open-gripper tail is retained.
   This provides at most `0.5 s` of replay stabilization after the active retreat
   and remains far shorter than the long idle segments excluded from collection.
+- Hardened the A100 training launch against stale code: the one-GPU wrapper now
+  checks `CODE_COMMIT` against its mounted worktree before container startup,
+  and the persistent submitter forwards the pinned revision on every resume.
+  Promoted the previously benchmarked batch size `80` to both wrapper defaults;
+  stage launches still record and can override it explicitly.
