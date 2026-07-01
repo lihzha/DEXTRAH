@@ -116,14 +116,41 @@ active_eval_jobs() {
 stable_copy_checkpoint() {
   local src="$1"
   local dst="$2"
-  local size1 size2
+  local size1 size2 mtime1 mtime2 size3 mtime3 tmp
   [ -s "$src" ] || return 1
   size1="$(stat -c %s "$src")"
+  mtime1="$(stat -c %Y "$src")"
   sleep 10
   size2="$(stat -c %s "$src")"
-  [ "$size1" = "$size2" ] || return 1
-  cp "$src" "$dst"
+  mtime2="$(stat -c %Y "$src")"
+  [ "$size1" = "$size2" ] && [ "$mtime1" = "$mtime2" ] || return 1
+  checkpoint_zip_valid "$src" || return 1
+  tmp="${dst}.tmp.$$"
+  rm -f "$tmp"
+  cp "$src" "$tmp"
+  size3="$(stat -c %s "$src")"
+  mtime3="$(stat -c %Y "$src")"
+  if [ "$size2" != "$size3" ] || [ "$mtime2" != "$mtime3" ] || ! checkpoint_zip_valid "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$dst"
   [ -s "$dst" ]
+}
+
+checkpoint_zip_valid() {
+  python3 - "$1" <<'PY'
+import sys
+import zipfile
+
+path = sys.argv[1]
+try:
+    with zipfile.ZipFile(path, "r") as archive:
+        valid = bool(archive.infolist())
+except (OSError, zipfile.BadZipFile):
+    valid = False
+raise SystemExit(0 if valid else 1)
+PY
 }
 
 checkpoint_mtime() {
