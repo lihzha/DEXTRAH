@@ -13554,3 +13554,51 @@ Smoke follow-up:
   and launch validation requires checkpoint intervals to align with validation.
   Exact eval also exports all controller defaults into Pyxis, fixing a policy-mode
   wrapper failure that collection jobs had masked through inherited variables.
+- Exact dynamics reconstruction originally restored the source appearance, so a
+  broader texture CLI alone did not diversify the final observations. Commit
+  `c81894e9` adds deterministic exact-scene visual resampling while retaining the
+  recorded robot, object, bin, camera numeric values, and physics state. Accepted
+  metadata now records both source and sampled table/dome paths plus
+  `exact_visual_resample=true`; the curriculum rejects exact replays without it.
+- Recorder resume validation now checks dynamics, exact reset, quality rendering,
+  warm-up, visual resampling, live-bin targeting, and release mode before skipping
+  an existing shard (`7d5e28e8`). Recorder and exact-eval launchers now submit
+  ordinary per-entry Slurm jobs with explicit concurrency throttles, process/config
+  records, and job ledgers instead of arrays (`521d6730`, `18fdb2f9`). Mocked
+  range/dedup and 3-entry matrix tests passed, removing the observed
+  `JobArrayTaskLimit` failure mode.
+- The first revised exact eval, job `1080960_0`, failed before policy inference
+  because Torch downloaded ResNet-18 into the small Pyxis writable overlay and hit
+  `OSError(122, Disk quota exceeded)`. Commit `f2fe5af0` mounts the persistent
+  Lustre Torch cache at `/root/.cache/torch`; the complete 46,830,571-byte
+  `resnet18-f37072fd.pth` is present there. The failed matrix was canceled and
+  relaunched as ordinary jobs `1081008-1081010` from pinned eval commit
+  `18fdb2f9`; these jobs are queued for 2-train/1-validation exact evaluation.
+- Quality visual-resampling pilots `1081002` (source 0) and `1081003` (source 12)
+  completed nominal and exact-reset action-only replay gates. Exact numeric drift
+  was zero. Source 0 resampled Poly Haven wood to RoboLab Walnut and its dome from
+  `studio_small_01` to `studio_small_02`; source 12 resampled its tabletop to
+  RoboLab Oak. Their replay object-aware margins were respectively
+  `30.98/40.76 mm` and `20.24/21.42 mm`.
+- Fetched source 0's actual 1,079-frame `256x256` scene/wrist tensors and rendered
+  a 540-frame side-by-side video at
+  `cluster_results/l401/yam_controller_native_final500_wallclear_warm16_20260701T0725Z/inspection/source_000000_visual_resample_scene_wrist.mp4`.
+  Visual inspection confirms a table-dominant scene view with no background and
+  the arm/bin/object in view. The sparse yellow geometry is the active 7.5 cm
+  Objaverse object UUID `6f204b258be743ed8fb2171e1e65f6a3`, not a debug marker;
+  it moves with the grasp while the two robot debug sites remain hidden.
+- A static tabletop patch still brightened by `7.46` intensity levels across the
+  first 16 stored frames after the old 16-frame warm-up. Commit `f9d50072` raises
+  render-only warm-up to 64 frames for collection and evaluation; the curriculum
+  and recorder resume gate reject anything below 64. These renders occur before
+  action recording and therefore introduce no idle labels.
+- Source 15 diagnosed a separate high-drop bounce: after centering above the wall,
+  the object fell roughly 11 cm and settled `9.16 mm` outside one margin. Commit
+  `11d3bff2` implements a latched two-stage release: center the held object above
+  the randomized wall top, descend vertically inside the bin to 15 mm above its
+  resting floor height, open, and actively retract. The movement is bounded at
+  5 mm per command and uses no phase/progress policy input. Clean warm64 staged
+  descent pilots `1081060` (tall-wall source 12) and `1081061` (former bounce
+  source 15) are queued from pinned production commit `f9d50072` under
+  `yam_controller_native_final500_stagedrop_warm64_20260701T0743Z`. Scale to all
+  500 only after both nominal/replay gates and stored-frame convergence pass.
