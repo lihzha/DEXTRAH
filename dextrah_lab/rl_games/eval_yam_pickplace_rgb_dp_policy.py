@@ -63,6 +63,7 @@ parser.add_argument("--dataset_drop_settle_height_tolerance_m", type=float, defa
 parser.add_argument("--dataset_drop_settle_linear_speed", type=float, default=0.10)
 parser.add_argument("--dataset_drop_settle_angular_speed", type=float, default=10.0)
 parser.add_argument("--dataset_drop_fallback_after_steps", type=int, default=240)
+parser.add_argument("--dataset_drop_fallback_trigger_height_error_m", type=float, default=0.10)
 parser.add_argument("--dataset_drop_fallback_release_clearance_m", type=float, default=0.055)
 parser.add_argument("--dataset_drop_fallback_height_tolerance_m", type=float, default=0.015)
 parser.add_argument("--dataset_drop_fallback_linear_speed", type=float, default=0.03)
@@ -2514,9 +2515,14 @@ def _dataset_pose_target_action(
                 if fallback_used
                 else np.asarray(reference[drop_idx, 19:23], dtype=np.float64)
             )
-    if drop_open_phase:
+    fallback_open_active = bool(
+        controller_state.get("drop_fallback_used", False)
+        and (drop_open_phase or controller_state.get("drop_open_started", False))
+    )
+    if drop_open_phase or fallback_open_active:
         pos_delta[:] = 0.0
-        if controller_state.get("drop_fallback_used", False):
+        if fallback_open_active:
+            controller_state["drop_open_started"] = True
             controller_state["drop_open_elapsed_steps"] = int(
                 controller_state.get("drop_open_elapsed_steps", 0)
             ) + 1
@@ -2872,6 +2878,7 @@ def main() -> None:
                 "drop_descent_just_started": False,
                 "drop_fallback_used": False,
                 "drop_fallback_just_started": False,
+                "drop_open_started": False,
                 "drop_open_elapsed_steps": 0,
                 "drop_release_hold_started": False,
                 "drop_center_error_m": None,
@@ -3144,6 +3151,12 @@ def main() -> None:
                             and not dataset_controller_state["drop_fallback_used"]
                             and not drop_ready
                             and drop_settle_repeat_count >= fallback_after_steps
+                            and drop_height_error is not None
+                            and drop_height_error
+                            >= max(
+                                0.0,
+                                float(args_cli.dataset_drop_fallback_trigger_height_error_m),
+                            )
                         )
                         if activate_fallback:
                             dataset_controller_state["drop_fallback_used"] = True
@@ -3156,7 +3169,14 @@ def main() -> None:
                             and not drop_ready
                             and drop_settle_repeat_count < max(0, int(args_cli.dataset_drop_settle_max_steps))
                         )
-                        repeat_reference = repeat_precision or repeat_drop_settle
+                        repeat_fallback_open = bool(
+                            dataset_controller_state["drop_open_started"]
+                            and dataset_controller_state["drop_open_elapsed_steps"]
+                            < max(1, int(args_cli.dataset_drop_fallback_open_steps))
+                        )
+                        repeat_reference = (
+                            repeat_precision or repeat_drop_settle or repeat_fallback_open
+                        )
                         record["dataset_precision_phase"] = float(precision_phase)
                         record["dataset_precision_position_error"] = precision_position_error
                         record["dataset_precision_rotation_error"] = precision_rotation_error
@@ -3175,6 +3195,9 @@ def main() -> None:
                         )
                         record["dataset_drop_open_elapsed_steps"] = int(
                             dataset_controller_state["drop_open_elapsed_steps"]
+                        )
+                        record["dataset_drop_open_started"] = float(
+                            dataset_controller_state["drop_open_started"]
                         )
                         record["dataset_drop_release_hold_started"] = float(
                             dataset_controller_state["drop_release_hold_started"]
@@ -3391,7 +3414,7 @@ def main() -> None:
                 "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-                "dataset_drop_controller_version": 8,
+                "dataset_drop_controller_version": 9,
                 "dataset_drop_spec_source": "exact_stable_scene",
                 "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
                 "dataset_drop_transport_clearance_m": float(
@@ -3429,6 +3452,9 @@ def main() -> None:
                 "dataset_drop_settle_angular_speed": float(args_cli.dataset_drop_settle_angular_speed),
                 "dataset_drop_fallback_after_steps": int(
                     args_cli.dataset_drop_fallback_after_steps
+                ),
+                "dataset_drop_fallback_trigger_height_error_m": float(
+                    args_cli.dataset_drop_fallback_trigger_height_error_m
                 ),
                 "dataset_drop_fallback_release_clearance_m": float(
                     args_cli.dataset_drop_fallback_release_clearance_m
@@ -3525,7 +3551,7 @@ def main() -> None:
         "dataset_drop_reference_inset_m": float(args_cli.dataset_drop_reference_inset_m),
         "dataset_drop_targeting_mode": "live_object_to_bin_center",
         "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
-        "dataset_drop_controller_version": 8,
+        "dataset_drop_controller_version": 9,
         "dataset_drop_spec_source": "exact_stable_scene",
         "dataset_drop_release_clearance_m": float(args_cli.dataset_drop_release_clearance_m),
         "dataset_drop_transport_clearance_m": float(args_cli.dataset_drop_transport_clearance_m),
@@ -3549,6 +3575,9 @@ def main() -> None:
         "dataset_drop_settle_linear_speed": float(args_cli.dataset_drop_settle_linear_speed),
         "dataset_drop_settle_angular_speed": float(args_cli.dataset_drop_settle_angular_speed),
         "dataset_drop_fallback_after_steps": int(args_cli.dataset_drop_fallback_after_steps),
+        "dataset_drop_fallback_trigger_height_error_m": float(
+            args_cli.dataset_drop_fallback_trigger_height_error_m
+        ),
         "dataset_drop_fallback_release_clearance_m": float(
             args_cli.dataset_drop_fallback_release_clearance_m
         ),
