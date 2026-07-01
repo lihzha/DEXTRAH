@@ -14489,3 +14489,29 @@ Smoke follow-up:
   inspection confirms the object/bin are visible and observations are valid;
   this is stage-10 random-scene generalization failure, not horizon, reset,
   rendering, or checkpoint-integrity mismatch.
+
+## 2026-07-01T22:49:00Z Collection Continuity And Donor-Diversity Audit
+
+- Patched both recovery submitters to retry transient login-node `EAGAIN`
+  process-creation failures in commit `4c157f42`. Restarted recovery PID
+  `158560` and replacement PID `158627` from their durable TSV ledgers; neither
+  duplicated nor skipped an existing submission, and the main collector PID
+  `3757408` remained untouched.
+- At 382 strict accepted records, 289 came from source indices below 500 and 93
+  from one-for-one replacement indices. The accepted main/recovery records
+  already cover 81 distinct target UUIDs, but the replacement submitter still
+  rotated only 11 proven donors. Restarted only that lightweight submitter as
+  PID `171554` with one accepted source for each of 80 distinct objects. This
+  leaves running jobs and accepted records unchanged while preventing the
+  remaining replacement tail from repeatedly overweighting the original 11
+  donor objects.
+- Source 400 passed nominal settled placement, recorded-action dynamics replay,
+  and every RGB/flow gate with 903 stored steps and maximum lift `0.1581 m`.
+  The side-by-side keyframes and video show a visible teal target at reset,
+  table-only external framing, continuous wrist acquisition and transport, and
+  a released object inside the bin. Local artifact:
+  `cluster_results/l401/yam_controller_stateobs_v15_final500_20260701T1710Z_source_000400/source_000400_scene_wrist.mp4`.
+- Concurrent A100 snapshots remained finite at global steps 48,862 / 42,241 /
+  29,759 for stages 10 / 50 / 100. Their corresponding epochs were 439 / 81 /
+  29; all persistent training submitters and all three atomic checkpoint-eval
+  monitors were alive.
