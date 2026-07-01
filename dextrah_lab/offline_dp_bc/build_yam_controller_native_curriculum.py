@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
-import random
 import re
-from collections import defaultdict, deque
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -113,72 +113,79 @@ def _validate_shard(shard: Path) -> tuple[dict[str, Any] | None, str | None]:
     }, None
 
 
-def _round_robin_groups(records: list[dict[str, Any]], rng: random.Random) -> list[dict[str, Any]]:
-    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for record in records:
-        grouped[str(record["target_uuid"])].append(record)
-    group_names = list(grouped)
-    rng.shuffle(group_names)
-    queues: list[deque[dict[str, Any]]] = []
-    for name in group_names:
-        rows = grouped[name]
-        rng.shuffle(rows)
-        queues.append(deque(rows))
-    output: list[dict[str, Any]] = []
-    while queues:
-        next_queues = []
-        for queue in queues:
-            output.append(queue.popleft())
-            if queue:
-                next_queues.append(queue)
-        queues = next_queues
-    return output
-
-
 def _object_disjoint_order(
-    records: list[dict[str, Any]], val_ratio: float, seed: int
+    records: list[dict[str, Any]], val_ratio: float, seed: int, output_dir: Path
 ) -> tuple[list[dict[str, Any]], set[str]]:
     if not 0.0 < val_ratio < 1.0:
         raise ValueError("val_ratio must be strictly between zero and one")
-    rng = random.Random(seed)
+    registry_path = output_dir / "split_registry.json"
+    source_order: list[int] = []
+    uuid_splits: dict[str, str] = {}
+    if registry_path.is_file():
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        source_order = [int(value) for value in registry.get("source_order", [])]
+        uuid_splits = {
+            str(key): str(value) for key, value in registry.get("target_uuid_splits", {}).items()
+        }
+    else:
+        existing_manifests = []
+        for path in output_dir.glob("manifest_*.json"):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                existing_manifests.append((int(payload.get("num_shards") or 0), payload))
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+        if existing_manifests:
+            _, payload = max(existing_manifests, key=lambda item: item[0])
+            for row in payload.get("shards", []):
+                source_order.append(int(row["source_index"]))
+                uuid_splits[str(row["target_uuid"])] = str(row["split"])
+
+    invalid_splits = sorted({value for value in uuid_splits.values() if value not in {"train", "val"}})
+    if invalid_splits:
+        raise ValueError(f"Invalid persistent object splits: {invalid_splits}")
+
+    records_by_source = {int(record["source_index"]): record for record in records}
+    missing_sources = [source_index for source_index in source_order if source_index not in records_by_source]
+    if missing_sources:
+        raise ValueError(f"Previously registered sources are missing: {missing_sources[:10]}")
+    source_order.extend(sorted(set(records_by_source).difference(source_order)))
+    ordered = [records_by_source[source_index] for source_index in source_order]
+
     counts: dict[str, int] = defaultdict(int)
     for record in records:
         counts[str(record["target_uuid"])] += 1
-    object_ids = list(counts)
-    if len(object_ids) < 2:
+    if len(counts) < 2:
         raise ValueError("Object-disjoint validation requires at least two target UUIDs")
-    rng.shuffle(object_ids)
-    target_val_rows = max(1, round(len(records) * val_ratio))
-    val_ids: set[str] = set()
-    val_rows = 0
-    for object_id in object_ids:
-        candidate_rows = val_rows + counts[object_id]
-        if not val_ids or abs(candidate_rows - target_val_rows) <= abs(val_rows - target_val_rows):
-            val_ids.add(object_id)
-            val_rows = candidate_rows
-        if val_rows >= target_val_rows:
-            break
-    if len(val_ids) == len(object_ids):
-        val_ids.remove(max(val_ids, key=lambda item: counts[item]))
+    assigned_ids = set(uuid_splits).intersection(counts)
+    assigned_rows = sum(counts[object_id] for object_id in assigned_ids)
+    val_rows = sum(counts[object_id] for object_id in assigned_ids if uuid_splits[object_id] == "val")
+    for record in ordered:
+        object_id = str(record["target_uuid"])
+        if object_id in uuid_splits:
+            continue
+        group_rows = counts[object_id]
+        target_val_rows = round((assigned_rows + group_rows) * val_ratio)
+        train_error = abs(val_rows - target_val_rows)
+        val_error = abs(val_rows + group_rows - target_val_rows)
+        tie_break = int(hashlib.sha256(f"{seed}:{object_id}".encode()).hexdigest(), 16) % 2
+        split = "val" if val_error < train_error or (val_error == train_error and tie_break == 0) else "train"
+        uuid_splits[object_id] = split
+        assigned_rows += group_rows
+        if split == "val":
+            val_rows += group_rows
 
-    train = _round_robin_groups([r for r in records if r["target_uuid"] not in val_ids], rng)
-    val = _round_robin_groups([r for r in records if r["target_uuid"] in val_ids], rng)
-    train_queue = deque(train)
-    val_queue = deque(val)
-    ordered: list[dict[str, Any]] = []
-    train_per_val = max(1, round((1.0 - val_ratio) / val_ratio))
-    while train_queue or val_queue:
-        for _ in range(train_per_val):
-            if train_queue:
-                ordered.append(train_queue.popleft())
-        if val_queue:
-            ordered.append(val_queue.popleft())
-        if not train_queue:
-            ordered.extend(val_queue)
-            val_queue.clear()
-        elif not val_queue:
-            ordered.extend(train_queue)
-            train_queue.clear()
+    val_ids = {object_id for object_id, split in uuid_splits.items() if split == "val"}
+    if not val_ids or all(str(record["target_uuid"]) in val_ids for record in records):
+        raise ValueError("Persistent split registry must contain both train and validation objects")
+    registry = {
+        "format": "dextrah_yam_object_split_registry_v1",
+        "seed": int(seed),
+        "val_ratio": float(val_ratio),
+        "source_order": source_order,
+        "target_uuid_splits": dict(sorted(uuid_splits.items())),
+    }
+    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return ordered, val_ids
 
 
@@ -224,7 +231,9 @@ def main() -> None:
             f"Expected {args.expected_count} replay-gated shards, found {len(accepted)}; "
             f"see {output_dir / 'validation_audit.json'}"
         )
-    ordered, val_ids = _object_disjoint_order(accepted, float(args.val_ratio), int(args.seed))
+    ordered, val_ids = _object_disjoint_order(
+        accepted, float(args.val_ratio), int(args.seed), output_dir
+    )
     sizes = sorted(set(int(size) for size in args.sizes))
     if not sizes or sizes[0] < 1 or sizes[-1] > len(ordered):
         raise ValueError(f"Invalid curriculum sizes {sizes} for {len(ordered)} records")
