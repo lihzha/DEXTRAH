@@ -14394,3 +14394,27 @@ Smoke follow-up:
   the 1024x1024 overview, both-camera sparse observation video, and parity
   image under
   `cluster_results/l401/yam_rgb_dp_stateobs_v15_n10_step0020464_exact_parityfixed_20260701T1951Z_train_src000000`.
+
+## 2026-07-01T20:25:00Z Expanded Final-Stage Tabletop Appearance Plan
+
+- The first-50 v15 audit has strong object, HDR, lighting, bin, and camera
+  diversity but only two distinct tabletop wood appearances. Nested v15
+  collection correctly preserved its older source shard's recorded table
+  asset; changing that policy inside an already frozen curriculum would make
+  the staged comparison ambiguous.
+- Added a reproducible Poly Haven downloader and 14 curated CC0 1K diffuse
+  maps, expanding the in-repository pool to 16 distinct table textures before
+  the existing RoboLab Bamboo/Oak/Walnut maps. The selection covers light,
+  medium, and dark natural wood, veneer, laminate, plywood, and clean table or
+  plank finishes while excluding bark, painted, mossy, and heavily weathered
+  assets. Every new file is 1024x1024 and matches the API-provided MD5; the
+  downloader is idempotent and regenerates manifest SHA-256
+  `6a93d042d894037c477b9096011096e2bdd2e292247a96f5c3771b745598b167`.
+- The final stage will use a second dynamics-mode L40S replay over the 500
+  strict v15 shards. V15 records `exact_visual_resample=true`, so the existing
+  nested-recording path selects a fresh deterministic table and dome asset
+  while retaining exact camera, geometry, robot state, action labels, numeric
+  lighting/material randomization, and all nominal/replay/flow acceptance
+  gates. This keeps the frozen 10/50/100 experiments intact and gives the
+  scratch 500-trajectory run the broader visual distribution. A one-shard
+  quality-render smoke test must pass before the full second pass launches.
