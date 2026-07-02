@@ -14764,3 +14764,46 @@ Smoke follow-up:
 - N100 job `29737664` reached epoch 97, about 97k updates, with finite loss.
   The sole hardened L40S monitor remains PID `459639`; no n100 100k evaluation
   has been submitted yet, so there is no new success result to report.
+
+## 2026-07-02T07:04:00Z First Randomized Success And Seeded Matrix
+
+- The n100 monitor latched raw step 100,081, rejected the in-progress
+  checkpoint as unstable, and submitted L40S quality eval `1093394` only after
+  the post-threshold epoch checkpoint was atomic. The 4,800-step rollout made
+  a real grasp, lifted `0.121789 m`, transported, released, and visibly placed
+  the pig on the bin floor, but the old strict metric returned zero because its
+  root-relative scalar radius gave a narrow-axis margin of `-0.008562 m`.
+- Traced the false-negative risk to a geometry-frame mismatch: `cube_pos` is
+  the centered bounds position, while `object_xy_radius` is measured from the
+  potentially off-center USD root and is reused for both axes. Added centered,
+  orientation-aware projected bounds, a 1 mm contact tolerance, and retained
+  the old radius margins as diagnostics. Five focused tests pass; evaluator
+  byte-compilation and Ruff pass. Commits `711b8c04`, `0c5949cf`, and
+  `f928e60c` were pushed. A clean L40 worktree was staged from Git bundles with
+  the hash-verified generated YAM USD copied from the known-good checkout.
+- Corrected retry job `1093523` used the same n100 step-100,449 snapshot,
+  randomized seed 42, action chunk 8, two cameras, and quality rendering. It
+  achieved strict settled-bin success from step 640 through step 1,200:
+  `episode_success_rate=1.0`, max lift `0.124665 m`, final centered-bound
+  margins `+0.049942/+0.001600 m`, released object, and zero termination or
+  truncation. This is the first confirmed randomized-scene success. Local
+  artifacts:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_step0100449_containmentfix_retry1_seed42_20260702T063651Z`.
+- Because the successful rollout did not explicitly seed DDPM noise, ran a
+  reproducible five-scene matrix with scene and policy seeds 42-46 as jobs
+  `1093549-1093553`. Result was `0/5` strict success at 1,200 steps. Seeds 42,
+  43, 45, and 46 had no meaningful lift; seed 44 grasped and lifted
+  `0.144670 m` but remained `0.247535 m` from the bin and did not release.
+  Reset/final two-camera inspection confirms visible targets and valid camera
+  streams; these are policy failures, not observation loss or hidden resets.
+- Replaced the old periodic monitors with PIDs `662414`, `662415`, and
+  `662416` at code `f928e60c`. Their durable ledgers resumed n50 at 150k,
+  n100 at 200k, and final n500 at 100k. All retain 4,800-step quality rollouts,
+  action chunk 8, and now record `seed=42`, `policy_sample_seed=42`, centered
+  oriented containment, and 1 mm tolerance. N100 allocation `29737664` timed
+  out at logged step 107,798; its submitter launched `29745634`, which resumed
+  the atomic checkpoint with optimizer/EMA state and finite loss.
+- Current training high-water marks at this audit are final n500 step 18,096,
+  n100 step 108,128, and n50 step 120,057. The final n500 run remains the
+  authoritative policy candidate; no final-model periodic eval is due before
+  its first 100k checkpoint.
