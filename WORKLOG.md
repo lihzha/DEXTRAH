@@ -14556,3 +14556,32 @@ Smoke follow-up:
   `256108` (two jobs across 84 distinct donor objects). Every job uses quality
   rendering, dynamics, two 256x256 RGB streams, material/HDR/table randomization,
   64 warmup frames, and commit `de2d2490`.
+
+## 2026-07-02T01:20:00Z Phase-Free Recovery And Accepted-Donor Replay
+
+- Paused the first v16 launch after malformed camera frames and phase-free
+  recovery incompatibility surfaced. Commit `b23457f5` now retries both camera
+  streams, rejects persistently black or malformed frames explicitly, and lets
+  submitters choose their controller. All 29 focused tests pass.
+- Source 4 reran under the camera fix and passed physical placement plus the
+  recorded-action dynamics gate with 970 stored steps and maximum lift
+  `0.1672 m`. The inspected two-camera artifact has table-only scene framing,
+  valid wrist acquisition, and no blank frames:
+  `cluster_results/l401/yam_controller_stateobs_v16_final500_visual_20260702T0022Z_source_000004/source_000004_scene_wrist.mp4`.
+- Commit `eb0c2442` reconstructs a recovery window from the first gripper-close
+  transition and the preceding TCP approach when phase annotations are absent.
+  It does not add phase, progress, or object state to policy observations. An
+  audit of the first 16 real shards selected mid-approach offsets from 55 to
+  268; source 0 then passed from an inferred offset with 706 stored steps,
+  `0.1504 m` lift, and a successful dynamics replay after two nominal failures.
+- Commit `01c1f7c3` restricts replacement donors to configured object-distinct
+  sources that already have strict accepted markers. The first corrected
+  replacements, sources 509 and 510, both passed in about 3.3 minutes. The live
+  pipeline uses main/recovery/replacement prefixes `yv16main_eb0c`,
+  `yv16rec_eb0c`, and `yv16rep_01c1`; it had 23 accepted shards at this audit.
+- Official Diffusion Policy treats `training.max_train_steps` as a per-epoch
+  cap. Stopped stage 10 at the last complete checkpoint, global step 72,925,
+  validated and froze `step_0072925.ckpt`, and launched full 4,800-step quality
+  eval job `1091535`. Restarted the stage-100 persistent submitter with 605
+  epochs so its 993 batches per epoch actually cross the intended 600k global
+  updates; it adopted running job `29730537` without interrupting training.
