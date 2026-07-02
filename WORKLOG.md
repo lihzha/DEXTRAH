@@ -14746,3 +14746,21 @@ Smoke follow-up:
   the table. The later wrist drift is a policy failure, not observation loss or
   reset. Local artifact:
   `cluster_results/l401/yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0100995/scene_wrist_debug_sparse.mp4`.
+
+## 2026-07-02T05:53:00Z Final First Epoch And N50 Resume
+
+- Final v16 n500 job `29743345` completed epoch 0 at global step 4,914 with
+  validation loss `0.032930`. Both `latest.ckpt` and
+  `epoch=0000-val_loss=0.032930.ckpt` are `1,606,334,243` bytes. A full ZIP
+  integrity pass checked 1,402 members with no bad member. Training continued
+  through step 5,954 with finite per-batch loss and no OOM or nonfinite error.
+- N50 allocation `29736323` timed out normally after logging global step
+  109,215. Persistent submitter PID `3841120` classified the timeout and
+  immediately launched replacement job `29744466` with `training.resume=true`.
+  The replacement is running on `batch-block4-1033` and explicitly loaded the
+  atomic `latest.ckpt`, preserving optimizer and EMA state. Its next periodic
+  randomized-scene evaluation remains due at the first fresh checkpoint at or
+  above 150k.
+- N100 job `29737664` reached epoch 97, about 97k updates, with finite loss.
+  The sole hardened L40S monitor remains PID `459639`; no n100 100k evaluation
+  has been submitted yet, so there is no new success result to report.
