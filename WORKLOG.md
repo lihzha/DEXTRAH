@@ -14857,3 +14857,18 @@ Smoke follow-up:
   `slurm_logs/dextrah/eval_yam_pickplace_rgb_dp_policy_1093897.out`. Success
   requires the strict settled-bin metric plus visual confirmation; this job
   does not alter the durable 100k periodic-eval ledger.
+- Job `1093897` completed cleanly in 18 minutes and ran all 4,800 requested
+  steps without termination, truncation, or reset. It failed closed loop with
+  `episode_success_rate=0.0`, zero grasp, only `6.52e-7 m` numerical-noise
+  maximum lift, and minimum hand/object distance `0.145476 m`. Sparse frames
+  show a visible target and valid scene/wrist observations: the arm approaches
+  by step 120, misses the close attempt, then executes bin-directed motion
+  without the object. This is policy behavior, not an observation mismatch.
+- The external video has 4,799 frames at 1,280x720 and 60 fps over 79.983 s;
+  first, middle, and last frames are nonblank and leave the target stationary
+  on the table. The 42-frame two-camera diagnostic is 1,024x568 at 4 fps over
+  10.5 s. Local artifacts:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0029483_early_seed42_20260702T0817Z`.
+  This leaves the aggregate conclusion unchanged: one confirmed unseeded
+  n100 success exists, but deterministic n100 baselines and this early final
+  n500 checkpoint do not succeed.
