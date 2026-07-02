@@ -15004,3 +15004,19 @@ Smoke follow-up:
   the sparse two-camera artifact has 42 frames at 1,024x568, 4 fps, and 10.5 s.
   Local evidence:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0049138_mid_seed42_20260702T1053Z`.
+
+## 2026-07-02T12:58:00Z Final N500 Second Timeout Resume
+
+- Final n500 completed epoch 9 at step 54,052 with train loss `0.009674` and a
+  new-best validation loss `0.016454`. Epoch 10 reached step 58,966 with train
+  loss `0.009297` and validation `0.016993`; epoch 11 reached step 63,880 with
+  train loss `0.008833` and validation `0.017214`. Validation remains stable
+  around the epoch-9 best while epoch-average train loss continues downward.
+- The fresh epoch-11 `latest.ckpt` is `1,606,334,243` bytes and passed a full
+  1,402-member ZIP integrity check. Allocation `29748229` then timed out
+  normally after logging a partial-epoch high-water mark of step 65,245.
+- Persistent submitter PID `1498089` launched replacement `29754419` on
+  `polar` with `training.resume=true`. It explicitly loaded `latest.ckpt`,
+  appended finite losses, and crossed the old high-water mark at step 65,336.
+  The final-model optimizer, EMA, scheduler, checkpoint, and append-log state
+  remain continuous through the second wall-time boundary.
