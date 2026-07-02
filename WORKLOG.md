@@ -14827,3 +14827,21 @@ Smoke follow-up:
   rollout succeeded, while the reproducible n100-at-100k baseline fails. The
   checkpoint has learned parts of the task but is not robust; continued n500
   training and fixed-seed periodic comparisons remain necessary.
+
+## 2026-07-02T08:13:00Z Final N500 Epoch-Five Checkpoint
+
+- Final v16 n500 job `29743345` completed epoch 5 at global step 29,483.
+  Epoch-average train loss improved from `0.015594` at epoch 4 to `0.014050`;
+  validation loss rebounded from the current-best `0.018238` to `0.020771`.
+  This is a modest validation fluctuation rather than divergence, so epoch 4
+  remains the best checkpoint while training continues from the epoch-5
+  atomic snapshot.
+- Both `latest.ckpt` and `epoch=0005-val_loss=0.020771.ckpt` are
+  `1,606,334,243` bytes. A full ZIP integrity pass checked all 1,402 members
+  of `latest.ckpt` and found no bad entry. Batch losses remained finite, the
+  job entered epoch 6, and no OOM or nonfinite error appeared.
+- Closed-loop status is unchanged: corrected unseeded n100-at-100k evaluation
+  has one confirmed randomized-scene success, while five deterministic
+  1,200-step seeds and the two deterministic 4,800-step baselines have zero
+  strict successes. The next fixed-seed eval is n50 at its first atomic
+  checkpoint at or above 150k; the final n500 monitor remains due at 100k.
