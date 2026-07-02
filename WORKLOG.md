@@ -14988,3 +14988,19 @@ Smoke follow-up:
   quality rendering, both cameras, disabled success/failure termination, and
   corrected 1 mm oriented containment. This remains outside the durable 100k
   periodic ledger.
+- After waiting for saturated L40 capacity, job `1094445` ran on
+  `pool0-00019` and completed cleanly in 17:49. It executed all 4,800 steps
+  without termination, truncation, or reset and returned strict success `0/1`.
+  The rollout produced a transient grasp/contact signal from step 218 and
+  reached `13.163 mm` maximum lift at step 263, but never crossed the
+  sustained-lift gate. The failed close pushed the object up to `55.056 mm`;
+  final displacement was `53.170 mm`, and minimum hand/object distance was
+  `0.103945 m`.
+- Two-camera inspection shows a valid, centered target and a close attempt that
+  briefly encloses it before pushing it away; the arm then executes bin motion
+  without the object. This is meaningful acquisition improvement over the
+  no-grasp n500 step-29,483 checkpoint, but not pickup or placement success.
+  The external artifact has 4,799 frames at 1,280x720, 60 fps, and 79.983 s;
+  the sparse two-camera artifact has 42 frames at 1,024x568, 4 fps, and 10.5 s.
+  Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0049138_mid_seed42_20260702T1053Z`.
