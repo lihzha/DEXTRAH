@@ -14613,3 +14613,11 @@ Smoke follow-up:
   phase-free recovery, and accepted-donor replacement submitters remained
   active. Stage 50 was healthy at epoch 134 and stage 100 at epoch 57, with
   finite losses and persistent checkpoint/resume submitters still active.
+- Commit `9f5e2120` hardens the periodic-eval monitor against transient process
+  creation failures: scheduler queries, checkpoint stat/copy/move operations,
+  Python log reads, submissions, and poll sleeps now retry without losing the
+  durable threshold state. Shell syntax and direct success/failure retry tests
+  pass. Deployed the committed script through remote worktree
+  `yam-rgb-monitor-9f5e2120-20260702`, retained the proven `7d35a1be` eval code
+  and assets, and replaced only the lightweight monitors with detached PIDs
+  `4188325`/`4188336`. Both resumed their ledgers without duplicate evals.
