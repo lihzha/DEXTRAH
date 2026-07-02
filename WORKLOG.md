@@ -14928,3 +14928,20 @@ Smoke follow-up:
   1,024x568, 4 fps, and 10.5 s. Local evidence:
   `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_step0132065_early_seed42_20260702T0945Z`.
   Deterministic n100 success therefore remains zero at both 100k and 132k.
+
+## 2026-07-02T10:20:00Z N50 Step-150K Periodic Eval Launch
+
+- N50 replacement job `29749011` cleared its temporary
+  `QOSMaxJobsPerUserLimit` hold and started on the `polar` partition without
+  preempting n100 or final n500. It explicitly resumed the atomic checkpoint
+  and crossed the next periodic threshold at raw step 150,104.
+- Hardened monitor PID `662414` rejected the pre-threshold `latest.ckpt`, waited
+  for a fresh atomic epoch snapshot, validated and copied it as
+  `periodic_eval_snapshots/step_0150267.ckpt`, and appended the third durable
+  ledger row. It submitted L40S quality eval job `1094332`, run
+  `yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0150267`.
+- The eval uses immutable code `f928e60c`, one uninterrupted 4,800-step
+  episode, scene and DDPM seed 42, action chunk 8, both cameras, disabled
+  success/failure termination, and corrected 1 mm oriented containment. It is
+  directly comparable with the failed n50 step-100,995 baseline; strict metric
+  success plus video inspection remains the acceptance criterion.
