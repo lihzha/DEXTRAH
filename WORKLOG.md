@@ -14621,3 +14621,25 @@ Smoke follow-up:
   `yam-rgb-monitor-9f5e2120-20260702`, retained the proven `7d35a1be` eval code
   and assets, and replaced only the lightweight monitors with detached PIDs
   `4188325`/`4188336`. Both resumed their ledgers without duplicate evals.
+
+## 2026-07-02T02:02:00Z First 100 Quality Replays And Stage-50 Resume
+
+- A full live audit snapshotted exactly 100 v16 L40S quality shards and re-read
+  every metadata file and array. All 100 passed authoritative visual provenance,
+  strict physical success, action-only dynamics replay, finite/nonblank RGB,
+  hidden-marker, and trajectory-flow gates; zero were rejected. The snapshot
+  contains 87,880 control steps, 43 unique objects, a 90/10 object-disjoint
+  train/validation split, and maximum stationary TCP run 34 versus the 60-step
+  limit. Audit:
+  `yam_controller_stateobs_v16_final500_visual_20260702T0022Z/audits/live_0100_20260702T015914Z`.
+- Rendered all 726 stored frames from accepted source 100 as a 36.3-second
+  scene/wrist video. The tan target is visible at reset, the external camera
+  remains table-only, the wrist retains the target through grasp and transport,
+  and the final frame shows release inside the bin. Local artifact:
+  `cluster_results/l401/yam_controller_stateobs_v16_final500_visual_20260702T0022Z_source_000100/source_000100_scene_wrist.mp4`.
+- Stage-50 allocation `29727303` timed out normally after logging global step
+  71,539. The persistent submitter recorded the terminal state and launched
+  `29736323`; it loaded the last atomic epoch checkpoint and resumed epoch 138
+  with finite loss. This rolled back roughly 227 minibatches from the
+  mid-epoch log high-water mark, which preserves optimizer/EMA consistency and
+  will be replayed before the 100k evaluation threshold.
