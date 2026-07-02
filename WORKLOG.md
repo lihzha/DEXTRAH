@@ -14973,3 +14973,18 @@ Smoke follow-up:
   finite losses, and crossed the old high-water mark at step 141,223. N50,
   n100, and final n500 are all running concurrently again; no eval monitor or
   durable ledger was reset.
+
+## 2026-07-02T10:53:00Z Final N500 Step-49K Diagnostic Launch
+
+- Final n500 completed epoch 8 at global step 49,138 with epoch-average train
+  loss `0.010302` and a new-best validation loss `0.016685`. The immutable
+  `epoch=0008-val_loss=0.016685.ckpt` is `1,606,334,243` bytes; a full ZIP pass
+  checked all 1,402 members with no bad entry.
+- Launched out-of-ledger L40S job `1094445`, run
+  `yam_rgb_dp_stateobs_v16_n500_step0049138_mid_seed42_20260702T1053Z`, to avoid
+  waiting until the scheduled 100k checkpoint for the next final-model signal.
+  It uses immutable eval code `f928e60c` and the exact fixed baseline: one
+  uninterrupted 4,800-step episode, scene and DDPM seed 42, action chunk 8,
+  quality rendering, both cameras, disabled success/failure termination, and
+  corrected 1 mm oriented containment. This remains outside the durable 100k
+  periodic ledger.
