@@ -15144,3 +15144,25 @@ Smoke follow-up:
   and 79.983 s; both sparse two-camera artifacts have 42 frames at 1,024x568,
   4 fps, and 10.5 s. Final local evidence:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic100k_step0103222`.
+
+## 2026-07-02T19:00:00Z Final N500 Step-103K Seed Matrix
+
+- To turn the single fixed-seed result into a randomized-scene estimate,
+  launched four ordinary L40S jobs, not a Slurm array, from the same fully
+  integrity-checked step-103,222 snapshot and immutable eval commit `f928e60c`.
+  Each arm uses matching scene and DDPM seeds, one uninterrupted 4,800-step
+  quality episode, action chunk 8, both cameras, disabled early termination,
+  and corrected 1 mm oriented containment. Seed 42 is the completed strong
+  transport/placement-miss baseline above.
+
+| Seed | Job | Run | Initial status |
+| --- | --- | --- | --- |
+| 43 | `1096293` | `yam_rgb_dp_stateobs_v16_n500_step0103222_seedmatrix_20260702T1900Z_seed43` | submitted |
+| 44 | `1096294` | `yam_rgb_dp_stateobs_v16_n500_step0103222_seedmatrix_20260702T1900Z_seed44` | submitted |
+| 45 | `1096295` | `yam_rgb_dp_stateobs_v16_n500_step0103222_seedmatrix_20260702T1900Z_seed45` | submitted |
+| 46 | `1096296` | `yam_rgb_dp_stateobs_v16_n500_step0103222_seedmatrix_20260702T1900Z_seed46` | submitted |
+
+- Local sweep manifest:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0103222_seedmatrix_20260702T1900Z/sweep_manifest.tsv`.
+  Acceptance requires strict metric success plus visual confirmation for every
+  successful arm; scheduler completion alone is not evidence.
