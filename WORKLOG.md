@@ -15034,3 +15034,17 @@ Smoke follow-up:
   appended finite losses, and crossed the old high-water mark at step 183,006.
   Its hardened L40 monitor remains due at the first fresh atomic checkpoint at
   or above 200k.
+
+## 2026-07-02T15:25:00Z N50 Step-200K Periodic Eval Launch
+
+- N50 crossed the fourth periodic threshold at raw step 200,030. Hardened
+  monitor PID `662414` rejected the older checkpoint, waited for a fresh epoch
+  snapshot, validated and copied it as
+  `periodic_eval_snapshots/step_0200191.ckpt`, and appended the durable ledger.
+- Submitted L40S quality eval job `1095449`, run
+  `yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0200191`,
+  using immutable code `f928e60c`, scene and DDPM seed 42, one uninterrupted
+  4,800-step episode, action chunk 8, both cameras, no success/failure early
+  termination, and corrected 1 mm oriented containment. This is directly
+  comparable with n50's 100k no-contact failure and 150k transient 7.8 mm
+  contact lift.
