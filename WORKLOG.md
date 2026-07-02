@@ -15116,3 +15116,31 @@ Smoke follow-up:
   4,800-step quality-render episode, action chunk 8, both cameras, no early
   success/failure termination, and corrected 1 mm oriented containment. It is
   queued behind n100 step-200,732 job `1095793`; neither job was duplicated.
+
+## 2026-07-02T18:50:00Z N100-200K And Final-103K Eval Results
+
+- N100 job `1095793` completed cleanly in 17:56 and ran all 4,800 steps with no
+  termination, truncation, or reset. It failed `0/1` with zero grasp, only
+  `6.52e-7 m` numerical-noise maximum lift, `2.46e-6 m` maximum object XY
+  movement, and `0.136371 m` minimum hand/object distance. Two-camera evidence
+  shows a visible target, an off-center close at about step 240, then transport
+  motion without the object. Deterministic n100 behavior therefore remains
+  unsuccessful and non-monotonic at 100k, 132k, and 200k. Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_bs80_600k_periodic100k_20260701T1916Z_step0200732`.
+- Final n500 job `1096108` completed cleanly in 17:55 and ran all 4,800 steps
+  with no termination, truncation, or reset. It is the strongest deterministic
+  candidate but still failed strict placement `0/1`: grasp began near step 403,
+  sustained lift activated near step 1,056, and maximum lift reached
+  `0.169017 m` at step 1,423. The policy transported and released the object,
+  but never entered bin XY containment; final center errors were
+  `0.119558/0.178805 m` and final centered margins were
+  `-0.025933/-0.144457 m`.
+- Frame and trajectory inspection show real acquisition and transport rather
+  than a metric artifact. The policy first aligned bin X while leaving Y error
+  above `0.42 m`, then followed a looping path and released outside the bin;
+  final object displacement from reset was `0.215093 m`. This narrows the final
+  failure to bin-directed transport/placement rather than perception or grasp
+  acquisition. Both external artifacts have 4,799 frames at 1,280x720, 60 fps,
+  and 79.983 s; both sparse two-camera artifacts have 42 frames at 1,024x568,
+  4 fps, and 10.5 s. Final local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic100k_step0103222`.
