@@ -15101,3 +15101,18 @@ Smoke follow-up:
   `latest.ckpt`, appended finite losses, and crossed the old high-water mark at
   step 96,915. Its hardened 100k monitor remains armed and requires a fresh
   post-threshold checkpoint before evaluation.
+
+## 2026-07-02T18:15:00Z Final N500 Step-103K Periodic Eval Launch
+
+- Final n500 crossed its first scheduled threshold at raw step 100,004.
+  Hardened monitor PID `662416` rejected the existing pre-threshold checkpoint
+  until epoch 17 completed at global step 103,190 with train loss `0.006634`
+  and validation loss `0.016957`. It then validated and copied the atomic
+  snapshot as `periodic_eval_snapshots/step_0103222.ckpt` and appended the
+  first durable final-model ledger row.
+- Submitted L40S job `1096108`, run
+  `yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic100k_step0103222`,
+  with immutable code `f928e60c`, scene and DDPM seed 42, one uninterrupted
+  4,800-step quality-render episode, action chunk 8, both cameras, no early
+  success/failure termination, and corrected 1 mm oriented containment. It is
+  queued behind n100 step-200,732 job `1095793`; neither job was duplicated.
