@@ -24,6 +24,7 @@ from dextrah_lab.offline_dp_bc.exact_visual_replay import (
     select_exact_visual_asset,
     should_replay_resampled_assets,
 )
+from dextrah_lab.offline_dp_bc.yam_pose_recovery import select_pose_recovery_reference
 
 
 DEFAULT_SCENE_CAMERA_EYE = (-0.50, 0.04, 0.68)
@@ -2755,17 +2756,16 @@ def _prepare_pose_recovery_episode(
     rng: np.random.Generator,
 ) -> dict[str, Any]:
     phases = exact_demo.get("reference_phases")
-    if phases is None:
-        raise ValueError("dataset_pose_recovery requires source phase annotations")
     pattern = str(args_cli.recovery_phase_pattern)
-    matching = np.flatnonzero(np.char.find(np.asarray(phases, dtype=str), pattern) >= 0)
-    if matching.size == 0:
-        raise ValueError(f"Recovery phase pattern {pattern!r} does not match any source phase")
     fraction = float(args_cli.recovery_phase_fraction)
-    if not 0.0 <= fraction <= 1.0:
-        raise ValueError("--recovery_phase_fraction must lie in [0, 1]")
-    phase_offset = int(round(fraction * max(0, matching.size - 1)))
-    reference_step_offset = int(matching[phase_offset])
+    selection = select_pose_recovery_reference(
+        phases=phases,
+        actions=exact_demo["actions"],
+        robot_trajectory=exact_demo["reference_robot_trajectory"],
+        phase_pattern=pattern,
+        phase_fraction=fraction,
+    )
+    reference_step_offset = int(selection["reference_step_offset"])
     controller_state: dict[str, Any] = {"drop_descent_started": False}
     for teacher_step in range(reference_step_offset):
         raw_action, _ = _dataset_pose_target_action(
@@ -2799,9 +2799,14 @@ def _prepare_pose_recovery_episode(
     initial_state = _capture_task_dynamic_state(task_env)
     return {
         "enabled": True,
+        "approach_distance_m": selection["approach_distance_m"],
+        "approach_start_step": selection["approach_start_step"],
+        "approach_stop_step": selection["approach_stop_step"],
+        "close_start_step": selection["close_start_step"],
         "phase_pattern": pattern,
         "phase_fraction": fraction,
-        "phase_name": str(phases[reference_step_offset]),
+        "phase_name": selection["phase_name"],
+        "reference_selection_source": selection["selection_source"],
         "reference_step_offset": reference_step_offset,
         "warm_start_steps": reference_step_offset,
         "perturbation_steps": perturbation_steps,
