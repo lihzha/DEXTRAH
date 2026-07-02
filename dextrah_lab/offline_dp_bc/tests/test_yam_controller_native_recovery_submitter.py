@@ -61,3 +61,22 @@ def test_absolute_path_preserves_symlink_spelling(tmp_path: Path) -> None:
     actual = MODULE._absolute_without_resolving_symlinks(alias / "records")
 
     assert str(actual).startswith(str(alias))
+
+
+def test_visual_retry_can_use_pose_targets(tmp_path: Path) -> None:
+    args = MODULE._parser().parse_args(
+        [
+            "--output-root",
+            str(tmp_path / "output"),
+            "--source-manifest",
+            str(tmp_path / "manifest.json"),
+            "--code-nfs",
+            str(tmp_path / "code"),
+            "--code-commit",
+            "abc123",
+            "--control-mode",
+            "dataset_pose_targets",
+        ]
+    )
+
+    assert args.control_mode == "dataset_pose_targets"

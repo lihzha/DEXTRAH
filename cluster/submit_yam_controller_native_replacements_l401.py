@@ -29,6 +29,7 @@ TERMINAL_STATES = {
     "PREEMPTED",
     "TIMEOUT",
 }
+CONTROL_MODES = ("dataset_pose_targets", "dataset_pose_recovery")
 MANIFEST_PATTERN = re.compile(r"replacement_source_manifest_(\d+)\.json$")
 
 
@@ -58,6 +59,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--poll-seconds", type=int, default=30)
     parser.add_argument("--sbatch-time", default="00:08:00")
     parser.add_argument("--job-name-prefix", default="yv15rep")
+    parser.add_argument(
+        "--control-mode",
+        choices=CONTROL_MODES,
+        default="dataset_pose_recovery",
+        help="Controller used for replacements; visual-only replays should use dataset_pose_targets.",
+    )
     parser.add_argument("--user", default=getpass.getuser())
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -269,7 +276,7 @@ def _submit_replacement(
             f"SOURCE_MANIFEST={manifest}",
             f"OUTPUT_ROOT={args.output_root}",
             f"SOURCE_INDEX={candidate_index}",
-            "CONTROL_MODE=dataset_pose_recovery",
+            f"CONTROL_MODE={args.control_mode}",
             "DATASET_MAX_EXTRA_STEPS=768",
             "DATASET_POST_ACTION_SETTLE_STEPS=30",
             "INITIAL_RENDER_WARMUP_FRAMES=64",
@@ -338,6 +345,7 @@ def main() -> None:
     config = {
         "code_commit": args.code_commit,
         "code_nfs": str(args.code_nfs),
+        "control_mode": args.control_mode,
         "donor_sources": donor_sources,
         "dry_run": bool(args.dry_run),
         "job_name_prefix": args.job_name_prefix,

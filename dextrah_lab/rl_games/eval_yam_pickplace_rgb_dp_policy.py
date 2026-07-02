@@ -1564,6 +1564,8 @@ def _camera_rgb_array(rgb_tensor: torch.Tensor) -> np.ndarray:
     rgb = rgb_tensor.detach().cpu().numpy()
     if rgb.ndim == 4:
         rgb = rgb[0]
+    if rgb.ndim != 3 or rgb.shape[-1] < 3 or rgb.shape[0] < 1 or rgb.shape[1] < 1:
+        raise RuntimeError(f"Unexpected wrist camera RGB shape: {rgb.shape}")
     if rgb.shape[-1] > 3:
         rgb = rgb[..., :3]
     if rgb.dtype != np.uint8:
@@ -1576,7 +1578,10 @@ def _camera_rgb_array(rgb_tensor: torch.Tensor) -> np.ndarray:
 def _resize_rgb_nearest(frame: np.ndarray, height: int, width: int) -> np.ndarray:
     height = max(int(height), 1)
     width = max(int(width), 1)
-    rgb = np.asarray(frame[..., :3])
+    raw = np.asarray(frame)
+    if raw.ndim != 3 or raw.shape[-1] < 3 or raw.shape[0] < 1 or raw.shape[1] < 1:
+        raise RuntimeError(f"Unexpected RGB frame shape: {raw.shape}")
+    rgb = np.asarray(raw[..., :3])
     if rgb.dtype != np.uint8:
         rgb = np.clip(rgb, 0, 255).astype(np.uint8)
     if rgb.shape[0] == height and rgb.shape[1] == width:
@@ -1629,10 +1634,48 @@ def _capture_scene_rgb(
         raise RuntimeError("Scene RGB capture failed without returning a frame")
     if threshold > 0.0 and last_mean < threshold:
         _stage("scene_rgb_capture_black_after_retries", attempts=attempts, mean=last_mean)
+        raise RuntimeError(
+            f"Scene RGB remained below mean threshold after {attempts} attempts: "
+            f"mean={last_mean:.6f} threshold={threshold:.6f}"
+        )
     return _resize_rgb_nearest(
         last_frame,
         int(args_cli.image_height),
         int(args_cli.image_width),
+    )
+
+
+def _capture_wrist_rgb(task_env: Any, wrist_camera: Camera) -> np.ndarray:
+    attempts = max(1, int(args_cli.scene_rgb_capture_attempts))
+    threshold = float(args_cli.scene_rgb_black_mean_threshold)
+    last_error: Exception | None = None
+    last_mean = 0.0
+    for attempt in range(attempts):
+        task_env.scene.write_data_to_sim()
+        task_env.sim.render()
+        wrist_camera.update(float(task_env.dt), force_recompute=True)
+        wrist_camera.update(0.0, force_recompute=True)
+        try:
+            frame = _camera_rgb_array(wrist_camera.data.output["rgb"])
+        except (KeyError, RuntimeError, ValueError) as exc:
+            last_error = exc
+            _stage("wrist_rgb_capture_retry", attempt=attempt + 1, error=str(exc))
+            continue
+        last_mean = float(np.asarray(frame, dtype=np.float32).mean())
+        if threshold <= 0.0 or last_mean >= threshold:
+            if attempt > 0:
+                _stage("wrist_rgb_capture_recovered", attempt=attempt + 1, mean=last_mean)
+            return _resize_rgb_nearest(
+                frame,
+                int(args_cli.image_height),
+                int(args_cli.image_width),
+            )
+        _stage("wrist_rgb_capture_retry", attempt=attempt + 1, mean=last_mean)
+    if last_error is not None:
+        raise RuntimeError(f"Wrist RGB capture failed after {attempts} attempts: {last_error}")
+    raise RuntimeError(
+        f"Wrist RGB remained below mean threshold after {attempts} attempts: "
+        f"mean={last_mean:.6f} threshold={threshold:.6f}"
     )
 
 
@@ -1802,15 +1845,7 @@ def _capture_obs(
     scene_target: tuple[float, float, float],
 ) -> dict[str, np.ndarray]:
     scene_rgb = _capture_scene_rgb(gym_env, task_env, scene_eye, scene_target)
-    task_env.scene.write_data_to_sim()
-    task_env.sim.render()
-    wrist_camera.update(float(task_env.dt), force_recompute=True)
-    wrist_camera.update(0.0, force_recompute=True)
-    wrist_rgb = _resize_rgb_nearest(
-        _camera_rgb_array(wrist_camera.data.output["rgb"]),
-        int(args_cli.image_height),
-        int(args_cli.image_width),
-    )
+    wrist_rgb = _capture_wrist_rgb(task_env, wrist_camera)
     task_env.sim.set_camera_view(
         eye=scene_eye,
         target=scene_target,
