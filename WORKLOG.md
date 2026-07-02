@@ -14738,3 +14738,11 @@ Smoke follow-up:
   process submitted the valid step-100,995 eval job `1093170`, stopped both
   legacy PIDs to leave one durable-ledger owner per run. Job `1093170` is the
   current 4,800-step L40S quality eval; no duplicate eval was submitted.
+- Step-100,995 n50 eval job `1093170` completed 4,800 uninterrupted steps with
+  zero strict success, zero grasp, and only `6.52e-7 m` numerical-noise lift;
+  minimum hand/object distance was `0.1303 m`. Two-camera inspection shows a
+  visible black target and an initial approach/close attempt, but the gripper
+  misses it and then executes transport-like motion while the object remains on
+  the table. The later wrist drift is a policy failure, not observation loss or
+  reset. Local artifact:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0100995/scene_wrist_debug_sparse.mp4`.
