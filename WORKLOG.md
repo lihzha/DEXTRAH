@@ -14913,3 +14913,18 @@ Smoke follow-up:
   1 mm corrected oriented containment. This directly tests whether n100
   improved from its failed deterministic step-100,449 baseline without
   changing the durable 200k periodic-eval ledger.
+- Job `1094205` completed cleanly in 18:10 and ran all 4,800 steps without
+  termination, truncation, or reset. It failed strict success with no grasp,
+  `3.8239 mm` maximum lift and `6.0784 mm` maximum object XY displacement at
+  step 184, and `0.126178 m` minimum hand/object distance at step 190. Compared
+  with the deterministic 100k baseline, the arm approached and contacted the
+  target more closely, but it still missed acquisition and then moved to the
+  bin without the object.
+- Inspected reset, acquisition, middle, and final scene/wrist frames. The target
+  is centered and visible at reset, the close attempt occurs beside it, and it
+  remains stationary and visible on the table while the arm stays near the bin
+  through step 4,800. The external artifact has 4,799 frames at 1,280x720,
+  60 fps, and 79.983 s; the sparse two-camera artifact has 42 frames at
+  1,024x568, 4 fps, and 10.5 s. Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_step0132065_early_seed42_20260702T0945Z`.
+  Deterministic n100 success therefore remains zero at both 100k and 132k.
