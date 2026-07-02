@@ -14686,3 +14686,19 @@ Smoke follow-up:
   retracted final wrist view no longer centers the target but remains valid and
   nonblank. Local artifact:
   `cluster_results/l401/yam_controller_stateobs_v16_final500_visual_20260702T0022Z_source_000300/source_000300_scene_wrist.mp4`.
+
+## 2026-07-02T04:06:00Z Four-Hundred Quality Replay Audit
+
+- The fourth full v16 audit snapshotted 403 live quality shards and accepted
+  all 403 with zero metadata, authoritative-provenance, dynamics-replay,
+  finite/nonblank-array, marker, or flow rejects. The first-400 manifest has
+  353,235 control steps, 79 unique objects, a 361/39 object-disjoint
+  train/validation split, and maximum stationary TCP run 45 versus the 60-step
+  limit. Audit:
+  `yam_controller_stateobs_v16_final500_visual_20260702T0022Z/audits/live_0403_20260702T040302Z`.
+- Accepted source 400 contains 730 stored scene/wrist frames. The green target
+  is visible at reset in both views, remains centered through grasp and
+  transport, and is visibly released inside the bin in both final frames. The
+  external stream stays table-only across a distinct mosaic-style tabletop.
+  Local artifact:
+  `cluster_results/l401/yam_controller_stateobs_v16_final500_visual_20260702T0022Z_source_000400/source_000400_scene_wrist.mp4`.
