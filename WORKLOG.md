@@ -15020,3 +15020,17 @@ Smoke follow-up:
   appended finite losses, and crossed the old high-water mark at step 65,336.
   The final-model optimizer, EMA, scheduler, checkpoint, and append-log state
   remain continuous through the second wall-time boundary.
+
+## 2026-07-02T13:38:00Z N50 Resume Toward 200K
+
+- N50 allocation `29749011` timed out normally after logging step 182,907. Its
+  latest complete checkpoint at step 181,199 was `1,606,334,243` bytes and
+  passed a full 1,402-member ZIP integrity check. The small-data run still has
+  a large generalization gap: epoch-351 train loss `0.002928` versus validation
+  loss `0.134664`, so it remains a curriculum/overfit diagnostic rather than
+  the final policy candidate.
+- Persistent submitter PID `3841120` launched replacement `29755325` on
+  `polar`. It explicitly loaded `latest.ckpt` with `training.resume=true`,
+  appended finite losses, and crossed the old high-water mark at step 183,006.
+  Its hardened L40 monitor remains due at the first fresh atomic checkpoint at
+  or above 200k.
