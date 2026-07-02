@@ -14845,3 +14845,15 @@ Smoke follow-up:
   1,200-step seeds and the two deterministic 4,800-step baselines have zero
   strict successes. The next fixed-seed eval is n50 at its first atomic
   checkpoint at or above 150k; the final n500 monitor remains due at 100k.
+- To avoid waiting several hours for the first final-model signal, launched an
+  out-of-ledger early n500 diagnostic as L40S job `1093897`, run
+  `yam_rgb_dp_stateobs_v16_n500_step0029483_early_seed42_20260702T0817Z`.
+  It evaluates immutable epoch-5 checkpoint
+  `epoch=0005-val_loss=0.020771.ckpt` for one uninterrupted 4,800-step episode
+  with scene seed 42, DDPM seed 42, action chunk 8, quality rendering, both
+  camera streams, disabled success/failure termination, and corrected 1 mm
+  oriented containment. Code is immutable commit `f928e60c`; output is under
+  `results/dextrah/evals/<run>` and scheduler log
+  `slurm_logs/dextrah/eval_yam_pickplace_rgb_dp_policy_1093897.out`. Success
+  requires the strict settled-bin metric plus visual confirmation; this job
+  does not alter the durable 100k periodic-eval ledger.
