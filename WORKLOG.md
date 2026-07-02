@@ -14892,3 +14892,24 @@ Smoke follow-up:
   append-log continuity across the A100 wall-time boundary. The repeated
   partial epoch is expected because only complete epoch snapshots are atomic;
   no persistent training progress was lost.
+
+## 2026-07-02T09:45:00Z N100 Step-132K Comparative Eval Launch
+
+- N50 allocation `29744466` timed out normally at logged step 144,576 after
+  writing an atomic epoch-280 checkpoint at step 144,552. Persistent submitter
+  PID `3841120` submitted replacement `29749011`; it is pending on
+  `QOSMaxJobsPerUserLimit` behind the more informative active n100 and final
+  n500 runs. Kept those allocations running rather than preempting useful
+  training for the small, validation-overfit n50 curriculum stage.
+- Frozen n100's latest complete epoch-129 checkpoint at global step 132,065 to
+  `dp_bc/checkpoints/yam_rgb_dp_stateobs_v15_n100_bs80_600k_20260701T1916Z/manual_eval_snapshots/step_0132065.ckpt`.
+  Source size and mtime remained stable across the copy, and a full ZIP pass
+  checked all 1,402 members with no bad entry.
+- Launched out-of-ledger comparative L40S eval job `1094205`, run
+  `yam_rgb_dp_stateobs_v15_n100_step0132065_early_seed42_20260702T0945Z`, at
+  immutable code `f928e60c`. It uses the exact deterministic baseline settings:
+  one 4,800-step uninterrupted episode, scene and DDPM seed 42, action chunk 8,
+  quality rendering, both cameras, no early success/failure termination, and
+  1 mm corrected oriented containment. This directly tests whether n100
+  improved from its failed deterministic step-100,449 baseline without
+  changing the durable 200k periodic-eval ledger.
