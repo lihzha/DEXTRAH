@@ -42,6 +42,32 @@ YAM_POLICY_MAX_OBJECTS="${YAM_POLICY_MAX_OBJECTS:-120}"
 YAM_POLICY_OBJECT_VALIDATE_USD_BOUNDS="${YAM_POLICY_OBJECT_VALIDATE_USD_BOUNDS:-False}"
 YAM_POLICY_TABLE_TEXTURE_DIR="${YAM_POLICY_TABLE_TEXTURE_DIR:-/code/dextrah_lab/assets/textures/tabletop_wood_polyhaven}"
 YAM_POLICY_DOME_LIGHT_TEXTURE_DIR="${YAM_POLICY_DOME_LIGHT_TEXTURE_DIR:-/home/lzha/code/RoboLab/assets/backgrounds/indoors}"
+PROCESS_SPAWN_RETRIES="${PROCESS_SPAWN_RETRIES:-8}"
+PROCESS_SPAWN_RETRY_SECONDS="${PROCESS_SPAWN_RETRY_SECONDS:-5}"
+
+safe_sleep() {
+  local seconds="$1"
+  while ! /bin/sleep "$seconds"; do
+    printf 'sleep_spawn_retry seconds=%s\n' "$seconds" >&2
+  done
+}
+
+retry_external() {
+  local attempt status
+  for ((attempt = 1; attempt <= PROCESS_SPAWN_RETRIES; attempt++)); do
+    if "$@"; then
+      return 0
+    else
+      status=$?
+    fi
+    printf 'external_command_retry attempt=%s/%s status=%s command=%q\n' \
+      "$attempt" "$PROCESS_SPAWN_RETRIES" "$status" "$1" >&2
+    if [ "$attempt" -lt "$PROCESS_SPAWN_RETRIES" ]; then
+      safe_sleep "$PROCESS_SPAWN_RETRY_SECONDS"
+    fi
+  done
+  return "$status"
+}
 
 if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
   CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
@@ -90,10 +116,11 @@ print(json.dumps({"event": "periodic_eval_monitor_config_written", "path": "$CON
 PY
 
 last_step() {
-  python3 - "$TRAIN_LOG_JSON" <<'PY'
+  retry_external python3 -c '
 import json
 import sys
 from pathlib import Path
+
 path = Path(sys.argv[1])
 best = -1
 if path.is_file():
@@ -105,12 +132,26 @@ if path.is_file():
         if "global_step" in row:
             best = max(best, int(row["global_step"]))
 print(best)
-PY
+' "$TRAIN_LOG_JSON" || echo -1
 }
 
 active_eval_jobs() {
-  squeue -h -u "${USER:-lzha}" -t PENDING,RUNNING,CONFIGURING,COMPLETING -o "%j" \
-    | grep -c "^${JOB_NAME_PREFIX}" || true
+  local count=0
+  local job_name
+  local queue_output
+  if ! queue_output="$(
+    retry_external squeue -h -u "${USER:-lzha}" \
+      -t PENDING,RUNNING,CONFIGURING,COMPLETING -o "%j"
+  )"; then
+    echo "$MAX_CONCURRENT_EVALS"
+    return 0
+  fi
+  while IFS= read -r job_name; do
+    if [[ "$job_name" == "$JOB_NAME_PREFIX"* ]]; then
+      count=$((count + 1))
+    fi
+  done <<< "$queue_output"
+  echo "$count"
 }
 
 stable_copy_checkpoint() {
@@ -118,23 +159,23 @@ stable_copy_checkpoint() {
   local dst="$2"
   local size1 size2 mtime1 mtime2 size3 mtime3 tmp
   [ -s "$src" ] || return 1
-  size1="$(stat -c %s "$src")"
-  mtime1="$(stat -c %Y "$src")"
-  sleep 10
-  size2="$(stat -c %s "$src")"
-  mtime2="$(stat -c %Y "$src")"
+  size1="$(retry_external stat -c %s "$src")" || return 1
+  mtime1="$(retry_external stat -c %Y "$src")" || return 1
+  safe_sleep 10
+  size2="$(retry_external stat -c %s "$src")" || return 1
+  mtime2="$(retry_external stat -c %Y "$src")" || return 1
   [ "$size1" = "$size2" ] && [ "$mtime1" = "$mtime2" ] || return 1
   checkpoint_zip_valid "$src" || return 1
   tmp="${dst}.tmp.$$"
-  rm -f "$tmp"
-  cp "$src" "$tmp"
-  size3="$(stat -c %s "$src")"
-  mtime3="$(stat -c %Y "$src")"
+  retry_external rm -f "$tmp" || return 1
+  retry_external cp "$src" "$tmp" || return 1
+  size3="$(retry_external stat -c %s "$src")" || return 1
+  mtime3="$(retry_external stat -c %Y "$src")" || return 1
   if [ "$size2" != "$size3" ] || [ "$mtime2" != "$mtime3" ] || ! checkpoint_zip_valid "$tmp"; then
-    rm -f "$tmp"
+    retry_external rm -f "$tmp" || true
     return 1
   fi
-  mv "$tmp" "$dst"
+  retry_external mv "$tmp" "$dst" || return 1
   [ -s "$dst" ]
 }
 
@@ -156,7 +197,7 @@ PY
 checkpoint_mtime() {
   local path="$1"
   if [ -s "$path" ]; then
-    stat -c %Y "$path"
+    retry_external stat -c %Y "$path" || echo 0
   else
     echo 0
   fi
@@ -188,28 +229,32 @@ while true; do
       ckpt_mtime="$(checkpoint_mtime "$CHECKPOINT_HOST")"
       if [ "$ckpt_mtime" -lt "$threshold_seen_at" ]; then
         echo "waiting_for_fresh_checkpoint threshold=$next_threshold threshold_seen_step=$threshold_seen_step current_step=$step checkpoint_mtime=$ckpt_mtime threshold_seen_at=$threshold_seen_at path=$CHECKPOINT_HOST"
-        sleep "$POLL_SECONDS"
+        safe_sleep "$POLL_SECONDS"
         continue
       fi
     fi
     while [ "$(active_eval_jobs)" -ge "$MAX_CONCURRENT_EVALS" ]; do
-      sleep "$POLL_SECONDS"
+      safe_sleep "$POLL_SECONDS"
     done
     snapshot="$SNAPSHOT_DIR/step_$(printf '%07d' "$step").ckpt"
     if [ ! -s "$snapshot" ]; then
       stable_copy_checkpoint "$CHECKPOINT_HOST" "$snapshot" || {
         echo "checkpoint_not_stable step=$step path=$CHECKPOINT_HOST"
-        sleep "$POLL_SECONDS"
+        safe_sleep "$POLL_SECONDS"
         continue
       }
     fi
     run_name="${MONITOR_NAME}_step$(printf '%07d' "$step")"
-    job_id="$(
-      sbatch --parsable \
+    if ! job_id="$(
+      retry_external sbatch --parsable \
         --job-name="${JOB_NAME_PREFIX}_s$(printf '%07d' "$step")" \
         --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",CODE_COMMIT="$CODE_COMMIT",RUN_NAME="$run_name",CHECKPOINT="$snapshot",NUM_EPISODES="$NUM_EPISODES",NUM_STEPS="$NUM_STEPS",VIDEO_LENGTH="$VIDEO_LENGTH",ACTION_CHUNK_STEPS="$ACTION_CHUNK_STEPS",DISABLE_FAILURE_TERMINATIONS="$DISABLE_FAILURE_TERMINATIONS",DISABLE_SUCCESS_TERMINATION="$DISABLE_SUCCESS_TERMINATION",STOP_ON_DONE="$STOP_ON_DONE",STOP_ON_BIN_DROP_SUCCESS="$STOP_ON_BIN_DROP_SUCCESS",DEBUG_OBS_INTERVAL="$DEBUG_OBS_INTERVAL",DEBUG_OBS_MAX_FRAMES="$DEBUG_OBS_MAX_FRAMES",RENDERING_MODE="$RENDERING_MODE",CAPTURE_VIDEO="$CAPTURE_VIDEO",YAM_DEFAULT_FINGER_QPOS="$YAM_DEFAULT_FINGER_QPOS",YAM_POLICY_OBJECT_ASSET_MANIFEST_PATH="$YAM_POLICY_OBJECT_ASSET_MANIFEST_PATH",YAM_POLICY_MAX_OBJECTS="$YAM_POLICY_MAX_OBJECTS",YAM_POLICY_OBJECT_VALIDATE_USD_BOUNDS="$YAM_POLICY_OBJECT_VALIDATE_USD_BOUNDS",YAM_POLICY_TABLE_TEXTURE_DIR="$YAM_POLICY_TABLE_TEXTURE_DIR",YAM_POLICY_DOME_LIGHT_TEXTURE_DIR="$YAM_POLICY_DOME_LIGHT_TEXTURE_DIR" \
         "$EVAL_WRAPPER"
-    )"
+    )"; then
+      echo "eval_submission_retry threshold=$next_threshold step=$step"
+      safe_sleep "$POLL_SECONDS"
+      continue
+    fi
     evals=$((evals + 1))
     printf "%s\t%s\t%s\t%s\t%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$evals" "$step" "$job_id" "$snapshot" | tee -a "$SUBMITTED_TSV"
     while [ "$next_threshold" -le "$step" ]; do
@@ -226,5 +271,5 @@ while true; do
     echo "target_seen step=$step target=$TARGET_TRAIN_STEPS evals=$evals"
     exit 0
   fi
-  sleep "$POLL_SECONDS"
+  safe_sleep "$POLL_SECONDS"
 done
