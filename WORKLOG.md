@@ -15060,3 +15060,16 @@ Smoke follow-up:
   4,799 frames at 1,280x720, 60 fps, and 79.983 s; the sparse two-camera
   artifact has 42 frames at 1,024x568, 4 fps, and 10.5 s. Local evidence:
   `cluster_results/l401/yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0200191`.
+
+## 2026-07-02T15:48:00Z N100 Second Timeout Resume
+
+- While the n50 200k eval ran, n100 allocation `29751121` timed out normally
+  after logging step 179,977. Its latest complete pre-timeout snapshot was
+  epoch 176 at step 179,728 with train loss `0.004712` and validation loss
+  `0.067405`.
+- Persistent submitter PID `3928872` launched replacement `29756225` on
+  `interactive_singlenode` with `training.resume=true`. The new allocation
+  explicitly loaded `latest.ckpt`, repeated the partial epoch as expected,
+  crossed the old high-water mark, and is healthy at approximately 190k with
+  finite losses. Its fixed-seed 200k periodic monitor remains armed and its
+  ledger is unchanged.
