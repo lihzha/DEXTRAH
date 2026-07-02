@@ -14666,3 +14666,23 @@ Smoke follow-up:
   table-only and the final wrist view shows the object in the bin. Local
   artifact:
   `cluster_results/l401/yam_controller_stateobs_v16_final500_visual_20260702T0022Z_source_000201/source_000201_scene_wrist.mp4`.
+
+## 2026-07-02T03:28:00Z Stage-100 Resume And 300-Shard Audit
+
+- Stage-100 allocation `29730537` timed out normally after logging global step
+  71,715. Its persistent submitter classified the terminal state, retained the
+  atomic checkpoint, and launched job `29737664`. The new allocation explicitly
+  loaded `latest.ckpt`, resumed epoch 70 with finite loss, and exceeded the old
+  high-water mark without an optimizer/EMA reset. The hardened 100k periodic
+  monitor remained alive; no new closed-loop eval was due at this point.
+- A third full v16 audit snapshotted 304 live quality shards and accepted all
+  304 with zero rejects. The first-300 manifest has 267,550 control steps, 74
+  unique objects, a 271/29 object-disjoint train/validation split, and maximum
+  stationary TCP run 45 versus the 60-step limit. Audit:
+  `yam_controller_stateobs_v16_final500_visual_20260702T0022Z/audits/live_0304_20260702T032528Z`.
+- Accepted source 300 contains 1,027 scene/wrist frames. The purple target is
+  visible at reset and throughout wrist-guided acquisition and transport; the
+  final external frame visibly contains it in the bin after release. The
+  retracted final wrist view no longer centers the target but remains valid and
+  nonblank. Local artifact:
+  `cluster_results/l401/yam_controller_stateobs_v16_final500_visual_20260702T0022Z_source_000300/source_000300_scene_wrist.mp4`.
