@@ -14515,3 +14515,44 @@ Smoke follow-up:
   29,759 for stages 10 / 50 / 100. Their corresponding epochs were 439 / 81 /
   29; all persistent training submitters and all three atomic checkpoint-eval
   monitors were alive.
+
+## 2026-07-02T00:42:00Z V15 Freeze And Expanded-Texture Final Pass
+
+- Drained the v15 collector to exactly 500 accepted trajectories and stopped
+  all nominal, recovery, and replacement submitters. The full builder re-read
+  every shard and reported 500 accepted / zero rejected, 437,004 control
+  steps, 450/50 train/validation trajectories, 84 target UUIDs split 70/14
+  with zero overlap, and maximum stationary TCP run 55 versus the 60-step
+  limit. Frozen `manifest_0500.json` has SHA-256 `bbd86762...`; stage 10/50/100
+  hashes remain byte-identical at `0411444e...`, `b8893fa7...`, and
+  `d60b0957...`.
+- Inspected source 450 and the final main source 499 from stored tensors. Both
+  maintain table-only external framing, visible reset objects, continuous
+  wrist acquisition, transport, and released objects in the bin. Local videos:
+  `cluster_results/l401/yam_controller_stateobs_v15_final500_20260701T1710Z_source_000450/source_000450_scene_wrist.mp4`
+  and
+  `cluster_results/l401/yam_controller_stateobs_v15_final500_20260701T1710Z_source_000499/source_000499_scene_wrist.mp4`.
+- Stage-50 step-50,591 completed 4,800 uninterrupted quality-rendered steps
+  with no strict success. It reached and closed around the object, briefly
+  triggered grasp detection, lifted only `0.00155 m`, and backed away. Stage-10
+  step-60,953 also completed 4,800 steps with no reset but no grasp and only
+  `6.52e-7 m` numerical-noise lift. These remain policy failures, not horizon,
+  observation, or checkpoint-integrity failures.
+- Materialized clean L40S worktree
+  `yam-rgb-v16-de2d2490-20260702` at `de2d2490`, with generated YAM USD assets
+  and the 19-source tabletop pool. `GIT_LFS_SKIP_SMUDGE=1`, `GOMAXPROCS=1`, and
+  single-threaded BLAS avoided the login-node process ceiling; Python and shell
+  syntax checks pass. The host lacks `pytest`, so the quality-render runtime
+  smoke is the deployment gate.
+- Smoke source 0 rendered correctly but missed strict placement and was
+  rejected. Source 1 then passed nominal placement and recorded-action dynamics
+  replay with maximum lift `0.18585 m`, Bamboo tabletop, Cape Hill HDR, and
+  authoritative selected table/dome paths persisted with zero numeric replay
+  error. Both-camera inspection passes; artifact:
+  `cluster_results/l401/yam_controller_stateobs_v16_final500_visual_20260702T0022Z_source_000001/source_000001_scene_wrist.mp4`.
+- Launched the full authoritative visual replay root
+  `yam_controller_stateobs_v16_final500_visual_20260702T0022Z` using main PID
+  `256106` (six jobs), recovery PID `256107` (three jobs), and replacement PID
+  `256108` (two jobs across 84 distinct donor objects). Every job uses quality
+  rendering, dynamics, two 256x256 RGB streams, material/HDR/table randomization,
+  64 warmup frames, and commit `de2d2490`.
