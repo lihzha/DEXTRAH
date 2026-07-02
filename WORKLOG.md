@@ -15048,3 +15048,15 @@ Smoke follow-up:
   termination, and corrected 1 mm oriented containment. This is directly
   comparable with n50's 100k no-contact failure and 150k transient 7.8 mm
   contact lift.
+- Job `1095449` completed cleanly in 17:39 and executed all 4,800 steps without
+  termination, truncation, or reset. Strict success was `0/1`. Although the
+  proximity-based grasp flag briefly activated at step 242, physical maximum
+  lift was only `6.52e-7 m`, maximum XY displacement was `2.46e-6 m`, and
+  minimum hand/object distance was `0.114244 m`; the object did not move.
+- Both-camera inspection confirms a visible target and repeated off-center
+  close behavior, with the arm lingering near the object before moving away.
+  The 200k fixed-seed result regressed from n50's transient 7.8 mm contact lift
+  at 150k and provides no evidence of robust success. The external artifact has
+  4,799 frames at 1,280x720, 60 fps, and 79.983 s; the sparse two-camera
+  artifact has 42 frames at 1,024x568, 4 fps, and 10.5 s. Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0200191`.
