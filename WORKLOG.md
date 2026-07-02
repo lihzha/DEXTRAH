@@ -14643,3 +14643,26 @@ Smoke follow-up:
   with finite loss. This rolled back roughly 227 minibatches from the
   mid-epoch log high-water mark, which preserves optimizer/EMA consistency and
   will be replayed before the 100k evaluation threshold.
+
+## 2026-07-02T02:51:00Z Replay Scale-Up And 200-Shard Audit
+
+- Increased only the nominal quality-replay throttle from six to ten ordinary
+  L40S jobs after confirming free capacity and stable 100-shard evidence.
+  Archived the resolved six-job config, stopped sleeping submitter PID
+  `273287`, and resumed at source 142 as detached PID `327395` from the same
+  immutable `eb0c2442` worktree. Recovery remained at three jobs and
+  accepted-donor replacement at two. The ledger has no new duplicate source
+  submissions, and accepted throughput increased from about 1.7 to 3.1 shards
+  per minute.
+- A second full audit snapshotted 203 live shards and accepted all 203 with zero
+  quality, provenance, dynamics-replay, finite-array, marker, or flow rejects.
+  The first-200 manifest contains 177,185 control steps, 63 unique objects, a
+  180/20 object-disjoint train/validation split, and maximum stationary TCP run
+  45 versus the 60-step limit. Audit:
+  `yam_controller_stateobs_v16_final500_visual_20260702T0022Z/audits/live_0203_20260702T024839Z`.
+- Nominal source 200 failed and was not admitted. Rendered adjacent accepted
+  source 201 instead: all 899 scene/wrist frames keep the light target visible
+  through acquisition, transport, and release; the external stream stays
+  table-only and the final wrist view shows the object in the bin. Local
+  artifact:
+  `cluster_results/l401/yam_controller_stateobs_v16_final500_visual_20260702T0022Z_source_000201/source_000201_scene_wrist.mp4`.
