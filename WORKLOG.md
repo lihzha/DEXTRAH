@@ -15250,3 +15250,15 @@ Smoke follow-up:
   explicitly loaded `latest.ckpt` and appended finite rows from step 113,071,
   proving optimizer/EMA/scheduler resume from the durable 113,018 checkpoint.
   The unsaved 4,913-update tail is being replayed as intended.
+
+## 2026-07-02T22:29:00Z N100 Third Hardened Handoff
+
+- N100 allocation `29764156` timed out normally after 3:50:03 at raw step
+  244,481. It had written a fresh epoch-239 checkpoint at step 244,271 with
+  validation loss `0.084019`; the file remained size/mtime stable and passed
+  a full 1,402-member ZIP integrity test with no bad member.
+- Hardened submitter PID `3341594` launched exactly one replacement,
+  `29774345`, on A100. It explicitly loaded the step-244,271 checkpoint and
+  appended finite rows through 244,286 during verification, so only the 210
+  unsaved tail updates are replayed. The n100 300k monitor remains armed; no
+  below-threshold L40 evaluation was launched.
