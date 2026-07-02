@@ -15073,3 +15073,17 @@ Smoke follow-up:
   crossed the old high-water mark, and is healthy at approximately 190k with
   finite losses. Its fixed-seed 200k periodic monitor remains armed and its
   ledger is unchanged.
+
+## 2026-07-02T16:58:00Z N100 Step-200K Periodic Eval Launch
+
+- N100 crossed the second periodic threshold at raw step 200,067. Hardened
+  monitor PID `662415` rejected the pre-threshold checkpoint through step
+  200,579, then validated and copied the first fresh atomic snapshot as
+  `periodic_eval_snapshots/step_0200732.ckpt` and appended the durable ledger.
+- Submitted L40S job `1095793`, run
+  `yam_rgb_dp_stateobs_v15_n100_bs80_600k_periodic100k_20260701T1916Z_step0200732`,
+  with immutable code `f928e60c`, scene and DDPM seed 42, one uninterrupted
+  4,800-step quality-render episode, action chunk 8, both cameras, no early
+  success/failure termination, and corrected 1 mm oriented containment. It is
+  directly comparable with the deterministic n100 100k and 132k failures;
+  Slurm initially queued it on L40 `batch` for priority/resources.
