@@ -15087,3 +15087,17 @@ Smoke follow-up:
   success/failure termination, and corrected 1 mm oriented containment. It is
   directly comparable with the deterministic n100 100k and 132k failures;
   Slurm initially queued it on L40 `batch` for priority/resources.
+
+## 2026-07-02T17:12:00Z Final N500 Third Timeout Resume
+
+- Final n500 reached a new-best validation checkpoint at epoch 15, step 88,449:
+  train loss `0.007174`, validation loss `0.016021`. Epoch 16 reached step
+  93,363 with train loss `0.007015` and validation `0.018404`; its
+  `latest.ckpt` remained `1,606,334,243` bytes and passed a full 1,402-member
+  ZIP integrity check.
+- Allocation `29754419` timed out normally after logging partial-epoch step
+  96,904. Persistent submitter PID `1498089` launched replacement `29760103`
+  on `polar` with `training.resume=true`; the job explicitly loaded
+  `latest.ckpt`, appended finite losses, and crossed the old high-water mark at
+  step 96,915. Its hardened 100k monitor remains armed and requires a fresh
+  post-threshold checkpoint before evaluation.
