@@ -19,6 +19,7 @@ from typing import Any
 
 from isaaclab.app import AppLauncher
 
+from dextrah_lab.offline_dp_bc.bin_containment import projected_box_half_extents
 from dextrah_lab.offline_dp_bc.exact_visual_replay import (
     authoritative_recorded_visual_asset,
     select_exact_visual_asset,
@@ -34,9 +35,10 @@ ACTION_NAMES = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"]
 YAM_POSE_ACTION_SCALE = (0.055, 0.055, 0.045, 0.22, 0.22, 0.25)
 SURFACE_TEXTURE_EXTS = (".jpg", ".jpeg", ".png")
 DOME_TEXTURE_EXTS = (".hdr", ".exr", ".jpg", ".jpeg", ".png")
-DATASET_DROP_CONTROLLER_VERSION = 15
+DATASET_DROP_CONTROLLER_VERSION = 16
 DATASET_DROP_ACCEPTANCE_MODE = "final_physical_success_plus_dynamics_replay"
 DATASET_DROP_OPEN_TRIGGER = "contained_geometry_with_tcp_stall_recovery"
+BIN_DROP_CONTAINMENT_GEOMETRY = "centered_oriented_bounds"
 DATASET_DROP_STALL_TCP_DELTA_M = 1.0e-5
 STAGED_DESCENT_PATH = "staged_descent"
 SOURCE_TRACKED_DROP_PATH = "source_tracked_drop"
@@ -101,6 +103,7 @@ parser.add_argument("--dataset_drop_settle_containment_margin_m", type=float, de
 parser.add_argument("--dataset_drop_settle_height_tolerance_m", type=float, default=0.01)
 parser.add_argument("--dataset_drop_settle_linear_speed", type=float, default=0.10)
 parser.add_argument("--dataset_drop_settle_angular_speed", type=float, default=10.0)
+parser.add_argument("--bin_drop_containment_tolerance_m", type=float, default=0.001)
 parser.add_argument("--dataset_drop_fallback_after_steps", type=int, default=30)
 parser.add_argument("--dataset_drop_fallback_trigger_height_error_m", type=float, default=0.03)
 parser.add_argument("--dataset_drop_fallback_release_clearance_m", type=float, default=0.055)
@@ -2098,7 +2101,7 @@ def _collect_task_metrics(task_env: Any) -> dict[str, float | None]:
     return {name: _mean_float(getattr(task_env, name)) for name in names if hasattr(task_env, name)}
 
 
-def _exact_bin_drop_spec(exact_demo: dict[str, Any] | None) -> dict[str, float] | None:
+def _exact_bin_drop_spec(exact_demo: dict[str, Any] | None) -> dict[str, Any] | None:
     if exact_demo is None:
         return None
     stable_scene = exact_demo["stable_scene"]
@@ -2126,6 +2129,7 @@ def _exact_bin_drop_spec(exact_demo: dict[str, Any] | None) -> dict[str, float] 
         "inner_size_y": float(goal["inner_size_y"]),
         "inner_floor_z": inner_floor_z,
         "inner_top_z": inner_top_z,
+        "object_half_extents": [float(value) for value in half_extents[:3]],
         "object_xy_radius": xy_radius,
         "object_half_z": half_z,
         "settled_linear_speed": 0.05,
@@ -2134,7 +2138,7 @@ def _exact_bin_drop_spec(exact_demo: dict[str, Any] | None) -> dict[str, float] 
     }
 
 
-def _live_bin_drop_spec(task_env: Any) -> dict[str, float] | None:
+def _live_bin_drop_spec(task_env: Any) -> dict[str, Any] | None:
     goal = task_env._tabletop_goal_bin_info()
     if goal is None:
         return None
@@ -2147,6 +2151,7 @@ def _live_bin_drop_spec(task_env: Any) -> dict[str, float] | None:
         "inner_size_y": float(goal["inner_size_y"]),
         "inner_floor_z": float(goal["inner_floor_z"]),
         "inner_top_z": float(goal["inner_top_z"]),
+        "object_half_extents": [float(value) for value in object_half_extents],
         "object_xy_radius": object_xy_radius,
         "object_half_z": float(object_half_extents[2]),
         "settled_linear_speed": 0.05,
@@ -2155,18 +2160,46 @@ def _live_bin_drop_spec(task_env: Any) -> dict[str, float] | None:
     }
 
 
-def _bin_drop_metrics(task_env: Any, spec: dict[str, float] | None) -> dict[str, float]:
-    if spec is None:
-        return {}
-    task_env._compute_intermediate_values()
+def _bin_xy_metrics(task_env: Any, spec: dict[str, Any]) -> dict[str, float]:
     center = _tensor_numpy(task_env.cube_pos)[0]
     error_x = abs(float(center[0]) - float(spec["center_x"]))
     error_y = abs(float(center[1]) - float(spec["center_y"]))
-    margin_x = 0.5 * float(spec["inner_size_x"]) - float(spec["object_xy_radius"]) - error_x
-    margin_y = 0.5 * float(spec["inner_size_y"]) - float(spec["object_xy_radius"]) - error_y
+    legacy_radius = float(spec["object_xy_radius"])
+    legacy_margin_x = 0.5 * float(spec["inner_size_x"]) - legacy_radius - error_x
+    legacy_margin_y = 0.5 * float(spec["inner_size_y"]) - legacy_radius - error_y
+
+    half_extents = spec.get("object_half_extents")
+    if isinstance(half_extents, (list, tuple)) and len(half_extents) == 3:
+        quat_wxyz = _tensor_numpy(task_env.cube_quat).reshape(-1, 4)[0]
+        projected_extents = projected_box_half_extents(half_extents, quat_wxyz)
+    else:
+        projected_extents = (legacy_radius, legacy_radius, float(spec["object_half_z"]))
+    margin_x = 0.5 * float(spec["inner_size_x"]) - projected_extents[0] - error_x
+    margin_y = 0.5 * float(spec["inner_size_y"]) - projected_extents[1] - error_y
+    tolerance = max(0.0, float(args_cli.bin_drop_containment_tolerance_m))
+    return {
+        "bin_center_error_x": error_x,
+        "bin_center_error_y": error_y,
+        "bin_object_projected_half_extent_x": projected_extents[0],
+        "bin_object_projected_half_extent_y": projected_extents[1],
+        "bin_containment_margin_x": margin_x,
+        "bin_containment_margin_y": margin_y,
+        "bin_legacy_radius_containment_margin_x": legacy_margin_x,
+        "bin_legacy_radius_containment_margin_y": legacy_margin_y,
+        "bin_inside_xy": float(margin_x >= -tolerance and margin_y >= -tolerance),
+        "bin_legacy_radius_inside_xy": float(legacy_margin_x >= 0.0 and legacy_margin_y >= 0.0),
+    }
+
+
+def _bin_drop_metrics(task_env: Any, spec: dict[str, Any] | None) -> dict[str, float]:
+    if spec is None:
+        return {}
+    task_env._compute_intermediate_values()
+    xy_metrics = _bin_xy_metrics(task_env, spec)
+    center = _tensor_numpy(task_env.cube_pos)[0]
     z_min = float(spec["inner_floor_z"]) - 0.02
     z_max = float(spec["inner_top_z"]) + float(spec["object_half_z"])
-    inside_xy = margin_x >= 0.0 and margin_y >= 0.0
+    inside_xy = bool(xy_metrics["bin_inside_xy"] >= 0.5)
     inside_z = z_min <= float(center[2]) <= z_max
     linear_speed = float(_mean_float(task_env.cube_linear_speed) or 0.0)
     angular_speed = float(_mean_float(task_env.cube_angular_speed) or 0.0)
@@ -2186,11 +2219,7 @@ def _bin_drop_metrics(task_env: Any, spec: dict[str, float] | None) -> dict[str,
         and angular_speed <= float(spec["settled_angular_speed"])
     )
     return {
-        "bin_center_error_x": error_x,
-        "bin_center_error_y": error_y,
-        "bin_containment_margin_x": margin_x,
-        "bin_containment_margin_y": margin_y,
-        "bin_inside_xy": float(inside_xy),
+        **xy_metrics,
         "bin_inside_z": float(inside_z),
         "bin_gripper_open": float(gripper_open),
         "bin_hand_separated": float(hand_separated),
@@ -2597,13 +2626,10 @@ def _dataset_pose_target_action(
                 (float(active_drop_spec["center_x"]), float(active_drop_spec["center_y"])),
                 dtype=np.float64,
             ) - live_object[:2]
+            containment_metrics = _bin_xy_metrics(task_env, active_drop_spec)
             containment_margin = min(
-                0.5 * float(active_drop_spec["inner_size_x"])
-                - float(active_drop_spec["object_xy_radius"])
-                - abs(float(center_error_xy[0])),
-                0.5 * float(active_drop_spec["inner_size_y"])
-                - float(active_drop_spec["object_xy_radius"])
-                - abs(float(center_error_xy[1])),
+                containment_metrics["bin_containment_margin_x"],
+                containment_metrics["bin_containment_margin_y"],
             )
             center_ready = float(np.linalg.norm(center_error_xy)) <= max(
                 0.0, float(args_cli.dataset_drop_descent_center_tolerance_m)
@@ -3730,6 +3756,10 @@ def main() -> None:
                 "dataset_drop_targeting_mode": "live_object_to_bin_center",
                 "dataset_drop_release_height_mode": "above_bin_top_then_contained_descent",
                 "dataset_drop_controller_version": DATASET_DROP_CONTROLLER_VERSION,
+                "bin_drop_containment_geometry": BIN_DROP_CONTAINMENT_GEOMETRY,
+                "bin_drop_containment_tolerance_m": float(
+                    args_cli.bin_drop_containment_tolerance_m
+                ),
                 "dataset_drop_acceptance_mode": DATASET_DROP_ACCEPTANCE_MODE,
                 "dataset_drop_open_trigger": DATASET_DROP_OPEN_TRIGGER,
                 "dataset_drop_stall_tcp_delta_m": DATASET_DROP_STALL_TCP_DELTA_M,
@@ -3909,6 +3939,8 @@ def main() -> None:
         ),
         "dataset_drop_settle_linear_speed": float(args_cli.dataset_drop_settle_linear_speed),
         "dataset_drop_settle_angular_speed": float(args_cli.dataset_drop_settle_angular_speed),
+        "bin_drop_containment_geometry": BIN_DROP_CONTAINMENT_GEOMETRY,
+        "bin_drop_containment_tolerance_m": float(args_cli.bin_drop_containment_tolerance_m),
         "dataset_drop_fallback_after_steps": int(args_cli.dataset_drop_fallback_after_steps),
         "dataset_drop_fallback_trigger_height_error_m": float(
             args_cli.dataset_drop_fallback_trigger_height_error_m
