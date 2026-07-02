@@ -14959,3 +14959,17 @@ Smoke follow-up:
   has 4,799 frames at 1,280x720, 60 fps, and 79.983 s; the sparse two-camera
   artifact has 42 frames at 1,024x568, 4 fps, and 10.5 s. Local evidence:
   `cluster_results/l401/yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0150267`.
+
+## 2026-07-02T10:50:00Z N100 Timeout Resume
+
+- N100 allocation `29745634` reached a partial-epoch high-water mark of step
+  141,036 and timed out normally after 3:50:14. Its latest complete atomic
+  checkpoint was epoch 137 at step 140,009 with train loss `0.004936` and
+  validation loss `0.053367`; a full integrity pass checked all 1,402 ZIP
+  members with no bad entry.
+- Persistent n100 submitter PID `3928872` classified the timeout and launched
+  replacement job `29751121` with `training.resume=true`. The new allocation
+  explicitly logged `Resuming from checkpoint .../latest.ckpt`, produced fresh
+  finite losses, and crossed the old high-water mark at step 141,223. N50,
+  n100, and final n500 are all running concurrently again; no eval monitor or
+  durable ledger was reset.
