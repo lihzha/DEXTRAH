@@ -14702,3 +14702,39 @@ Smoke follow-up:
   external stream stays table-only across a distinct mosaic-style tabletop.
   Local artifact:
   `cluster_results/l401/yam_controller_stateobs_v16_final500_visual_20260702T0022Z_source_000400/source_000400_scene_wrist.mp4`.
+
+## 2026-07-02T05:08:00Z V16 Freeze And Final Training Launch
+
+- Nominal source submission drained through source 499. After recovery drained,
+  raised accepted-donor replacement concurrency from two to six and completed
+  the remaining one-for-one exclusions. Stopped the idle recovery and
+  replacement daemons after exactly 500 accepted records and zero active v16
+  replay jobs remained.
+- The authoritative final builder re-read all 500 shards and accepted 500 with
+  zero rejects. Frozen `manifest_0500.json` contains 437,183 control steps, 80
+  unique target objects, 449/51 train/validation trajectories, 67/13
+  object-disjoint train/validation UUIDs, two `256x256x3` RGB streams, and
+  maximum stationary TCP run 45 versus the 60-step limit. Its SHA-256 is
+  `39fe47092387a488e6d8310929be584bf1c59128305ec36c31fdec73d68fe960`.
+  Final curriculum:
+  `yam_controller_stateobs_v16_final500_visual_20260702T0022Z/curriculum`.
+- Accepted source 499 contains 832 stored frames. The complex light-purple
+  target remains visible in the wrist stream through transport and is visibly
+  released into the bin in both final views; external framing remains
+  table-only. Local artifact:
+  `cluster_results/l401/yam_controller_stateobs_v16_final500_visual_20260702T0022Z_source_000499/source_000499_scene_wrist.mp4`.
+- Launched scratch final run
+  `yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z` on A100 job
+  `29743345`, persistent submitter PID `1498089`, code `195901b6`, batch 80,
+  425 epochs, two 256-square RGB streams, 24-D robot state, `n_obs_steps=1`,
+  horizon 16, action chunk 8, and 100 DDPM inference steps. There are 4,914
+  batches per epoch, giving about 2.088M available updates. Startup reached
+  step 511 with finite loss and no OOM/nonfinite error.
+- The first hardened periodic monitors were accidentally launched on the A100
+  scheduler, where the L40 `batch` partition is invalid. Training and atomic
+  snapshots were unaffected. Stopped those processes and moved n50, n100, and
+  final n500 monitors to l401 as PIDs `459637`, `459639`, and `459641`.
+  Original legacy l401 n50/n100 monitors were also still alive; after the n50
+  process submitted the valid step-100,995 eval job `1093170`, stopped both
+  legacy PIDs to leave one durable-ledger owner per run. Job `1093170` is the
+  current 4,800-step L40S quality eval; no duplicate eval was submitted.
