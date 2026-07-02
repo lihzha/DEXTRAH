@@ -14807,3 +14807,23 @@ Smoke follow-up:
   n100 step 108,128, and n50 step 120,057. The final n500 run remains the
   authoritative policy candidate; no final-model periodic eval is due before
   its first 100k checkpoint.
+
+## 2026-07-02T07:44:00Z Deterministic Full-Horizon Baselines
+
+- Extended deterministic matrix seed 44 to a full 4,800-step quality rollout
+  as job `1093628`. It reproduced the grasp, reached `0.189208 m` maximum lift,
+  looped away from and back toward the bin, and finally released near step
+  4,300. The object settled at `0.102075 m` center error with final centered
+  margins `-0.023383/+0.016282 m`, so this remained a strict placement miss,
+  not a horizon-censored success. Local two-camera and external videos:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_step0100449_seed44_full4800_20260702T070525Z`.
+- Ran the exact new periodic-monitor baseline, scene seed 42 and DDPM seed 42,
+  for all 4,800 steps as job `1093696`. It completed with zero grasp,
+  `6.52e-7 m` numerical-noise maximum lift, `0.174921 m` minimum hand/object
+  distance, and zero termination or truncation. There was no late
+  reacquisition. Local artifacts:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_step0100449_seed42_full4800_20260702T072546Z`.
+- These full runs preserve the earlier conclusion: one unseeded stochastic
+  rollout succeeded, while the reproducible n100-at-100k baseline fails. The
+  checkpoint has learned parts of the task but is not robust; continued n500
+  training and fixed-seed periodic comparisons remain necessary.
