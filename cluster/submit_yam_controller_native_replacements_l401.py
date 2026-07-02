@@ -63,7 +63,7 @@ def _parser() -> argparse.ArgumentParser:
         "--control-mode",
         choices=CONTROL_MODES,
         default="dataset_pose_recovery",
-        help="Controller used for replacements; visual-only replays should use dataset_pose_targets.",
+        help="Use pose targets for full donor trajectories or pose recovery for perturbed segments.",
     )
     parser.add_argument("--user", default=getpass.getuser())
     parser.add_argument("--once", action="store_true")
@@ -172,6 +172,14 @@ def _accepted_marker(output_root: Path, source_index: int) -> Path:
         / f"yam_rgb_policy_{padded}"
         / "metadata.json"
     )
+
+
+def _accepted_donor_sources(output_root: Path, donor_sources: list[int]) -> list[int]:
+    return [
+        source_index
+        for source_index in donor_sources
+        if _accepted_marker(output_root, source_index).is_file()
+    ]
 
 
 def _latest_manifest(output_root: Path) -> tuple[Path, dict[str, object]]:
@@ -346,6 +354,7 @@ def main() -> None:
         "code_commit": args.code_commit,
         "code_nfs": str(args.code_nfs),
         "control_mode": args.control_mode,
+        "donor_selection_mode": "configured_object_distinct_sources_with_strict_acceptance",
         "donor_sources": donor_sources,
         "dry_run": bool(args.dry_run),
         "job_name_prefix": args.job_name_prefix,
@@ -390,7 +399,20 @@ def main() -> None:
         for excluded_source_index in eligible[:slots]:
             source_path, current_payload = _latest_manifest(args.output_root)
             candidate_index = len(current_payload["shards"])
-            donor_source_index = donor_sources[candidate_index % len(donor_sources)]
+            accepted_donors = _accepted_donor_sources(args.output_root, donor_sources)
+            if not accepted_donors:
+                print(
+                    json.dumps(
+                        {
+                            "event": "replacement_waiting_for_accepted_donor",
+                            "excluded_source_index": excluded_source_index,
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+                break
+            donor_source_index = accepted_donors[candidate_index % len(accepted_donors)]
             if args.dry_run:
                 manifest = source_path.with_name(
                     f"replacement_source_manifest_{candidate_index + 1}.json"
@@ -423,6 +445,7 @@ def main() -> None:
                         "donor_source_index": donor_source_index,
                         "event": "replacement_submitted",
                         "excluded_source_index": excluded_source_index,
+                        "accepted_donor_count": len(accepted_donors),
                         "job_id": job_id,
                         "manifest": str(manifest),
                     },

@@ -92,6 +92,14 @@ def test_absolute_path_preserves_symlink_spelling(tmp_path: Path) -> None:
     assert str(actual).startswith(str(alias))
 
 
+def test_replacements_only_use_strictly_accepted_donors(tmp_path: Path) -> None:
+    accepted = MODULE._accepted_marker(tmp_path, 7)
+    accepted.parent.mkdir(parents=True)
+    accepted.write_text("{}\n", encoding="utf-8")
+
+    assert MODULE._accepted_donor_sources(tmp_path, [3, 7, 9]) == [7]
+
+
 def test_visual_replacement_can_use_pose_targets(tmp_path: Path) -> None:
     args = MODULE._parser().parse_args(
         [

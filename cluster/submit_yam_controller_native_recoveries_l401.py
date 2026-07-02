@@ -52,7 +52,7 @@ def _parser() -> argparse.ArgumentParser:
         "--control-mode",
         choices=CONTROL_MODES,
         default="dataset_pose_recovery",
-        help="Controller used for the retry; visual-only replays should use dataset_pose_targets.",
+        help="Use pose recovery for inferred pre-grasp coverage or pose targets for a deterministic retry.",
     )
     parser.add_argument("--user", default=getpass.getuser())
     parser.add_argument("--once", action="store_true")
