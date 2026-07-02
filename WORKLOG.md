@@ -14585,3 +14585,31 @@ Smoke follow-up:
   eval job `1091535`. Restarted the stage-100 persistent submitter with 605
   epochs so its 993 batches per epoch actually cross the intended 600k global
   updates; it adopted running job `29730537` without interrupting training.
+
+## 2026-07-02T01:42:00Z Stage-10 Terminal Evaluation And Monitor Recovery
+
+- The final stage-10 random-scene evaluation (`1091535`) completed 4,800
+  uninterrupted quality-rendered steps with no grasp, no lift, and no strict
+  placement. The robot approached once and then pointed the wrist away from the
+  workspace. The exact source-1 evaluation (`1091600`) also completed 4,800
+  uninterrupted steps with zero strict success and only `0.000350 m` maximum
+  lift; it approached the object, failed to close around it, and drifted until
+  the wrist camera viewed the dome. This rules out short horizon and reset
+  truncation as explanations for the terminal stage-10 failure.
+- Exact reset restored all 24 robot-state values bit-exactly and matched scene
+  geometry, but the v15 reference versus live quality RGB had scene/wrist MAE
+  `18.44/15.59` (`20.56/21.53 dB`). Visual inspection attributes most of the
+  difference to exposure and material response between the earlier A100 RGB
+  capture and L40S quality rendering. The authoritative v16 L40S replay is
+  therefore required before final training; the v15 curricula remain
+  optimization/data-scale diagnostics rather than the final sim-to-real corpus.
+- Both A100 periodic-eval monitor processes had exited after the stage-50
+  monitor hit the login host process ceiling. Relaunched them from immutable
+  commit `7d35a1be` as PIDs `4108644` (stage 50) and `4108649` (stage 100), with
+  60-second polling and their existing durable ledgers. Stage 50 correctly
+  resumed after its submitted step-50,591 eval with next threshold 100k; stage
+  100 retained its first 100k threshold. Both processes detached under PID 1.
+- The v16 quality replay reached 70 accepted shards while all nominal,
+  phase-free recovery, and accepted-donor replacement submitters remained
+  active. Stage 50 was healthy at epoch 134 and stage 100 at epoch 57, with
+  finite losses and persistent checkpoint/resume submitters still active.
