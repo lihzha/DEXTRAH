@@ -15236,3 +15236,17 @@ Smoke follow-up:
   `3341594` adopting `29764156`, and n50 `3341595` adopting `29767169`.
   Adoption high-water marks were 112,863, 222,833, and 200,511 respectively;
   all three GPU jobs remained running continuously.
+
+## 2026-07-02T20:34:00Z Final N500 Fourth Timeout Recovery
+
+- Final allocation `29760103` timed out normally after 3:50:10 with a live,
+  unsaved high-water mark of step 117,931. Its latest durable checkpoint
+  remained epoch 19 / step 113,018 with validation loss `0.017558`; before
+  timeout it was size/mtime stable and passed a full 1,402-member ZIP test
+  with no bad member.
+- Hardened submitter PID `3341593` classified the timeout and launched exactly
+  one replacement, A100 job `29769874`, from code `f0774f2d`. Preflight ZIP
+  validation passed without requiring fallback restoration. The replacement
+  explicitly loaded `latest.ckpt` and appended finite rows from step 113,071,
+  proving optimizer/EMA/scheduler resume from the durable 113,018 checkpoint.
+  The unsaved 4,913-update tail is being replayed as intended.
