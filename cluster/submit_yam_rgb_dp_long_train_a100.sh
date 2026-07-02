@@ -89,6 +89,64 @@ print(latest)
 PY
 }
 
+checkpoint_zip_valid() {
+  python3 - "$1" <<'PY'
+import sys
+import zipfile
+
+path = sys.argv[1]
+try:
+    with zipfile.ZipFile(path, "r") as archive:
+        valid = bool(archive.infolist())
+except (OSError, zipfile.BadZipFile):
+    valid = False
+raise SystemExit(0 if valid else 1)
+PY
+}
+
+restore_latest_checkpoint() {
+  local staged_root="$RESULTS_NFS/dp_bc/checkpoints/$RUN_NAME"
+  local candidate entry tmp
+  local -a search_roots=("$TRAIN_DIR_HOST/checkpoints")
+  if [ -d "$staged_root" ]; then
+    search_roots+=("$staged_root")
+  fi
+
+  while IFS= read -r entry; do
+    candidate="${entry#* }"
+    [ "$candidate" != "$CHECKPOINT_HOST" ] || continue
+    if ! checkpoint_zip_valid "$candidate"; then
+      echo "checkpoint_recovery_skip_invalid candidate=$candidate" >&2
+      continue
+    fi
+
+    tmp="${CHECKPOINT_HOST}.recover.$$"
+    rm -f "$tmp"
+    cp "$candidate" "$tmp"
+    if ! checkpoint_zip_valid "$tmp"; then
+      echo "checkpoint_recovery_copy_invalid candidate=$candidate tmp=$tmp" >&2
+      rm -f "$tmp"
+      continue
+    fi
+    mv -f "$tmp" "$CHECKPOINT_HOST"
+    echo "checkpoint_recovered source=$candidate destination=$CHECKPOINT_HOST"
+    return 0
+  done < <(
+    find "${search_roots[@]}" -maxdepth 3 -type f -name '*.ckpt' \
+      -printf '%T@ %p\n' 2>/dev/null | sort -nr
+  )
+
+  return 1
+}
+
+ensure_resumable_checkpoint() {
+  if checkpoint_zip_valid "$CHECKPOINT_HOST"; then
+    return 0
+  fi
+  echo "invalid_resume_checkpoint path=$CHECKPOINT_HOST; searching for newest valid fallback" >&2
+  restore_latest_checkpoint
+}
+
 wait_for_job() {
   local job_id="$1"
   local failures=0
@@ -205,6 +263,10 @@ while [ "$submission" -lt "$MAX_SUBMISSIONS" ]; do
   resume="false"
   init_arg="$INIT_CHECKPOINT"
   if [ -s "$CHECKPOINT_HOST" ]; then
+    if ! ensure_resumable_checkpoint; then
+      echo "Cannot resume: corrupt checkpoint and no valid fallback for $CHECKPOINT_HOST" >&2
+      exit 1
+    fi
     resume="true"
     init_arg=""
   fi

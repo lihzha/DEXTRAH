@@ -15206,3 +15206,17 @@ Smoke follow-up:
   `0.016021` at step 88,449; its latest completed validation is `0.016721` at
   step 108,104. Continue toward fresh 300k/250k/200k periodic checkpoints for
   n50/n100/final respectively.
+
+## 2026-07-02T19:47:00Z Resume Checkpoint Recovery Hardening
+
+- Hardened `cluster/submit_yam_rgb_dp_long_train_a100.sh` so every resumed
+  allocation validates the PyTorch ZIP central directory before submission.
+  If `latest.ckpt` is interrupted, it now searches the run and staged
+  checkpoint trees newest-first, rejects invalid candidates, copies the newest
+  valid fallback through a temporary file, validates the copy, and atomically
+  replaces `latest.ckpt` before launching training.
+- Validation passed `bash -n`, `git diff --check`, and a synthetic recovery
+  test that replaced a deliberately truncated `latest.ckpt` with a valid
+  staged snapshot and then passed `unzip -t`. The already-running submitters
+  retain their immutable launch code; use this hardened revision for their
+  next required recovery restart.
