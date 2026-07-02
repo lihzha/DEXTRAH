@@ -14945,3 +14945,17 @@ Smoke follow-up:
   success/failure termination, and corrected 1 mm oriented containment. It is
   directly comparable with the failed n50 step-100,995 baseline; strict metric
   success plus video inspection remains the acceptance criterion.
+- Job `1094332` completed cleanly in 17:59 and ran all 4,800 steps with no
+  termination, truncation, or reset. Strict success remained `0/1`. It produced
+  a transient grasp/contact signal from step 218, reached `7.783 mm` maximum
+  lift at step 248 and `13.063 mm` maximum XY displacement, but never crossed
+  the sustained-lift gate and immediately lost the object. Minimum hand/object
+  distance was `0.107997 m`; final object displacement was `3.428 mm`.
+- Scene/wrist inspection confirms a centered, visible target and valid camera
+  streams. The gripper approaches off-center, briefly encloses and pushes/lifts
+  the object, then departs toward the bin while the object remains on the
+  table. This is measurable acquisition progress over the no-contact n50 100k
+  baseline, not an eval mismatch and not a pickup success. The external video
+  has 4,799 frames at 1,280x720, 60 fps, and 79.983 s; the sparse two-camera
+  artifact has 42 frames at 1,024x568, 4 fps, and 10.5 s. Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0150267`.
