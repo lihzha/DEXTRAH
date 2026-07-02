@@ -14872,3 +14872,23 @@ Smoke follow-up:
   This leaves the aggregate conclusion unchanged: one confirmed unseeded
   n100 success exists, but deterministic n100 baselines and this early final
   n500 checkpoint do not succeed.
+
+## 2026-07-02T09:08:00Z Final N500 New Best And Timeout Resume
+
+- Final n500 allocation `29743345` completed epoch 6 before wall time at
+  global step 34,397. Epoch-average train loss improved to `0.012648`, and
+  validation loss reached a new best `0.016818`, below the previous best
+  `0.018238`. `latest.ckpt` and
+  `epoch=0006-val_loss=0.016818.ckpt` are each `1,606,334,243` bytes; a full
+  integrity pass checked 1,402 ZIP members with no bad entry.
+- Slurm classified `29743345` as expected `TIMEOUT` after 3:50:21, with a
+  partial-epoch log high-water mark of step 35,766. Persistent submitter PID
+  `1498089` remained alive, recorded the terminal allocation, and submitted
+  replacement job `29748229` with `training.resume=true` from the atomic
+  epoch-6 checkpoint. The new job explicitly logged
+  `Resuming from checkpoint .../latest.ckpt` and produced fresh finite losses.
+- Replacement `29748229` crossed the old unsaved high-water mark at step
+  35,805. This validates checkpoint, optimizer, EMA, scheduler, submitter, and
+  append-log continuity across the A100 wall-time boundary. The repeated
+  partial epoch is expected because only complete epoch snapshots are atomic;
+  no persistent training progress was lost.
