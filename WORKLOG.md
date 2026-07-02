@@ -15166,3 +15166,43 @@ Smoke follow-up:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0103222_seedmatrix_20260702T1900Z/sweep_manifest.tsv`.
   Acceptance requires strict metric success plus visual confirmation for every
   successful arm; scheduler completion alone is not evidence.
+
+## 2026-07-02T19:42:00Z Final N500 Seed Matrix Results And N50 Recovery
+
+- All four added L40S jobs completed cleanly and produced full 4,800-step,
+  no-reset rollouts. Together with the fixed seed-42 baseline, deterministic
+  strict success is `0/5` for final n500 step 103,222. There is still one
+  separate genuine success from the earlier unseeded n100 step-100k rollout;
+  it is not counted as deterministic or robust success.
+
+| Seed | Strict | Maximum lift | Physical outcome |
+| --- | --- | --- | --- |
+| 42 | `0` | `0.169017 m` | grasp, sustained lift, transport, release outside bin |
+| 43 | `0` | `2.83e-7 m` | acquisition miss; object stationary |
+| 44 | `0` | `0.0000456 m` | proximity grasp flag without physical lift |
+| 45 | `0` | `0.019842 m` | near-threshold lift and `0.163 m` XY motion, then miss |
+| 46 | `0` | `0.114627 m` | grasp, sustained lift, transport along bin exterior |
+
+- Aggregate capability is two sustained lifts in five scenes, plus one lift
+  within `0.158 mm` of the 2 cm sustained-lift threshold, but zero valid
+  placements. Seed 46 moved the object up to `0.400576 m` in XY and ended
+  `0.258570 m` from reset; final centered bin margins were
+  `-0.109724/-0.169321 m`. Two-camera frame inspection confirms valid targets,
+  valid wrist observations, real grasp/lift motion, and transport along the
+  outside edge of the bin. The dominant remaining problem is bin-directed
+  transport and placement, with acquisition still scene-dependent.
+- Encoded and verified all four sparse scene/wrist artifacts at 42 frames,
+  1,024x568, 4 fps, and 10.5 s. Their full external videos each contain 4,799
+  frames at 1,280x720 and 79.983 s. Local evidence root:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0103222_seedmatrix_20260702T1900Z_seed{43,44,45,46}`.
+- N50 allocation `29760949` failed on resume because its wall-time-interrupted
+  `latest.ckpt` lacked a ZIP central directory. Restored the independently
+  staged step-200,191 periodic snapshot atomically after validating all 1,402
+  archive members, then launched persistent recovery submitter PID `3234980`
+  and A100 job `29767169`. This discards the corrupt 19.7k-step tail but keeps
+  the 250k periodic monitor active.
+- At this audit, n100 is healthy at step 222,266 / epoch 217 and final n500 is
+  healthy at step 112,279 / epoch 19. Final n500's best validation remains
+  `0.016021` at step 88,449; its latest completed validation is `0.016721` at
+  step 108,104. Continue toward fresh 300k/250k/200k periodic checkpoints for
+  n50/n100/final respectively.
