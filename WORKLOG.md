@@ -15262,3 +15262,15 @@ Smoke follow-up:
   appended finite rows through 244,286 during verification, so only the 210
   unsaved tail updates are replayed. The n100 300k monitor remains armed; no
   below-threshold L40 evaluation was launched.
+
+## 2026-07-02T23:35:00Z N50 Hardened Handoff Toward 250K
+
+- N50 allocation `29767169` timed out normally after 3:50:04 at raw step
+  237,428, below the 250k eval threshold. Its latest complete checkpoint was
+  epoch 459 / step 237,187 with validation loss `0.213550`; it remained
+  size/mtime stable and passed a full 1,402-member ZIP integrity test.
+- Hardened submitter PID `3341595` launched exactly one replacement,
+  `29778882`, which explicitly loaded step 237,187 and appended finite rows
+  through 237,218 during verification. Only 241 unsaved updates are replayed.
+  The hardened L40 monitor remains alive and will require a fresh atomic
+  checkpoint after raw step 250k before submitting the next quality eval.
