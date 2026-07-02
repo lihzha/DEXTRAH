@@ -15220,3 +15220,19 @@ Smoke follow-up:
   staged snapshot and then passed `unzip -t`. The already-running submitters
   retain their immutable launch code; use this hardened revision for their
   next required recovery restart.
+
+## 2026-07-02T19:48:00Z Hardened Submitter Adoption
+
+- A100 cannot authenticate to GitHub, so transferred the complete `f0774f2d`
+  history as a verified Git bundle with SHA-256
+  `6421d72207b83c0629bd30c537a582a95baba0dee7d63f8f3d531a38332c9a0e`.
+  Initial checkout hit the login node thread limit in Git LFS; removed only
+  that incomplete new worktree and recreated it successfully with LFS smudge
+  disabled at
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-ops-recovery-f0774f2d`.
+- Replaced only the three parent submitter shells and adopted their existing
+  Slurm allocations without cancellation or duplicate submission. Hardened
+  submitter PIDs are final n500 `3341593` adopting job `29760103`, n100
+  `3341594` adopting `29764156`, and n50 `3341595` adopting `29767169`.
+  Adoption high-water marks were 112,863, 222,833, and 200,511 respectively;
+  all three GPU jobs remained running continuously.
