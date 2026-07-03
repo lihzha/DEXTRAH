@@ -15274,3 +15274,14 @@ Smoke follow-up:
   through 237,218 during verification. Only 241 unsaved updates are replayed.
   The hardened L40 monitor remains alive and will require a fresh atomic
   checkpoint after raw step 250k before submitting the next quality eval.
+
+## 2026-07-03T00:25:00Z Final N500 Fifth Timeout Recovery
+
+- Final allocation `29769874` timed out normally after 3:50:26 at raw step
+  147,382. Its latest durable checkpoint remained epoch 24 / step 142,501 with
+  validation loss `0.018743`; it was size/mtime stable and passed a full
+  1,402-member ZIP integrity test.
+- Hardened submitter PID `3341593` launched exactly one replacement,
+  `29782319`, which explicitly loaded step 142,501 and appended finite rows
+  through 142,517 during verification. The unsaved 4,881-update tail is being
+  replayed. Final n500 remains below its next 200k periodic eval threshold.
