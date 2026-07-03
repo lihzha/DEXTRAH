@@ -15536,3 +15536,17 @@ Smoke follow-up:
   as a data-scale diagnostic, but prioritize the final n500 300k evaluation for
   policy capability. The only genuine success remains the earlier separate
   unseeded n100 rollout and has not reproduced.
+
+## 2026-07-03T15:57:00Z Final N500 Eighth Timeout Recovery
+
+- Final allocation `29809590` timed out normally after 3:50:26 at raw step
+  269,626, below the 300k evaluation threshold. Its latest durable epoch-45
+  checkpoint was step 265,347 with validation loss `0.0214916803`; all emitted
+  training rows remained finite.
+- Hardened submitter PID `3341593` launched exactly one replacement,
+  `29815896`, on `batch-block4-1017`. It explicitly loaded `latest.ckpt` and
+  appended finite rows from step 265,437, proving correct optimizer/EMA/
+  scheduler resume. The 4,279-update unsaved tail is replaying as intended.
+- L40 monitor PID `662416` remains armed for the first fresh stable checkpoint
+  after 300k and submitted no below-threshold evaluation. Continue final n500;
+  its next closed-loop result is the highest-value pending policy evidence.
