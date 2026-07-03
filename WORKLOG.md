@@ -15721,3 +15721,20 @@ Smoke follow-up:
 - N100 continues toward its 500k periodic evaluation and 600k requested
   diagnostic target. Final n500 job `29819153` remained uninterrupted during
   the submitter repair and continues toward its 400k evaluation threshold.
+
+## 2026-07-04T00:00:00Z Final N500 Tenth Hardened Handoff
+
+- Allocation `29819153` timed out normally after 3:50:12 at raw step 335,509.
+  Its latest durable epoch-57 checkpoint was step 334,141 with validation loss
+  `0.0197991`, leaving a 1,368-update unsaved tail.
+- During the terminal poll, commit `44d2e8d7` bounded five degraded `squeue`
+  calls at 30 seconds instead of blocking indefinitely. Submitter PID `402586`
+  then observed terminal state `TIMEOUT` and submitted exactly one replacement,
+  job `29823503`, at `2026-07-03T23:39:31Z`.
+- Job `29823503` was briefly pending on `QOSMaxJobsPerUserLimit`, started on
+  `batch-block4-1061` after seven seconds, explicitly loaded `latest.ckpt`, and
+  appended finite rows from step 334,141. It has passed the old high-water at
+  step 335,877; optimizer, EMA, scheduler, and checkpoint continuity are
+  healthy.
+- Continue final n500 toward the 400k quality-rendered closed-loop evaluation.
+  N100 job `29821433` remains active toward its separate 500k diagnostic eval.
