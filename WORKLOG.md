@@ -15633,3 +15633,52 @@ Smoke follow-up:
   `step_0304796.ckpt` (`1,606,334,243` bytes). The chunk-1 arm receives a
   four-hour allocation because it invokes diffusion inference eight times as
   often; chunk-8 arms retain the standard 90-minute allocation.
+
+## 2026-07-03T21:18:00Z Final N500 Step-305K Chunk-8 Seed Matrix
+
+- Submitted ordinary L40S jobs `1098370` through `1098373` for paired
+  environment/policy seeds `43` through `46`. All four jobs completed cleanly
+  in 17:24-19:08 with 4,800 uninterrupted steps, no reset, no termination or
+  truncation, valid quality-rendered RGB, and strict success `0/4`.
+- Seeds `43` and `44` left the object stationary, with maximum lifts of
+  `2.83e-7 m` and `2.03e-7 m`. Seeds `45` and `46` contacted and pushed their
+  objects by `0.184289 m` and `0.136146 m`, but reached only `0.002166 m` and
+  `0.006169 m` maximum lift. No arm entered oriented-bin XY containment or
+  produced a bin-drop candidate.
+- The legacy proximity/gripper grasp flag briefly reached one in every arm,
+  but `has_lifted_cube` remained false. Visual inspection confirms this flag
+  represented near-contact/closure and was not a secure physical grasp.
+- Including the seed-42 baseline, this checkpoint is strict `0/5` across
+  seeds `42`-`46`; only seed `42` produced a real grasp and transport. The
+  result establishes emerging but non-robust capability rather than a
+  repeatable placement policy. The dominant distributional failure remains
+  grasp alignment, while seed `42` additionally exposes excessive release
+  velocity after successful transport.
+- Each fetched overview video is 4,799 frames at 1,280x720, 60 fps, and each
+  generated scene/wrist diagnostic is 42 frames at 512x284, 4 fps. Complete
+  local artifacts are under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0304796_sweep_20260703T2050Z_c8_s{43,44,45,46}`;
+  the four-way comparison is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0304796_sweep_20260703T2050Z/chunk8_seed_matrix_scene_wrist.mp4`.
+- Chunk-1 seed-42 job `1098374` remains active to its predeclared 4,800-step
+  horizon. By step 2,920 it had not moved or lifted the object, unlike the
+  chunk-8 baseline, so it is not currently correcting the placement miss.
+
+## 2026-07-03T21:18:00Z A100 Submitter Slurm-Query Hardening
+
+- A100 Slurm status calls temporarily stalled. Both long-training submitters
+  were blocked in unbounded `squeue` command substitutions even though GPU
+  training logs continued to advance. This could have delayed the next
+  timeout handoff.
+- Commit `44d2e8d7` adds configurable `30 s` timeouts around `squeue` and
+  `sacct`, a `60 s` timeout around `sbatch`, and records those settings in the
+  submitter config. Local and deployed `bash -n` checks passed.
+- Deployed the exact commit by verified Git bundle to detached A100 worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-submit-timeout-44d2e8d7-20260703`.
+  The two stale login-node submitter shells were stopped without touching
+  their Slurm jobs.
+- Replacement submitter PIDs `402586` and `402587` adopted final-n500 job
+  `29819153` at step 313,382 and n100 job `29817463` at step 456,238. They
+  retain the immutable training code commit `f0774f2d`, use 1,000 bounded
+  scheduler-query retries, and have since completed repeated status polls.
+  No optimizer, EMA, scheduler, checkpoint, or GPU process was restarted.
