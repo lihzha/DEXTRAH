@@ -15445,3 +15445,23 @@ Smoke follow-up:
 - Submitted ordinary L40S job `1098149`; it started on `pool0-00005`. Scheduler
   log:
   `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_yam_pickplace_rgb_dp_policy_1098149.out`.
+- Job `1098149` completed cleanly in 17:51 and ran all 4,800 steps without
+  termination, truncation, or reset. Strict success was `0/1`. The grasp flag
+  activated at step 313 and the object briefly lifted `0.009574 m` at step
+  315, but it never reached the 2 cm sustained-lift threshold. Maximum object
+  XY movement was `0.032271 m`; the object slipped and remained on the table
+  while the robot executed transport-like motion without it.
+- Synchronized scene/wrist inspection confirms a one-sided partial finger
+  capture rather than a metric artifact. The object is clearly visible at
+  reset and in the wrist stream, enters the fingers around step 240, rises
+  slightly, then slips by step 360. This is a grasp-centering/retention failure,
+  not an eval-train observation mismatch or short horizon.
+- Full external artifact: 4,799 frames, 1,280x720, 60 fps, 79.983 s. Sparse
+  two-camera artifact: 42 frames, 1,024x568, 4 fps, 10.5 s. Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bestval_step0088449_seed42_20260703T0816Z`.
+- Lowest one-step validation loss is therefore not a reliable closed-loop model
+  selector for this run. Step 103,222 remains the strongest deterministic
+  n500 checkpoint by grasp capability (two sustained lifts in five scenes),
+  but it still has zero valid placements. Continue periodic closed-loop model
+  selection as training advances rather than selecting by validation loss
+  alone.
