@@ -15307,3 +15307,14 @@ Smoke follow-up:
   external artifact has 4,799 frames at 1,280x720 and 79.983 s; the sparse
   scene/wrist artifact has 42 frames at 1,024x568 and 10.5 s. Local evidence:
   `cluster_results/l401/yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0250542`.
+
+## 2026-07-03T02:21:00Z N100 Handoff Before 300K
+
+- N100 allocation `29774345` timed out normally after 3:50:22 at raw step
+  282,292, below the 300k eval threshold. Its latest complete checkpoint was
+  epoch 276 / step 282,004 with validation loss `0.076235`; it was stable and
+  passed a full 1,402-member ZIP integrity test.
+- Hardened submitter PID `3341594` launched exactly one replacement,
+  `29787366`, which explicitly loaded step 282,004 and appended finite rows
+  through 282,116 during verification. Only the 288 unsaved tail updates are
+  replayed. The L40 monitor remains armed for a fresh post-300k checkpoint.
