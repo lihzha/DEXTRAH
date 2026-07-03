@@ -15285,3 +15285,25 @@ Smoke follow-up:
   `29782319`, which explicitly loaded step 142,501 and appended finite rows
   through 142,517 during verification. The unsaved 4,881-update tail is being
   replayed. Final n500 remains below its next 200k periodic eval threshold.
+
+## 2026-07-03T01:18:00Z N50 Step-250K Eval Result
+
+- N50 crossed raw step 250k at `00:53 UTC`. Monitor PID `662414` correctly
+  rejected the pre-threshold checkpoint, waited for the fresh epoch-484
+  snapshot, validated and copied it as
+  `periodic_eval_snapshots/step_0250542.ckpt`, and submitted L40S job
+  `1097767`. The initial generic queue watcher filtered on the longer run-name
+  substring and missed Slurm name `yv15n50eval_s0250542`; the durable monitor
+  ledger and explicit job-ID audit confirmed the launch.
+- Job `1097767` completed cleanly in 18:01 and executed one uninterrupted
+  4,800-step episode with no termination or reset. Strict success was `0/1`.
+  Maximum physical lift was only `6.52e-7 m`, maximum object XY movement was
+  `2.46e-6 m`, and minimum hand/object distance was `0.119771 m`. A proximity
+  grasp flag flashed near step 241 but did not correspond to object motion.
+- Two-camera inspection confirms a clearly visible object and valid initial
+  wrist observation. The gripper closes off-center near step 240, misses, then
+  executes transport-like motion without the object. This is an acquisition
+  failure, not an observation, horizon, reset, or containment bug. The full
+  external artifact has 4,799 frames at 1,280x720 and 79.983 s; the sparse
+  scene/wrist artifact has 42 frames at 1,024x568 and 10.5 s. Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0250542`.
