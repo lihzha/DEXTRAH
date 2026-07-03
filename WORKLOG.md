@@ -15329,3 +15329,27 @@ Smoke follow-up:
   launching exactly one replacement, `29788321`. It loaded step 274,343 and
   appended finite rows through 274,416 during verification, replaying only the
   101 unsaved tail updates. N50 now continues to its final 300k target.
+
+## 2026-07-03T04:39:00Z Final Handoff And N100 Step-300K Eval
+
+- Final n500 allocation `29782319` timed out normally after 3:50:00 at raw
+  step 174,398. Its latest complete checkpoint was epoch 29 / step 171,984
+  with validation loss `0.018684`; it was stable and passed a full
+  1,402-member ZIP integrity test. Hardened submitter PID `3341593` launched
+  exactly one replacement, `29789896`, which loaded step 171,984 and appended
+  finite rows through 172,015. The 2,414 unsaved tail updates are replaying.
+- N100 crossed 300k at raw step 300,135. Monitor PID `662415` rejected the
+  pre-threshold checkpoint and one checkpoint observed mid-write, then copied
+  the first stable snapshot as `periodic_eval_snapshots/step_0301079.ckpt` and
+  submitted L40S job `1098072`.
+- Job `1098072` completed cleanly in 18:06 and ran all 4,800 steps without
+  termination or reset. Strict success was `0/1`: no grasp signal, maximum
+  lift `6.52e-7 m`, maximum object XY motion `2.46e-6 m`, and minimum
+  hand/object distance `0.130675 m`.
+- Two-camera inspection shows the target clearly at reset. The gripper closes
+  beside it around step 240, then leaves the object stationary while executing
+  bin-directed motion. This remains acquisition failure, not camera coverage,
+  observation schema, horizon, reset, or containment error. The full external
+  video has 4,799 frames at 1,280x720 and 79.983 s; the sparse scene/wrist clip
+  has 42 frames at 1,024x568 and 10.5 s. Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_bs80_600k_periodic100k_20260701T1916Z_step0301079`.
