@@ -15682,3 +15682,42 @@ Smoke follow-up:
   retain the immutable training code commit `f0774f2d`, use 1,000 bounded
   scheduler-query retries, and have since completed repeated status polls.
   No optimizer, EMA, scheduler, checkpoint, or GPU process was restarted.
+
+## 2026-07-03T21:42:00Z Final N500 Step-305K Chunk-1 Result
+
+- Chunk-1 seed-42 job `1098374` completed cleanly in 52:40 with all 4,800
+  requested steps, no reset, termination, truncation, renderer failure, or
+  logged exception. Strict settled-bin success was `0/1`.
+- The cadence change failed before acquisition: maximum lift was
+  `6.52e-7 m`, maximum XY motion was `2.46e-6 m`, the grasp flag never became
+  active, and minimum hand/object distance was `0.222080 m`. The robot moved
+  away while the object remained at its reset pose.
+- On the identical seed-42 scene and checkpoint, chunk 8 reached
+  `0.129050 m` lift and `0.379503 m` transport before its fast placement miss.
+  Replanning every step therefore does not merely slow this model's release;
+  it discards the later, larger actions needed to complete its approach.
+- The complete predeclared checkpoint/controller sweep is strict `0/6`:
+  chunk-8 seeds `42`-`46` plus chunk-1 seed `42`. Do not expand cadence arms
+  at this checkpoint. Continue training and preserve chunk 8 for periodic
+  comparisons.
+- Fetched overview video is 4,799 frames at 1,280x720 and 60 fps; generated
+  scene/wrist video is 42 frames at 512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0304796_sweep_20260703T2050Z_c1_s42`,
+  with aggregate metrics in the parent sweep directory's `sweep_results.tsv`.
+
+## 2026-07-03T21:42:00Z N100 Seventh Hardened Handoff
+
+- Allocation `29817463` timed out normally after 3:50 at raw step 459,802.
+  Its latest durable epoch-450 checkpoint was step 459,746 with validation
+  loss `0.125991`, leaving only a 56-update unsaved tail.
+- Timeout-bounded submitter PID `402587` required two empty queue polls,
+  observed terminal state `TIMEOUT`, and submitted exactly one replacement,
+  job `29821433`, at `2026-07-03T21:39:47Z`. This is the first live handoff
+  validation of commit `44d2e8d7` after the stalled-`squeue` incident.
+- Replacement job `29821433` started on `batch-block5-03147`, explicitly
+  loaded `latest.ckpt`, appended finite rows from step 459,746, and passed the
+  old 459,802 high-water mark. Optimizer, EMA, scheduler, and checkpoint
+  continuity are healthy.
+- N100 continues toward its 500k periodic evaluation and 600k requested
+  diagnostic target. Final n500 job `29819153` remained uninterrupted during
+  the submitter repair and continues toward its 400k evaluation threshold.
