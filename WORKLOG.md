@@ -15550,3 +15550,16 @@ Smoke follow-up:
 - L40 monitor PID `662416` remains armed for the first fresh stable checkpoint
   after 300k and submitted no below-threshold evaluation. Continue final n500;
   its next closed-loop result is the highest-value pending policy evidence.
+
+## 2026-07-03T18:01:00Z N100 Sixth Hardened Handoff
+
+- N100 allocation `29813340` timed out normally after 3:50:25 at raw step
+  425,840. Hardened submitter PID `3341594` launched exactly one replacement,
+  `29817463`, on `batch-block5-03415`.
+- The replacement explicitly loaded `latest.ckpt` and appended finite rows from
+  step 424,992, replaying an 848-update unsaved tail. It has already passed the
+  old high-water mark and written a fresh step-425,984 checkpoint with
+  validation loss `0.125223`; optimizer, EMA, and scheduler resume remain
+  healthy.
+- N100 continues toward 500k as the requested diagnostic arm. Its 400k fixed-
+  seed eval remains `0/1`; no additional L40 eval is due before 500k.
