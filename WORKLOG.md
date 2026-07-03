@@ -15481,3 +15481,18 @@ Smoke follow-up:
 - L40 monitor PID `662415` remains active and is next due at a fresh atomic
   checkpoint after raw step 400k. No below-threshold or duplicate eval was
   submitted.
+
+## 2026-07-03T12:05:00Z Final N500 Seventh Timeout Recovery
+
+- Final allocation `29801503` timed out normally after 3:50:13 at raw step
+  236,813. Its latest durable epoch-40 checkpoint was step 235,864 with
+  validation loss `0.0194147713`; the checkpoint is full-size and had already
+  supported normal validation/checkpoint completion before timeout.
+- Hardened submitter PID `3341593` launched exactly one replacement,
+  `29809590`, on `batch-block4-1017`. It explicitly loaded `latest.ckpt` and
+  appended finite rows from step 235,946, confirming optimizer/EMA/scheduler
+  resume with only a 949-update unsaved tail to replay.
+- L40 monitor PID `662416` remains active and next requires a fresh atomic
+  checkpoint after raw step 300k. It correctly submitted no below-threshold or
+  duplicate evaluation. Continue long training and periodic closed-loop model
+  selection; no reproducible success has been established yet.
