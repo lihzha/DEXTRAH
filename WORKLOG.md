@@ -15579,3 +15579,34 @@ Smoke follow-up:
   modification time, and is waiting for the first fresh stable epoch
   checkpoint before submitting the corrected 4,800-step quality eval. This is
   the highest-value pending final-policy result.
+
+## 2026-07-03T20:45:00Z Final N500 Step-305K Eval Result
+
+- Monitor PID `662416` copied the first fresh stable post-300k checkpoint as
+  `periodic_eval_snapshots/step_0304796.ckpt` and submitted ordinary L40S job
+  `1098351` from immutable eval commit `f928e60c`.
+- Job `1098351` completed cleanly in 17:57 and ran one uninterrupted
+  4,800-step, quality-rendered episode with no termination, truncation, or
+  reset. Strict settled-bin success was `0/1`.
+- This is the strongest deterministic final-n500 behavior so far. The policy
+  grasped the object, reached `0.129050 m` maximum lift, transported it
+  `0.379503 m` in XY, and carried it over the bin. Minimum hand/object distance
+  was `0.072453 m`; the grasp flag became active at step 203.
+- The released object satisfied corrected oriented-bin XY and Z containment
+  from steps 1,842 through 1,849, but crossed the valid interior too quickly to
+  settle. Linear speed fell from `0.472 m/s` to `0.121 m/s` over that window;
+  when it first fell below the `0.1 m/s` threshold at step 1,850, the object had
+  already left XY containment by `1.89 mm`. It consequently never produced a
+  strict bin-drop candidate and rolled/slid out of the bin.
+- Final object position was `(-0.228627, 0.250439, 0.054608) m`, with
+  `0.013819 m` final lift and `0.107637 m` final XY displacement from reset.
+  The live bin center was approximately `(-0.124876, 0.221782) m`.
+- Full overview video is 4,799 frames at 1,280x720, 60 fps, 79.983 s. The
+  sparse side-by-side scene/wrist video is 42 frames at 1,024x568, 4 fps.
+  Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic100k_step0304796`.
+- This near placement warrants a controlled seed matrix at the same immutable
+  checkpoint before attributing the behavior to robust policy capability. A
+  bounded action-chunk-1 comparison is also justified because exact-overfit
+  chunk-1 control previously corrected transport overshoot, while the old
+  underfit full-dataset chunk-1 test failed for a different acquisition mode.
