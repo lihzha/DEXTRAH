@@ -15407,3 +15407,19 @@ Smoke follow-up:
   `0/5` at step 103,222 and `0/1` at step 201,524. Continue final n500 toward
   the fresh 300k checkpoint and n100 toward 400k while their hardened
   submitters and L40 monitors remain active.
+
+## 2026-07-03T08:12:00Z Final N500 Sixth Timeout Recovery
+
+- Final allocation `29789896` timed out normally after 3:50:01 at raw step
+  205,259. The latest durable checkpoint was the freshly validated epoch-34
+  snapshot at step 201,524 used by eval job `1098128`; the timed-out process
+  emitted only finite training rows through its high-water mark.
+- Hardened submitter PID `3341593` classified the timeout and launched exactly
+  one replacement, A100 job `29801503`, from pinned code `f0774f2d`. The new
+  process explicitly loaded `official_dp_train/checkpoints/latest.ckpt` and
+  appended finite rows from step 201,598, confirming a correct optimizer/EMA/
+  scheduler resume. The unsaved 3,735-update tail is replaying as intended.
+- The informational in-container Git query still reports stale parent
+  worktree metadata, but the wrapper records the correct DEXTRAH code commit
+  and training command, and this warning does not affect imports, checkpoint
+  loading, or training. Continue toward the fresh 300k periodic evaluation.
