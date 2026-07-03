@@ -21,8 +21,10 @@ POLL_SECONDS="${POLL_SECONDS:-60}"
 JOB_NAME="${JOB_NAME:-yam_rgb_dp_train}"
 CODE_COMMIT="${CODE_COMMIT:-}"
 SLURM_QUERY_FAILURE_RETRIES="${SLURM_QUERY_FAILURE_RETRIES:-5}"
+SLURM_QUERY_TIMEOUT_SECONDS="${SLURM_QUERY_TIMEOUT_SECONDS:-30}"
 SBATCH_RETRIES="${SBATCH_RETRIES:-5}"
 SBATCH_RETRY_SECONDS="${SBATCH_RETRY_SECONDS:-60}"
+SBATCH_TIMEOUT_SECONDS="${SBATCH_TIMEOUT_SECONDS:-60}"
 ADOPT_JOB_ID="${ADOPT_JOB_ID:-}"
 SBATCH_EXCLUDE="${SBATCH_EXCLUDE:-}"
 
@@ -63,6 +65,8 @@ payload = {
     "wrapper": "$WRAPPER",
     "max_submissions": int("$MAX_SUBMISSIONS"),
     "poll_seconds": int("$POLL_SECONDS"),
+    "slurm_query_timeout_seconds": int("$SLURM_QUERY_TIMEOUT_SECONDS"),
+    "sbatch_timeout_seconds": int("$SBATCH_TIMEOUT_SECONDS"),
     "adopt_job_id": "$ADOPT_JOB_ID" or None,
     "sbatch_exclude": "$SBATCH_EXCLUDE" or None,
 }
@@ -154,7 +158,7 @@ wait_for_job() {
   local out rc
   while true; do
     set +e
-    out="$(squeue -h -j "$job_id" 2>&1)"
+    out="$(timeout --foreground "$SLURM_QUERY_TIMEOUT_SECONDS" squeue -h -j "$job_id" 2>&1)"
     rc=$?
     set -e
     if [ "$rc" -ne 0 ]; then
@@ -181,7 +185,9 @@ wait_for_job() {
 
 job_state() {
   local job_id="$1"
-  sacct -n -X -j "$job_id" --format=State -P 2>/dev/null | head -1 | tr -d ' ' || true
+  timeout --foreground "$SLURM_QUERY_TIMEOUT_SECONDS" \
+    sacct -n -X -j "$job_id" --format=State -P 2>/dev/null \
+    | head -1 | tr -d ' ' || true
 }
 
 log_has_failure() {
@@ -211,7 +217,7 @@ submit_train_job() {
     fi
     set +e
     out="$(
-      sbatch "${sbatch_args[@]}" \
+      timeout --foreground "$SBATCH_TIMEOUT_SECONDS" sbatch "${sbatch_args[@]}" \
         --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",RUN_NAME="$RUN_NAME",MANIFEST="$MANIFEST",INIT_CHECKPOINT="$init_arg",RESUME="$resume",NUM_EPOCHS="$NUM_EPOCHS",MAX_TRAIN_STEPS="$MAX_TRAIN_STEPS",TOPK_CHECKPOINTS="$TOPK_CHECKPOINTS",BATCH_SIZE="$BATCH_SIZE",VAL_BATCH_SIZE="$VAL_BATCH_SIZE",CODE_COMMIT="$CODE_COMMIT" \
         "$WRAPPER" \
         2>"$err"
