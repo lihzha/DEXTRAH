@@ -15353,3 +15353,30 @@ Smoke follow-up:
   video has 4,799 frames at 1,280x720 and 79.983 s; the sparse scene/wrist clip
   has 42 frames at 1,024x568 and 10.5 s. Local evidence:
   `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_bs80_600k_periodic100k_20260701T1916Z_step0301079`.
+
+## 2026-07-03T06:19:00Z N50 Completion And Final Eval
+
+- N50 crossed its final 300k target and monitor PID `662414` copied the first
+  stable post-threshold snapshot as
+  `periodic_eval_snapshots/step_0300444.ckpt`, then submitted L40S job
+  `1098098`. Since the training workspace continued past the target inside the
+  active allocation, canceled only A100 job `29788321` after the immutable eval
+  snapshot was loaded. Submitter PID `3341595` recorded raw step 300,640,
+  emitted `target_reached`, exited cleanly, and launched no replacement.
+- Job `1098098` completed cleanly in 17:54 and ran all 4,800 steps without
+  termination or reset. Final n50 strict success was `0/1`: maximum lift
+  `6.52e-7 m`, maximum object XY motion `2.46e-6 m`, minimum hand/object
+  distance `0.118614 m`, and only a transient proximity grasp flag near step
+  234.
+- Two-camera inspection confirms a visible target and valid wrist stream. The
+  gripper again closes off-center, misses without moving the object, and then
+  executes transport-like motion alone. N50 therefore finishes as an overfit
+  data-scale diagnostic with no reproducible success. Full external video:
+  4,799 frames at 1,280x720 / 79.983 s; sparse scene/wrist clip: 42 frames at
+  1,024x568 / 10.5 s. Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n50_bs80_300k_periodic50k_20260701T1813Z_step0300444`.
+- During the eval, n100 allocation `29787366` timed out normally at raw step
+  319,159. Its stable epoch-312 checkpoint at step 318,744 with validation
+  `0.085483` passed all 1,402 ZIP members. Hardened submitter PID `3341594`
+  launched exactly one replacement, `29794881`, which loaded step 318,744 and
+  appended finite rows through 318,823; 415 unsaved updates are replaying.
