@@ -15380,3 +15380,30 @@ Smoke follow-up:
   `0.085483` passed all 1,402 ZIP members. Hardened submitter PID `3341594`
   launched exactly one replacement, `29794881`, which loaded step 318,744 and
   appended finite rows through 318,823; 415 unsaved updates are replaying.
+
+## 2026-07-03T07:56:00Z Final N500 Step-201K Eval Result
+
+- Final n500 crossed raw step 200k and hardened L40 monitor PID `662416`
+  rejected the pre-threshold checkpoint until epoch 34 finished. It validated
+  and copied the first fresh stable checkpoint as
+  `periodic_eval_snapshots/step_0201524.ckpt`, then submitted L40S job
+  `1098128` from immutable eval commit `f928e60c`.
+- Job `1098128` completed cleanly in 17:56 and ran one uninterrupted 4,800-step
+  episode with no termination, truncation, or reset. Strict success was `0/1`.
+  Maximum lift was `0.0000733 m`, maximum object XY movement was
+  `0.0012666 m`, minimum hand/object distance was `0.109339 m`, and the grasp
+  metric only flashed transiently without a physical grasp.
+- Scene/wrist frame inspection shows a clearly visible target at reset. The
+  gripper approaches and closes beside the object around step 240, nudges it
+  slightly, then leaves it on the table while executing transport-like motion.
+  This is an acquisition failure, not an RGB stream, observation schema,
+  episode-horizon, reset, or containment bug.
+- The full external artifact is valid at 4,799 frames, 1,280x720, 60 fps, and
+  79.983 s. The encoded sparse two-camera artifact is valid at 42 frames,
+  1,024x568, 4 fps, and 10.5 s. Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic100k_step0201524`.
+- No new success is established. The only genuine success remains the earlier
+  unseeded n100 step-100k rollout; deterministic final n500 outcomes remain
+  `0/5` at step 103,222 and `0/1` at step 201,524. Continue final n500 toward
+  the fresh 300k checkpoint and n100 toward 400k while their hardened
+  submitters and L40 monitors remain active.
