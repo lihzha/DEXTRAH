@@ -15496,3 +15496,18 @@ Smoke follow-up:
   checkpoint after raw step 300k. It correctly submitted no below-threshold or
   duplicate evaluation. Continue long training and periodic closed-loop model
   selection; no reproducible success has been established yet.
+
+## 2026-07-03T13:57:00Z N100 Fifth Hardened Handoff
+
+- N100 allocation `29804877` timed out normally after 3:50:23 at raw step
+  388,231, still below the 400k evaluation threshold. Its latest durable
+  checkpoint was step 387,259 / epoch 379 with validation loss `0.107386`, and
+  all emitted training rows remained finite.
+- Hardened submitter PID `3341594` launched exactly one replacement,
+  `29813340`, on `batch-block5-03734`. It explicitly loaded `latest.ckpt` and
+  appended finite rows from step 387,293, proving optimizer/EMA/scheduler
+  resume with a 972-update tail replay.
+- L40 monitor PID `662415` remains active for a fresh atomic checkpoint after
+  400k and correctly submitted no below-threshold evaluation. N100 remains an
+  overfit diagnostic arm; final-policy selection continues to prioritize n500
+  periodic closed-loop results.
