@@ -15563,3 +15563,19 @@ Smoke follow-up:
   healthy.
 - N100 continues toward 500k as the requested diagnostic arm. Its 400k fixed-
   seed eval remains `0/1`; no additional L40 eval is due before 500k.
+
+## 2026-07-03T20:00:00Z Final N500 Ninth Handoff And 300K Threshold
+
+- Final allocation `29815896` timed out normally after 3:50:18 at raw step
+  299,972, only 28 updates below the 300k threshold. Hardened submitter PID
+  `3341593` launched exactly one replacement, `29819153`, on
+  `batch-block4-1017`.
+- The replacement explicitly loaded the fresh epoch-51 `latest.ckpt` and
+  appended finite rows from step 299,887, replaying only an 85-update unsaved
+  tail. The latest completed validation row is step 299,744 with loss
+  `0.0175256748`; optimizer, EMA, and scheduler resume are healthy.
+- Replacement training crossed 300k at raw step 300,106. L40 monitor PID
+  `662416` latched the threshold, rejected the pre-threshold checkpoint by
+  modification time, and is waiting for the first fresh stable epoch
+  checkpoint before submitting the corrected 4,800-step quality eval. This is
+  the highest-value pending final-policy result.
