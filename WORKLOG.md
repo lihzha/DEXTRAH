@@ -15465,3 +15465,19 @@ Smoke follow-up:
   but it still has zero valid placements. Continue periodic closed-loop model
   selection as training advances rather than selecting by validation loss
   alone.
+
+## 2026-07-03T10:05:00Z N100 Fourth Hardened Handoff
+
+- N100 allocation `29794881` timed out normally after 3:50:21 at raw step
+  351,909. Its fresh latest checkpoint was step 351,512 / epoch 344 with
+  validation loss `0.105327`; all emitted training rows were finite. The
+  increasing validation loss continues to identify n100 as an overfit
+  data-scale diagnostic rather than the preferred final model.
+- Hardened submitter PID `3341594` launched exactly one replacement,
+  `29804877`, after its intentional post-job settle window. The replacement
+  started on `batch-block5-03706`, explicitly loaded `latest.ckpt`, and
+  appended finite rows from step 351,570. Only the 397-update unsaved tail is
+  replaying; optimizer, EMA, and scheduler state resumed correctly.
+- L40 monitor PID `662415` remains active and is next due at a fresh atomic
+  checkpoint after raw step 400k. No below-threshold or duplicate eval was
+  submitted.
