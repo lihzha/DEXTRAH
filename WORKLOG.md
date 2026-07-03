@@ -15610,3 +15610,26 @@ Smoke follow-up:
   bounded action-chunk-1 comparison is also justified because exact-overfit
   chunk-1 control previously corrected transport overshoot, while the old
   underfit full-dataset chunk-1 test failed for a different acquisition mode.
+
+## 2026-07-03T20:50:00Z Final N500 Step-305K Controlled Eval Sweep Plan
+
+- Hypothesis: the seed-42 baseline demonstrates real pick/transport capability,
+  but strict placement may either be seed-sensitive or limited by executing
+  eight predicted actions before replanning. Hold checkpoint, scene protocol,
+  model sampling seed pairing, horizon, rendering, and metric fixed while
+  varying only the declared sweep factors.
+- Baseline is the completed chunk-8 seed-42 job `1098351`. New ordinary L40S
+  arms are chunk 8 with seeds `43`, `44`, `45`, and `46`, plus chunk 1 with
+  seed `42`. Each arm runs one uninterrupted 4,800-step episode with quality
+  RGB, 4,800-frame overview video, sparse dual-camera diagnostics, disabled
+  task failure/success termination, and corrected settled-bin scoring.
+- Primary metric is strict settled-bin success. Diagnostics are acquisition,
+  maximum lift, XY transport, oriented-bin containment duration, release
+  speed, closest hand/object distance, resets, and video integrity. Stop this
+  checkpoint sweep after the five predeclared arms; expand only if an arm
+  succeeds or reveals a materially different, actionable failure mode.
+- Immutable inputs: eval commit
+  `f928e60ce01098b388079f21c927438aa744ca15` and checkpoint
+  `step_0304796.ckpt` (`1,606,334,243` bytes). The chunk-1 arm receives a
+  four-hour allocation because it invokes diffusion inference eight times as
+  often; chunk-8 arms retain the standard 90-minute allocation.
