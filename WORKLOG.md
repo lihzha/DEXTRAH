@@ -15318,3 +15318,14 @@ Smoke follow-up:
   `29787366`, which explicitly loaded step 282,004 and appended finite rows
   through 282,116 during verification. Only the 288 unsaved tail updates are
   replayed. The L40 monitor remains armed for a fresh post-300k checkpoint.
+
+## 2026-07-03T03:28:00Z N50 Final-Target Handoff
+
+- N50 allocation `29778882` timed out normally after 3:50:01 at raw step
+  274,444. Its latest complete checkpoint was epoch 531 / step 274,343 with
+  validation loss `0.260679`; it was stable and passed a full 1,402-member ZIP
+  integrity test.
+- Hardened submitter PID `3341595` spent the expected validation window before
+  launching exactly one replacement, `29788321`. It loaded step 274,343 and
+  appended finite rows through 274,416 during verification, replaying only the
+  101 unsaved tail updates. N50 now continues to its final 300k target.
