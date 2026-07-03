@@ -15511,3 +15511,28 @@ Smoke follow-up:
   400k and correctly submitted no below-threshold evaluation. N100 remains an
   overfit diagnostic arm; final-policy selection continues to prioritize n500
   periodic closed-loop results.
+
+## 2026-07-03T15:36:00Z N100 Step-400K Eval Result
+
+- N100 crossed raw step 400k and monitor PID `662415` latched step 400,006,
+  rejected the stale pre-threshold checkpoint, then validated and copied the
+  first fresh stable snapshot as
+  `periodic_eval_snapshots/step_0400167.ckpt`. It submitted ordinary L40S job
+  `1098258` from immutable eval commit `f928e60c`.
+- Job `1098258` completed cleanly in 17:56 and ran one uninterrupted 4,800-step
+  episode with no termination, truncation, or reset. Strict success was `0/1`:
+  no grasp flag, maximum lift `6.52e-7 m`, maximum object XY movement
+  `2.46e-6 m`, and minimum hand/object distance `0.164206 m`.
+- Two-camera inspection confirms a clearly visible object in both the scene and
+  wrist observations during approach. The gripper passes to the object's right
+  and closes without contact, then executes post-grasp motion while the object
+  remains stationary. This is a learned acquisition failure, not an eval-train
+  observation, reset, containment, or horizon mismatch.
+- Full external artifact: 4,799 frames, 1,280x720, 60 fps, 79.983 s. Sparse
+  two-camera artifact: 42 frames, 1,024x568, 4 fps, 10.5 s. Local evidence:
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_bs80_600k_periodic100k_20260701T1916Z_step0400167`.
+- N100 fixed-seed evaluations remain unsuccessful through 100k, 132k, 200k,
+  300k, and 400k checkpoints. Continue n100 to its requested 600k target
+  as a data-scale diagnostic, but prioritize the final n500 300k evaluation for
+  policy capability. The only genuine success remains the earlier separate
+  unseeded n100 rollout and has not reproduced.
