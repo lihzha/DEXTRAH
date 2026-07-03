@@ -15423,3 +15423,22 @@ Smoke follow-up:
   worktree metadata, but the wrapper records the correct DEXTRAH code commit
   and training command, and this warning does not affect imports, checkpoint
   loading, or training. Continue toward the fresh 300k periodic evaluation.
+
+## 2026-07-03T08:16:00Z Final N500 Best-Validation Retrospective Eval Plan
+
+- The final n500 validation minimum remains `0.0160207991` at epoch 15 / step
+  88,449, while the deterministic step-201,524 checkpoint regressed to an
+  acquisition miss at validation `0.0201790147`. The best-validation checkpoint
+  has not been evaluated under the corrected containment and uninterrupted
+  long-horizon protocol, so it is the most informative idle-L40 comparison.
+- Validated all 1,402 ZIP members in source checkpoint
+  `epoch=0015-val_loss=0.016021.ckpt` and in immutable copy
+  `retrospective_eval_snapshots/bestval_epoch0015_step0088449.ckpt`; the copy is
+  1,606,334,243 bytes. The intended eval uses immutable commit `f928e60c`,
+  scene/DDPM seed 42, one 4,800-step no-reset episode, action chunk 8, both RGB
+  cameras, 1 mm oriented containment, quality rendering, and full video.
+- Planned run name:
+  `yam_rgb_dp_stateobs_v16_n500_bestval_step0088449_seed42_20260703T0816Z`.
+  Acceptance requires strict bin placement plus visual confirmation; a grasp
+  or lift without containment is not success. Long n500/n100 training remains
+  independent and continues during this retrospective eval.
