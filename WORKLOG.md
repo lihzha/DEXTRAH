@@ -15442,3 +15442,6 @@ Smoke follow-up:
   Acceptance requires strict bin placement plus visual confirmation; a grasp
   or lift without containment is not success. Long n500/n100 training remains
   independent and continues during this retrospective eval.
+- Submitted ordinary L40S job `1098149`; it started on `pool0-00005`. Scheduler
+  log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_yam_pickplace_rgb_dp_policy_1098149.out`.
