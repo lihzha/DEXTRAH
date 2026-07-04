@@ -15929,3 +15929,28 @@ Smoke follow-up:
 - Fetched overview video is 4,799 frames at 1,280x720 and 60 fps; generated
   scene/wrist video is 42 frames at 512x284 and 4 fps. Local evidence is under
   `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_bs80_600k_periodic100k_20260701T1916Z_step0600789`.
+
+## 2026-07-04T14:57:00Z Final N500 Step-452K Eval Result
+
+- Final n500 crossed the tightened 450k threshold at raw step 450,055. Monitor
+  PID `3976525` rejected the stale step-447,159 checkpoint, waited for the
+  fresh epoch-77 checkpoint (`global_step=452073`, `val_loss=0.0248561`), and
+  submitted L40S job `1098722` from snapshot `step_0452194.ckpt`.
+- Job `1098722` completed all 4,800 requested dynamics steps without reset,
+  termination, truncation, renderer loss, or logged exception. Strict
+  settled-bin success was `0/1`.
+- The policy briefly bracketed and tipped the object but did not secure a
+  transport grasp: maximum lift was `0.013687 m` at step 233, maximum XY
+  displacement was `0.049238 m`, minimum hand/object distance was
+  `0.095476 m`, `has_lifted_cube` remained false, and there was no oriented-bin
+  containment or drop candidate.
+- Dual-camera inspection confirms the object is visible at reset, is tipped
+  near step 240, is released back onto the table by step 360, and remains
+  there while the robot wanders away. Both RGB streams rendered correctly and
+  the scene camera retained the task throughout, so this is policy behavior,
+  not an observation, reset, or horizon mismatch.
+- Fetched overview video is 4,799 frames at 1,280x720 and 60 fps; generated
+  scene/wrist video is 42 frames at 512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0452194`.
+- Preserve step 304,796 as the current behavioral best. Continue final n500
+  toward the next 500k gate under the 50k evaluation cadence.
