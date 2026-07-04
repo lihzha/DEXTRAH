@@ -15969,3 +15969,18 @@ Smoke follow-up:
   remain healthy.
 - Continue final n500 toward the 500k policy-selection gate under monitor PID
   `3976525`; its ledger contains the completed step-452,194 eval exactly once.
+
+## 2026-07-04T19:36:00Z Final N500 Fifteenth Hardened Handoff
+
+- Allocation `29845146` timed out normally at raw step 475,077. Its latest
+  durable epoch-80 checkpoint was step 471,728 with validation loss
+  `0.0207929`, leaving a 3,349-update unsaved tail.
+- Timeout-bounded submitter PID `402586` observed terminal state `TIMEOUT` and
+  submitted exactly one replacement, job `29849255`, at
+  `2026-07-04T19:00:10Z`.
+- Job `29849255` started on `batch-block7-03162`, explicitly loaded
+  `latest.ckpt`, appended finite rows from step 471,728, and passed the old
+  high-water at step 475,586. Optimizer, EMA, scheduler, and checkpoint resume
+  remain healthy.
+- Continue final n500 toward the 500k policy-selection gate under monitor PID
+  `3976525`.
