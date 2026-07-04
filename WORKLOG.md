@@ -15984,3 +15984,27 @@ Smoke follow-up:
   remain healthy.
 - Continue final n500 toward the 500k policy-selection gate under monitor PID
   `3976525`.
+
+## 2026-07-04T22:52:00Z Final N500 Step-501K Eval Result
+
+- Final n500 crossed raw step 500k at step 500,125. Monitor PID `3976525`
+  rejected the stale step-496,297 checkpoint, waited for the fresh epoch-85
+  checkpoint (`global_step=501211`, `val_loss=0.0247143`), and submitted L40S
+  job `1098912` from snapshot `step_0501219.ckpt`.
+- Job `1098912` completed all 4,800 requested dynamics steps without reset,
+  termination, truncation, renderer loss, or logged exception. Strict
+  settled-bin success was `0/1`.
+- This checkpoint again produced only a brief tip/partial grasp: maximum lift
+  was `0.008935 m` at step 262, maximum XY displacement was `0.030860 m`,
+  minimum hand/object distance was `0.095056 m`, `has_lifted_cube` remained
+  false, and there was no oriented-bin containment or drop candidate.
+- Dual-camera inspection shows the gripper bracket and nudge the object near
+  step 240, lose it by step 360, and then wander away while the object remains
+  visible and stationary on the table. Both RGB streams rendered correctly;
+  this remains an acquisition-policy failure rather than an observation,
+  reset, or horizon mismatch.
+- Fetched overview video is 4,799 frames at 1,280x720 and 60 fps; generated
+  scene/wrist video is 42 frames at 512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0501219`.
+- Preserve step 304,796 as the current behavioral best. Continue final n500
+  toward the next 550k gate under the 50k evaluation cadence.
