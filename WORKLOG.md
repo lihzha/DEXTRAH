@@ -15824,3 +15824,31 @@ Smoke follow-up:
 - Continue toward raw step 400k and the first fresh stable post-threshold
   checkpoint, expected near step 402,936. Monitor PID `662416` remains the
   authority for launching the corrected 4,800-step L40S eval.
+
+## 2026-07-04T09:06:00Z Final N500 Step-403K Eval Result
+
+- Final n500 crossed raw step 400k at step 400,044. Monitor PID `662416`
+  rejected the stale step-398,020 checkpoint through step 402,918, then copied
+  the first fresh stable epoch-68 checkpoint as
+  `periodic_eval_snapshots/step_0403044.ckpt` and submitted ordinary L40S job
+  `1098675` from immutable eval commit `f928e60c`. Checkpoint validation loss
+  was `0.0217651`.
+- Job `1098675` completed cleanly in 17:41 with all 4,800 requested steps, no
+  reset, termination, truncation, renderer loss, or logged exception. Strict
+  settled-bin success was `0/1`.
+- The policy made contact but did not secure the object: maximum lift
+  `0.002393 m` at step 244, maximum XY displacement `0.018280 m`, minimum
+  hand/object distance `0.091237 m`, no oriented-bin containment, and no drop
+  candidate. The proximity/gripper grasp flag first activated at step 197 but
+  did not correspond to a sustained physical grasp.
+- Dual-camera inspection at steps 240 and 360 shows the fingers bracketing and
+  tipping the object, then losing it while the robot moves toward the bin.
+  Compared on the same seed-42 protocol, this is worse than the step-304,796
+  checkpoint's full grasp and transport, demonstrating non-monotonic
+  closed-loop capability despite continued loss optimization.
+- Fetched overview video is 4,799 frames at 1,280x720 and 60 fps; generated
+  scene/wrist video is 42 frames at 512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic100k_step0403044`.
+- Continue the requested long training and periodic evaluation. Preserve the
+  step-304,796 checkpoint as the current behavioral best even though its
+  strict result was also `0/1`.
