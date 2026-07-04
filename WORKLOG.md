@@ -15778,3 +15778,18 @@ Smoke follow-up:
   scene/wrist video is 42 frames at 512x284 and 4 fps. Local artifacts are
   under
   `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_bs80_600k_periodic100k_20260701T1916Z_step0500497`.
+
+## 2026-07-04T03:38:00Z Final N500 Eleventh Hardened Handoff
+
+- Allocation `29823503` timed out normally at raw step 368,886. Its latest
+  durable epoch-63 checkpoint was step 368,538 with validation loss
+  `0.0213078`, leaving a 348-update unsaved tail.
+- Timeout-bounded submitter PID `402586` absorbed repeated stalled `squeue`
+  calls, observed terminal state `TIMEOUT`, and submitted exactly one
+  replacement, job `29827109`, at `2026-07-04T03:32:00Z`.
+- Job `29827109` started on `batch-block1-0101` in `batch_single`, explicitly
+  loaded `latest.ckpt`, appended finite rows from step 368,538, and passed the
+  old high-water at step 369,017. Optimizer, EMA, scheduler, and checkpoint
+  continuity remain healthy.
+- Continue final n500 toward the 400k quality-rendered closed-loop evaluation;
+  no additional checkpoint-305k cadence or seed arms are warranted.
