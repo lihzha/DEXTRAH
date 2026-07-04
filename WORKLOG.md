@@ -15808,3 +15808,19 @@ Smoke follow-up:
   remain healthy.
 - Continue n100 to its requested 600k endpoint. Its fixed-seed 500k eval is
   already archived as `0/1`; final-policy selection remains with n500.
+
+## 2026-07-04T07:46:00Z Final N500 Twelfth Hardened Handoff
+
+- Allocation `29827109` timed out normally at raw step 395,156. Its latest
+  durable epoch-67 checkpoint was step 393,107 with validation loss
+  `0.0236677`, leaving a 2,049-update unsaved tail.
+- Timeout-bounded submitter PID `402586` absorbed repeated stalled `squeue`
+  calls, observed terminal state `TIMEOUT`, and submitted exactly one
+  replacement, job `29835772`, at `2026-07-04T07:23:55Z`.
+- Job `29835772` started on `batch-block7-03335` in `polar3`, explicitly loaded
+  `latest.ckpt`, appended finite rows from step 393,107, and passed the old
+  high-water at step 395,295. Optimizer, EMA, scheduler, and checkpoint resume
+  remain healthy.
+- Continue toward raw step 400k and the first fresh stable post-threshold
+  checkpoint, expected near step 402,936. Monitor PID `662416` remains the
+  authority for launching the corrected 4,800-step L40S eval.
