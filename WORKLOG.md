@@ -15902,3 +15902,30 @@ Smoke follow-up:
   remain healthy.
 - Continue toward the tightened final-policy 450k eval gate under monitor PID
   `3976525`.
+
+## 2026-07-04T13:25:00Z N100 Endpoint And Step-601K Eval
+
+- N100 allocation `29838872` reached raw step 601,545 before timing out. The
+  trainer crossed the requested 600k target within its final epoch and stopped
+  at the allocation boundary; submitter PID `402587` then emitted
+  `target_reached step=601545 target=600000` and exited without launching an
+  unnecessary replacement.
+- Final durable epoch-588 checkpoint was step 600,748 with validation loss
+  `0.142981`. Monitor PID `662415` latched 600k at step 600,086, waited through
+  the stale checkpoint, copied fresh snapshot `step_0600789.ckpt`, submitted
+  ordinary L40S endpoint eval `1098705`, and exited after `target_seen`.
+- Job `1098705` completed cleanly in 17:36 with all 4,800 requested steps, no
+  reset, termination, truncation, renderer loss, or logged exception. Strict
+  settled-bin success was `0/1`.
+- Endpoint behavior was a short partial grasp/tip rather than transport:
+  maximum lift `0.012418 m` at step 260, maximum XY displacement `0.041554 m`
+  at step 272, minimum hand/object distance `0.115052 m`, and no bin
+  containment or drop candidate. The object was back on the table by the
+  step-360 inspection frame while the robot moved away.
+- N100 is now closed at its requested endpoint. Its fixed-seed checkpoints
+  through 600k produced no strict success; the separate historical unseeded
+  success did not reproduce. Do not spend further A100 or L40S budget on this
+  small-data arm.
+- Fetched overview video is 4,799 frames at 1,280x720 and 60 fps; generated
+  scene/wrist video is 42 frames at 512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_bs80_600k_periodic100k_20260701T1916Z_step0600789`.
