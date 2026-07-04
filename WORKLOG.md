@@ -15793,3 +15793,18 @@ Smoke follow-up:
   continuity remain healthy.
 - Continue final n500 toward the 400k quality-rendered closed-loop evaluation;
   no additional checkpoint-305k cadence or seed arms are warranted.
+
+## 2026-07-04T05:30:00Z N100 Ninth Hardened Handoff
+
+- Allocation `29824928` timed out normally at raw step 528,662. Its latest
+  durable epoch-517 checkpoint was step 528,261 with validation loss
+  `0.145140`, leaving a 401-update unsaved tail.
+- Timeout-bounded submitter PID `402587` absorbed several stalled `squeue`
+  calls, observed terminal state `TIMEOUT`, and submitted exactly one
+  replacement, job `29831306`, at `2026-07-04T05:23:07Z`.
+- Job `29831306` started on `batch-block7-03139`, explicitly loaded
+  `latest.ckpt`, appended finite rows from step 528,261, and passed the old
+  high-water at step 528,856. Optimizer, EMA, scheduler, and checkpoint resume
+  remain healthy.
+- Continue n100 to its requested 600k endpoint. Its fixed-seed 500k eval is
+  already archived as `0/1`; final-policy selection remains with n500.
