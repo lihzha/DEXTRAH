@@ -15852,3 +15852,22 @@ Smoke follow-up:
 - Continue the requested long training and periodic evaluation. Preserve the
   step-304,796 checkpoint as the current behavioral best even though its
   strict result was also `0/1`.
+
+## 2026-07-04T09:12:00Z Final N500 Eval Cadence Tightening
+
+- The seed-42 closed-loop behavior regressed from full grasp/transport at step
+  304,796 to a tipped-object acquisition miss at step 403,044. Because policy
+  capability is non-monotonic between checkpoints, 100k evaluation spacing is
+  too coarse for reliable behavioral checkpoint selection.
+- Stopped only old final monitor PID `662416` after its 400k submission had
+  completed. Preserved its four-row submitted-eval ledger and started monitor
+  PID `3976525` with `EVAL_EVERY_STEPS=50000` under the same immutable eval
+  commit `f928e60c`, quality rendering, 4,800-step horizon, chunk 8, and strict
+  metric protocol.
+- New monitor name is
+  `yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z`.
+  Startup resumed with `last_submitted_step=403044` and
+  `next_threshold=450000`, proving no duplicate historical eval will launch.
+- N100 remains on 100k cadence because its fixed-seed behavior has already
+  saturated through 500k. The 50k cadence applies only to final n500 policy
+  selection.
