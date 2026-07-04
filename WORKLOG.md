@@ -16008,3 +16008,18 @@ Smoke follow-up:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0501219`.
 - Preserve step 304,796 as the current behavioral best. Continue final n500
   toward the next 550k gate under the 50k evaluation cadence.
+
+## 2026-07-04T23:21:00Z Final N500 Sixteenth Hardened Handoff
+
+- Allocation `29849255` timed out normally at raw step 504,229. Its latest
+  durable epoch-85 checkpoint was step 501,211 with validation loss
+  `0.0247143`, leaving a 3,018-update unsaved tail.
+- Timeout-bounded submitter PID `402586` observed terminal state `TIMEOUT` and
+  submitted exactly one replacement, job `29856435`, at
+  `2026-07-04T22:52:20Z`.
+- Job `29856435` started on `batch-block5-01178`, explicitly loaded
+  `latest.ckpt`, appended finite rows from step 501,211, and passed the old
+  high-water at step 504,821. Optimizer, EMA, scheduler, and checkpoint resume
+  remain healthy.
+- Continue final n500 toward the 550k policy-selection gate under monitor PID
+  `3976525`.
