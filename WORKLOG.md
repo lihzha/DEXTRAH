@@ -15738,3 +15738,20 @@ Smoke follow-up:
   healthy.
 - Continue final n500 toward the 400k quality-rendered closed-loop evaluation.
   N100 job `29821433` remains active toward its separate 500k diagnostic eval.
+
+## 2026-07-04T01:37:00Z N100 Eighth Hardened Handoff
+
+- Allocation `29821433` timed out normally at step 492,514. It completed
+  epoch-482 validation immediately before timeout, writing a durable checkpoint
+  at the same step with validation loss `0.129267`; there was effectively no
+  unsaved training tail.
+- Timeout-bounded submitter PID `402587` absorbed repeated 30-second `squeue`
+  timeouts, observed terminal state `TIMEOUT`, and submitted exactly one
+  replacement, job `29824928`, at `2026-07-04T01:31:28Z`.
+- Job `29824928` started on `batch-block5-03631`, explicitly loaded
+  `latest.ckpt`, appended finite rows from step 492,514, and has passed the old
+  high-water at step 493,046. Optimizer, EMA, scheduler, and checkpoint resume
+  remain healthy.
+- Continue n100 to the 500k threshold. Monitor PID `662415` must wait for the
+  first fresh stable post-threshold checkpoint before launching the next
+  4,800-step L40S quality eval.
