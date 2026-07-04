@@ -15871,3 +15871,19 @@ Smoke follow-up:
 - N100 remains on 100k cadence because its fixed-seed behavior has already
   saturated through 500k. The 50k cadence applies only to final n500 policy
   selection.
+
+## 2026-07-04T09:22:00Z N100 Tenth Hardened Handoff
+
+- Allocation `29831306` timed out normally at raw step 564,062. Its latest
+  durable epoch-552 checkpoint was step 564,008 with validation loss
+  `0.147428`, leaving only a 54-update unsaved tail.
+- Timeout-bounded submitter PID `402587` absorbed repeated stalled `squeue`
+  calls, observed terminal state `TIMEOUT`, and submitted exactly one
+  replacement, job `29838872`, at `2026-07-04T09:14:51Z`.
+- Job `29838872` started on `batch-block5-03734`, explicitly loaded
+  `latest.ckpt`, appended finite rows from step 564,008, and passed the old
+  high-water at step 564,757. Optimizer, EMA, scheduler, and checkpoint resume
+  remain healthy.
+- Continue this diagnostic arm to its requested 600k endpoint. Its fixed-seed
+  500k eval is already `0/1`, so no policy-selection decision depends on this
+  handoff.
