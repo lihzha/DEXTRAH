@@ -15887,3 +15887,18 @@ Smoke follow-up:
 - Continue this diagnostic arm to its requested 600k endpoint. Its fixed-seed
   500k eval is already `0/1`, so no policy-selection decision depends on this
   handoff.
+
+## 2026-07-04T11:43:00Z Final N500 Thirteenth Hardened Handoff
+
+- Allocation `29835772` timed out normally at raw step 425,085. Its latest
+  durable epoch-72 checkpoint was step 422,590 with validation loss
+  `0.0245711`, leaving a 2,495-update unsaved tail.
+- Timeout-bounded submitter PID `402586` absorbed stalled `squeue` calls,
+  observed terminal state `TIMEOUT`, and submitted exactly one replacement,
+  job `29842426`, at `2026-07-04T11:16:16Z`.
+- Job `29842426` started on `batch-block7-03057` in `polar3`, explicitly loaded
+  `latest.ckpt`, appended finite rows from step 422,590, and passed the old
+  high-water at step 425,287. Optimizer, EMA, scheduler, and checkpoint resume
+  remain healthy.
+- Continue toward the tightened final-policy 450k eval gate under monitor PID
+  `3976525`.
