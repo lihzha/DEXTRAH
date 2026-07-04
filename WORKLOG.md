@@ -15755,3 +15755,26 @@ Smoke follow-up:
 - Continue n100 to the 500k threshold. Monitor PID `662415` must wait for the
   first fresh stable post-threshold checkpoint before launching the next
   4,800-step L40S quality eval.
+
+## 2026-07-04T02:43:00Z N100 Step-500K Eval Result
+
+- N100 crossed raw step 500k at step 500,169. Monitor PID `662415` rejected
+  the stale pre-threshold checkpoint for two polls, then copied the first fresh
+  stable snapshot as `periodic_eval_snapshots/step_0500497.ckpt` and submitted
+  ordinary L40S job `1098557` from immutable eval commit `f928e60c`.
+- Job `1098557` completed cleanly in 17:53 and ran one uninterrupted
+  4,800-step quality-rendered episode with no reset, termination, truncation,
+  renderer loss, or logged exception. Strict settled-bin success was `0/1`.
+- This was another acquisition miss: maximum lift `6.52e-7 m`, maximum object
+  XY motion `2.46e-6 m`, no grasp flag, no bin containment, and minimum
+  hand/object distance `0.163688 m`. The gripper approached on the object's
+  right, closed beside it, and executed later motion while the object remained
+  at its reset pose.
+- N100 fixed-seed evaluations remain unsuccessful through approximately 100k,
+  132k, 200k, 300k, 400k, and 500k. Continue to its requested 600k endpoint,
+  but do not treat the small-data arm as a final-policy candidate. The earlier
+  separate unseeded n100 success remains genuine but non-reproducible.
+- Fetched overview video is 4,799 frames at 1,280x720 and 60 fps; generated
+  scene/wrist video is 42 frames at 512x284 and 4 fps. Local artifacts are
+  under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v15_n100_bs80_600k_periodic100k_20260701T1916Z_step0500497`.
