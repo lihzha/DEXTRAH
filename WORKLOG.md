@@ -16276,3 +16276,32 @@ Smoke follow-up:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0638798_exact_val_src*_seed43_20260705T1741Z`.
   Current A100 training is healthy at raw step 646,956 and continues toward the
   fresh 650k randomized-scene gate.
+
+## 2026-07-05T19:53:00Z Final N500 Step-654K Randomized Near Placement
+
+- The 650k monitor latched raw step 650,019, rejected the stale step-648,626
+  checkpoint, and waited for the fresh epoch-111 checkpoint
+  (`global_step=653539`, `val_loss=0.0230226`). It evaluated immutable snapshot
+  `step_0653651.ckpt` as L40S job `1099155` with fixed DDPM seed 42.
+- Job `1099155` completed all 4,800 requested dynamics steps in 18:30 with no
+  reset, termination, truncation, renderer loss, finger/table violation, or
+  logged exception. Strict settled-bin success remained `0/1`.
+- This is the strongest randomized rollout so far. The policy acquired and
+  lifted the object at step 2,390, reached `0.201688 m` maximum lift at step
+  2,622, and transported it `0.396527 m`. The object crossed the oriented bin
+  footprint for 12 steps, from 2,641 through 2,652, while still grasped and
+  about `0.20 m` above its initial height.
+- The failure is transport overshoot and late release, not acquisition. At the
+  bin crossing the object moved at roughly `0.10 m/s`; it exited containment at
+  step 2,653, then the gripper opened at step 2,746, 93 steps later. It settled
+  against/outside the bin's X wall with final containment margins
+  `x=-0.025060 m`, `y=+0.015809 m`; no drop candidate formed.
+- Scene/wrist inspection confirms the object is carried over the bin and the
+  arm then enters the bin after the miss. The full video is 4,799 frames at
+  1,280x720 and 60 fps; the generated sparse dual-camera diagnostic is 42
+  frames at 512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0653651`.
+- Promote step 653,539 over step 304,796 as the current randomized behavioral
+  best, but not as a successful deployment candidate. A100 job `29882350` is
+  healthy on `batch-block5-03147` at raw step 656,810 and continues toward the
+  fresh 700k gate.
