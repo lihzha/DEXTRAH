@@ -16176,3 +16176,44 @@ Smoke follow-up:
   this run. Step 304,796 remains the behavioral best, and no reproducible
   strict final-n500 success exists through this audit. Continue training and
   preserve the fresh post-650k periodic evaluation as the next decision gate.
+
+## 2026-07-05T17:24:00Z Final N500 Step-639K Exact Split Matrix
+
+- The final n500 model had not yet received an exact recorded-scene audit, so
+  evaluated fresh epoch-108 checkpoint step 638,798 (`val_loss=0.0230658`) on
+  three training shards and three object-disjoint validation shards. Jobs
+  `1099129-1099134` used immutable eval commit `f928e60c`, fixed DDPM seed 42,
+  action chunk 8, 100 diffusion steps, 4,800 uninterrupted dynamics steps,
+  quality rendering, exact dynamics reset, and exact visual resampling.
+- All six jobs completed cleanly in 18:04-18:53 with no reset, termination,
+  truncation, renderer loss, or logged exception. Robot-state reset error was
+  at most `1.49e-8`; scene/wrist parity ranged from `34.59/30.66 dB` to
+  `60.72/56.65 dB`. Every overview video has 4,799 1024x1024 frames at 60 fps,
+  and every sparse dual-camera video has 42 512x284 frames at 4 fps.
+- Exact training result is strict `2/3`. Source 0 first succeeded at step 671,
+  reached `0.143194 m` lift and `0.307669 m` XY transport, and stayed settled
+  through step 4,800. Source 1 first succeeded at step 3,317 after a long high
+  carry, reached `0.373922 m` lift and `0.263604 m` transport, and also stayed
+  settled. Source 2 failed with only `0.002401 m` lift and `0.012871 m` motion.
+- Source 1 later produced a finger/table violation beginning at step 4,308,
+  991 steps after its valid settled drop. This does not invalidate the pick and
+  placement, but it shows why deployment should stop or enter a safe retract
+  once settled success is detected rather than continue the diagnostic horizon.
+- Object-disjoint validation result is strict `0/3`. Sources 4, 12, and 23
+  reached only `0.001450 m`, numerical noise, and `0.006622 m` maximum lift;
+  none entered bin containment. Their maximum XY motions were `0.047328 m`,
+  numerical noise, and `0.009990 m`. Final-frame inspection shows all three
+  objects still on the table with valid camera streams.
+- This is the first reproducible strict success evidence for the final n500
+  policy, but it is memorization evidence rather than randomized or zero-shot
+  generalization. It proves the model, action semantics, exact-reset path, and
+  settled-bin metric can execute closed-loop placements. The dominant gap is
+  now object/scene generalization: deterministic randomized eval remains zero,
+  and the exact object-disjoint split is also zero.
+- Machine-readable aggregate is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0638798_exact_matrix_seed42_20260705T1700Z_summary.json`.
+  The 3x2 scene/wrist comparison is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0638798_exact_matrix_seed42_20260705T1700Z_scene_wrist.mp4`,
+  with train sources 0/1/2 on the top row and validation sources 4/12/23 on the
+  bottom row. Continue training at raw step 642,421 toward the fresh 650k
+  randomized-scene gate.
