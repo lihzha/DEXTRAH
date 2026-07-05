@@ -16305,3 +16305,18 @@ Smoke follow-up:
   best, but not as a successful deployment candidate. A100 job `29882350` is
   healthy on `batch-block5-03147` at raw step 656,810 and continues toward the
   fresh 700k gate.
+
+## 2026-07-05T22:50:00Z Final N500 Twenty-First Handoff
+
+- Allocation `29882350` timed out normally after 3:50:15 at raw step 678,586.
+  Its latest durable epoch checkpoint was step 678,109, leaving a 477-update
+  unsaved tail; all emitted losses and the checkpoint remained finite.
+- Despite intermittent bounded `squeue` timeouts, submitter PID `402586`
+  observed the terminal `TIMEOUT` state and launched exactly one replacement,
+  job `29888243`, at `2026-07-05T22:43:00Z`. The replacement landed on the
+  same healthy node, `batch-block5-03147`.
+- Job `29888243` explicitly loaded `latest.ckpt` at step 678,109, replayed the
+  expected tail, and passed the prior high-water at step 678,844 with finite
+  loss. Optimizer, EMA, scheduler, and data-loader continuity remain healthy.
+- L40 monitor PID `3976525` remains alive and armed for the first fresh epoch
+  checkpoint after raw step 700k. No off-cadence evaluation was launched.
