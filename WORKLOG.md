@@ -16251,3 +16251,28 @@ Smoke follow-up:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0638798_exact_matrix_offline_seed42_20260705T1728Z_retry1`.
   Continue current training at raw step 643,533 and use the 650k randomized
   result before deciding whether to add recovery-state data or alter training.
+
+## 2026-07-05T18:02:00Z Step-639K Held-Out DDPM Seed Audit
+
+- To test whether fixed DDPM seed 42 had missed a viable held-out action mode,
+  ran exactly one additional policy-sampling seed, 43, on validation sources
+  4/12/23. Jobs `1099138-1099140` held checkpoint, exact scene/dynamics reset,
+  rendering, horizon, action chunk, and metric fixed. All completed 4,800 steps
+  cleanly in 18:06-19:13 with no reset or renderer failure and strict `0/3`.
+- Sources 4/12/23 reached maximum lifts of `0.010307/0.012456/0.000952 m`
+  and maximum XY motions of `0.031116/0.042309/0.001067 m`. No source entered
+  oriented-bin containment. Source 12 later produced a finger/table violation
+  at step 4,036, after already failing acquisition.
+- Dual-camera frames around each peak confirm tips or pushes rather than hidden
+  grasps: the small source-4 object is knocked during initial contact, source 12
+  is tipped during a late retry near step 2,943, and source 23 remains beside
+  the bin after the fingers close around the wrong alignment. Both streams are
+  valid throughout.
+- Combined exact object-disjoint evidence is now strict `0/6` across policy
+  seeds 42 and 43. Stop this bounded sampler-seed sweep; more seeds would search
+  for stochastic luck rather than improve a deployment candidate. Reproducible
+  success remains confined to `2/3` recorded training scenes.
+- Seed-43 artifacts are under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0638798_exact_val_src*_seed43_20260705T1741Z`.
+  Current A100 training is healthy at raw step 646,956 and continues toward the
+  fresh 650k randomized-scene gate.
