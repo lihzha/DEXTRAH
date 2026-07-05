@@ -16038,3 +16038,29 @@ Smoke follow-up:
   remain healthy.
 - Continue final n500 toward the 550k policy-selection gate under monitor PID
   `3976525`.
+
+## 2026-07-05T05:33:00Z Final N500 Step-550K Eval Result
+
+- Final n500 crossed raw step 550k at step 550,014. Monitor PID `3976525`
+  rejected the stale step-545,435 checkpoint, waited for the fresh epoch-93
+  checkpoint (`global_step=550349`, `val_loss=0.0227685`), and submitted L40S
+  job `1098974` from snapshot `step_0550478.ckpt`.
+- Job `1098974` completed all 4,800 requested dynamics steps without reset,
+  termination, truncation, renderer loss, or logged exception. Strict
+  settled-bin success was `0/1`.
+- This checkpoint regressed to a push failure: maximum lift was only
+  `0.001448 m`, maximum XY displacement was `0.110787 m`, minimum hand/object
+  distance was `0.117432 m`, `has_lifted_cube` remained false, and there was no
+  oriented-bin containment or drop candidate. Failure termination was disabled
+  for the full-horizon audit, so later robot wandering also accumulated a
+  finger/table-clearance violation from step 3,389 onward.
+- Dual-camera inspection shows a badly rotated wrist push the object away,
+  after which the robot exits the scene view by roughly step 1,200 while the
+  object remains visible and stationary on the table. Both RGB streams rendered
+  correctly; this remains policy behavior rather than an observation, reset,
+  or horizon mismatch.
+- Fetched overview video is 4,799 frames at 1,280x720 and 60 fps; generated
+  scene/wrist video is 42 frames at 512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0550478`.
+- Preserve step 304,796 as the current behavioral best. Continue final n500
+  toward the next 600k gate under the 50k evaluation cadence.
