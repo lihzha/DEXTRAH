@@ -16095,3 +16095,30 @@ Smoke follow-up:
   remain healthy.
 - Continue final n500 toward the 600k policy-selection gate under monitor PID
   `3976525`.
+
+## 2026-07-05T12:06:00Z Final N500 Step-604K Eval Result
+
+- Final n500 crossed raw step 600k at step 600,090. Monitor PID `3976525`
+  rejected the stale step-599,487 checkpoint, waited for the fresh epoch-102
+  checkpoint (`global_step=604401`, `val_loss=0.0240859`), and submitted L40S
+  job `1099019` from snapshot `step_0604474.ckpt`.
+- Job `1099019` completed all 4,800 requested dynamics steps without reset,
+  termination, truncation, renderer loss, or logged exception. Strict
+  settled-bin success was `0/1`.
+- The policy briefly tipped the object but then pushed it far away: maximum
+  lift was `0.018283 m` at step 283, maximum XY displacement was
+  `0.229400 m`, minimum hand/object distance was `0.105871 m`,
+  `has_lifted_cube` remained false, and there was no oriented-bin containment
+  or drop candidate. Later wandering produced intermittent finger/table
+  violations beginning at step 2,604, with minimum clearance `-0.057752 m`.
+- Dual-camera inspection shows contact near step 240 and a push toward the bin
+  side by step 360, but the object remains outside the bin in Y and the robot
+  immediately leaves. The scene stream retains the object and bin; the later
+  wrist stream sees only the environment because the arm has wandered away.
+  This remains policy behavior rather than an observation, reset, or horizon
+  mismatch.
+- Fetched overview video is 4,799 frames at 1,280x720 and 60 fps; generated
+  scene/wrist video is 42 frames at 512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0604474`.
+- Preserve step 304,796 as the current behavioral best. Continue final n500
+  toward the next 650k gate under the 50k evaluation cadence.
