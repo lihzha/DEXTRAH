@@ -16145,3 +16145,34 @@ Smoke follow-up:
   continuity remain healthy.
 - Continue final n500 toward the 650k policy-selection gate under monitor PID
   `3976525`.
+
+## 2026-07-05T16:54:00Z Final N500 Global-Best-Validation Audit
+
+- The global minimum validation loss in the final n500 run remains
+  `0.0160208` at step 88,449 / epoch 15. The 100k periodic cadence had skipped
+  its immutable `epoch=0015-val_loss=0.016021.ckpt`, so validated the complete
+  1,606,334,243-byte ZIP archive and submitted one controlled seed-42 L40S
+  audit as job `1099126` from eval commit `f928e60c`.
+- Job `1099126` completed cleanly in 18:09 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, or logged exception. It used
+  the same quality rendering, dual RGB cameras, 24-D robot state, 100-step
+  DDPM sampler, action chunk 8, object pool, randomized scene, and corrected
+  settled-bin metric as the periodic series. Strict success was `0/1`.
+- The proximity-based grasp flag briefly activated at step 250, but the object
+  reached only `0.005974 m` maximum lift at step 314 and `0.013758 m` maximum
+  XY displacement at step 319. `has_lifted_cube` and oriented-bin containment
+  remained false; final XY displacement was `0.005458 m`, and minimum
+  hand/object distance was `0.115655 m`.
+- Dual-camera inspection at reset, approach, contact, midpoint, and final state
+  confirms a physical grasp miss. The fingers straddle/contact the visible
+  object around steps 240-360, then the arm follows an empty transport path and
+  wanders away. Both streams remain valid and the scene stream remains
+  table-only, so this is not an observation, reset, metric, or horizon failure.
+- The overview video is 4,799 frames at 1,280x720 and 60 fps; the generated
+  scene/wrist diagnostic is 42 frames at 512x284 and 4 fps. Local evidence is
+  under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bestval_step0088449_seed42_20260705T1635Z`.
+- Lowest validation loss is therefore not a useful closed-loop selector for
+  this run. Step 304,796 remains the behavioral best, and no reproducible
+  strict final-n500 success exists through this audit. Continue training and
+  preserve the fresh post-650k periodic evaluation as the next decision gate.
