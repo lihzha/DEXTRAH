@@ -16079,3 +16079,19 @@ Smoke follow-up:
   remain healthy.
 - Continue final n500 toward the 600k policy-selection gate under monitor PID
   `3976525`.
+
+## 2026-07-05T10:48:00Z Final N500 Nineteenth Hardened Handoff
+
+- Allocation `29867397` timed out normally at raw step 596,139. Its latest
+  durable epoch-101 checkpoint was step 594,574 with validation loss
+  `0.0201863`, leaving a 1,565-update unsaved tail.
+- One `squeue` attempt saw a transient empty Slurm configuration file and the
+  next two attempts timed out; the bounded retry path continued safely.
+  Submitter PID `402586` then observed terminal state `TIMEOUT` and submitted
+  exactly one replacement, job `29871502`, at `2026-07-05T10:30:56Z`.
+- Job `29871502` started on `batch-block5-01966`, explicitly loaded
+  `latest.ckpt`, appended finite rows from step 594,574, and passed the old
+  high-water at step 596,586. Optimizer, EMA, scheduler, and checkpoint resume
+  remain healthy.
+- Continue final n500 toward the 600k policy-selection gate under monitor PID
+  `3976525`.
