@@ -16023,3 +16023,18 @@ Smoke follow-up:
   remain healthy.
 - Continue final n500 toward the 550k policy-selection gate under monitor PID
   `3976525`.
+
+## 2026-07-05T03:13:00Z Final N500 Seventeenth Hardened Handoff
+
+- Allocation `29856435` timed out normally at raw step 533,318. Its latest
+  durable epoch-90 checkpoint was step 530,694 with validation loss
+  `0.0254927`, leaving a 2,624-update unsaved tail.
+- Timeout-bounded submitter PID `402586` observed terminal state `TIMEOUT` and
+  submitted exactly one replacement, job `29861073`, at
+  `2026-07-05T02:46:28Z`.
+- Job `29861073` started on `batch-block4-0045`, explicitly loaded
+  `latest.ckpt`, appended finite rows from step 530,694, and passed the old
+  high-water at step 533,847. Optimizer, EMA, scheduler, and checkpoint resume
+  remain healthy.
+- Continue final n500 toward the 550k policy-selection gate under monitor PID
+  `3976525`.
