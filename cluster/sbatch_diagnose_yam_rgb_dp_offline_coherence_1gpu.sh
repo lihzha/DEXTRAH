@@ -90,7 +90,7 @@ fi
 mkdir -p \
   "$OUTPUT_DIR_HOST" \
   "$NFS_ROOT/slurm_logs/dextrah" \
-  "$CACHE_NFS/kit" "$CACHE_NFS/ov" "$CACHE_NFS/pip" \
+  "$CACHE_NFS/kit" "$CACHE_NFS/ov" "$CACHE_NFS/pip" "$CACHE_NFS/torch" \
   "$CACHE_NFS/glcache" "$CACHE_NFS/computecache"
 
 export RUN_NAME CHECKPOINT_ARG MANIFEST_ARG OUTPUT_DIR_ARG DEVICE NUM_INFERENCE_STEPS POLICY_SOURCE
@@ -111,11 +111,11 @@ echo "SHARD_STEPS=$SHARD_STEPS"
 srun \
   --ntasks=1 \
   --container-image="$IMAGE" \
-  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$OFFICIAL_DP_NFS":/official_dp,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache \
+  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$OFFICIAL_DP_NFS":/official_dp,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/torch":/root/.cache/torch,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache \
   --no-container-entrypoint \
   --container-remap-root \
   --container-writable \
-  --export=ALL,PYTHONUNBUFFERED=1,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1,TORCH_SHOW_CPP_STACKTRACES=1,PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python,ACCEPT_EULA=Y,PRIVACY_CONSENT=Y \
+  --export=ALL,PYTHONUNBUFFERED=1,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1,TORCH_HOME=/root/.cache/torch,TORCH_SHOW_CPP_STACKTRACES=1,PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python,ACCEPT_EULA=Y,PRIVACY_CONSENT=Y \
   bash -lc '
     set -euo pipefail
     export SITE="/envs/$ENV_NAME/site"
