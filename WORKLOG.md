@@ -16217,3 +16217,37 @@ Smoke follow-up:
   with train sources 0/1/2 on the top row and validation sources 4/12/23 on the
   bottom row. Continue training at raw step 642,421 toward the fresh 650k
   randomized-scene gate.
+
+## 2026-07-05T17:33:00Z Step-639K Offline Train/Validation Coherence
+
+- Ran a fixed-row offline diagnostic on the same exact-matrix shards to
+  distinguish one-step visual/action generalization from closed-loop
+  compounding. The first job, `1099136`, failed before policy inference because
+  torchvision attempted to cache ResNet weights in the quota-limited writable
+  container overlay and raised `EDQUOT`; it produced no policy evidence.
+- Commit `9c66b7d4` mounts the persistent NFS Torch cache in the YAM offline
+  diagnostic wrapper and exports `TORCH_HOME=/root/.cache/torch`. `bash -n` and
+  diff checks pass. The commit is pushed and deployed by verified Git bundle to
+  detached L40 worktree `yam-offline-9c66b7d4-20260705`.
+- Retry job `1099137` completed cleanly in 36 seconds on the same step-638,798
+  checkpoint. It sampled 46 stored observations across train manifest indices
+  0/1/2 and validation indices 4/9/16, spanning approach, grasp, transport, and
+  drop rows. Aggregate first-pose cosine was `0.971410`, amplitude ratio was
+  `0.998588`, and gripper-sign agreement was `1.0`.
+- Train rows have mean/median first-pose MSE
+  `0.00013422/0.00002441`, pose cosine `0.978311`, XYZ cosine `0.997511`,
+  amplitude ratio `0.985631`, and sequence MSE `0.00010658`. Validation rows
+  have `0.00094988/0.00024897`, `0.965372`, `0.983799`, `1.012459`, and
+  `0.00105508`, respectively, with the same perfect gripper-sign agreement.
+  Validation first-pose and sequence MSE are therefore about `7.1x` and `9.9x`
+  train, despite broadly correct direction and scale.
+- Train source 2 has especially strong stored-row imitation (pose MSE
+  `4.87e-5`, cosine `0.9863`, sequence MSE `4.34e-5`) but failed its exact
+  closed-loop rollout. This rules out a simple global action-scale, gripper,
+  or eval-contract bug. The dominant failure is compounding error after the
+  policy leaves demonstration states; weaker object-disjoint visual/action
+  accuracy is a secondary amplifier.
+- Local diagnostic artifacts are under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0638798_exact_matrix_offline_seed42_20260705T1728Z_retry1`.
+  Continue current training at raw step 643,533 and use the 650k randomized
+  result before deciding whether to add recovery-state data or alter training.
