@@ -16122,3 +16122,26 @@ Smoke follow-up:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0604474`.
 - Preserve step 304,796 as the current behavioral best. Continue final n500
   toward the next 650k gate under the 50k evaluation cadence.
+
+## 2026-07-05T15:22:00Z Final N500 Twentieth Handoff And Slow-Node Recovery
+
+- Allocation `29871502` timed out normally at raw step 626,019. Its latest
+  durable epoch-106 checkpoint was step 624,057 with validation loss
+  `0.0249641`, leaving a 1,962-update unsaved tail. Submitter PID `402586`
+  observed `TIMEOUT` and submitted exactly one replacement, job `29875167`, at
+  `2026-07-05T14:23:51Z`.
+- Job `29875167` first landed on `batch-block5-02186`. It started near two
+  updates/s but developed repeated 10-40 second data stalls and reached only
+  step 624,508 after 31 minutes, roughly 450 updates/hour and more than 15x
+  below normal throughput.
+- A plain cancel would have caused the submitter's pre-high-water guard to
+  stop. Instead, requeued the same job ID in a held state, added
+  `ExcNodeList=batch-block5-02186`, and released it. The submitter stayed alive
+  and continued waiting on job `29875167`; no duplicate allocation was
+  submitted.
+- Restart count 1 landed on `batch-block5-03147`, explicitly resumed from step
+  624,057, restored approximately 1.9 updates/s, and passed the pre-timeout
+  high-water at step 626,847. Optimizer, EMA, scheduler, and checkpoint
+  continuity remain healthy.
+- Continue final n500 toward the 650k policy-selection gate under monitor PID
+  `3976525`.
