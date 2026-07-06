@@ -16464,3 +16464,32 @@ Smoke follow-up:
 - Promote step 800,954 as the current deployment candidate. Run a bounded
   seed-43 through seed-46 randomized reproducibility matrix at this immutable
   checkpoint while long training continues toward the 850k gate.
+
+## 2026-07-06T16:32:00Z Step-801K Randomized Reproducibility Matrix
+
+- L40S jobs `1100560` through `1100563` evaluated paired environment/policy
+  seeds 43 through 46 from the same immutable `step_0801000.ckpt` snapshot.
+  Every job exited zero after all 4,800 uninterrupted dynamics steps, with no
+  reset, termination, truncation, renderer/device loss, or malformed video.
+- Additional strict success was `0/4`, making the bounded randomized result
+  seeds 42 through 46 equal to `1/5` (`20%`). The seed-42 rollout remains a
+  genuine strict success, but the checkpoint is not yet robust across the
+  randomized scene distribution.
+- Seed 43 never activated the grasp flag and moved the object by less than
+  `1e-6 m`. Seed 44 briefly activated the proximity-based grasp flag at step
+  189 but produced no physical lift or meaningful object motion. Seed 45
+  activated it at step 378, reached only `0.004100 m` lift, and displaced the
+  object by at most `0.049001 m`. Seed 46 activated it at step 348, reached
+  only `0.007771 m` lift, and displaced the object by at most `0.089085 m`.
+  None reached the physical-lift threshold or oriented bin XY containment.
+- All four full videos contain 4,799 frames at 1,280x720 and 60 fps. Sparse
+  scene/wrist inspection at steps 600, 1,200, 2,400, and 4,800 confirms that
+  the objects remain on the tabletop while the arm drifts away or revisits the
+  workspace without securing them; both camera streams remain valid.
+- Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0800954_repro_20260706T1609Z_s{43,44,45,46}`.
+  The four-way sparse comparison is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0800954_repro_20260706T1609Z/seeds43-46_dual_sparse_grid.mp4`.
+- Grasp acquisition is the dominant remaining randomized failure mode. Keep
+  step 800,954 as the first-success candidate, continue the approved 2M-step
+  run, and compare the next fresh 850k checkpoint under the same seed-42 gate.
