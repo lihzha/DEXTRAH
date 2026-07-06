@@ -16404,3 +16404,20 @@ Smoke follow-up:
 - Step 653,539 remains the randomized behavioral best because it briefly
   reached oriented bin XY containment. Continue training toward the fresh 800k
   gate; randomized and object-disjoint strict success remain zero.
+
+## 2026-07-06T10:22:00Z Final N500 Twenty-Fourth Handoff And Checkpoint Recovery
+
+- Allocation `29901717` timed out normally after 3:50:17 exactly as epoch 130
+  checkpointing completed at global step 766,558 (`val_loss=0.0256769`). The
+  timeout left the mutable `latest.ckpt` copy incomplete even though the
+  immutable epoch checkpoint was valid.
+- Submitter PID `402586` rejected the invalid `latest.ckpt`, searched the epoch
+  archives, validated `epoch=0130-val_loss=0.025677.ckpt`, and atomically
+  restored it as `latest.ckpt`. This exercised the intended checkpoint
+  corruption fallback without manual intervention.
+- The submitter launched exactly one replacement, job `29909988`, at
+  `2026-07-06T10:18:30Z` on known-good node `batch-block5-03147`. It explicitly
+  loaded the recovered step-766,558 checkpoint and advanced to step 766,861
+  with finite loss, preserving optimizer, EMA, scheduler, and data state.
+- Continue toward the fresh 800k randomized evaluation under L40 monitor PID
+  `3976525`.
