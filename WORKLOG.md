@@ -16320,3 +16320,28 @@ Smoke follow-up:
   loss. Optimizer, EMA, scheduler, and data-loader continuity remain healthy.
 - L40 monitor PID `3976525` remains alive and armed for the first fresh epoch
   checkpoint after raw step 700k. No off-cadence evaluation was launched.
+
+## 2026-07-06T02:06:00Z Final N500 Step-703K Eval Result
+
+- The monitor latched raw step 700,006, rejected the pre-threshold step-697,764
+  checkpoint, waited for the fresh epoch-119 checkpoint
+  (`global_step=702678`, `val_loss=0.0254778`), and submitted L40S job
+  `1099727` from immutable snapshot `step_0702827.ckpt`.
+- Job `1099727` completed cleanly in 18:04 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, finger/table violation, or
+  logged exception. Strict settled-bin success was `0/1`.
+- This checkpoint failed acquisition. It contacted, rotated, and pushed the
+  object by up to `0.104015 m`, but maximum lift was only `0.003563 m` and
+  `has_lifted_cube` remained false. The proximity-based grasp flag was active
+  for only 112 steps; minimum hand/object distance was `0.118589 m`.
+- The object stopped after the initial push and finished `0.101246 m` from its
+  reset XY position. It never entered oriented bin containment and produced no
+  drop candidate. The robot then moved away; no late recovery occurred.
+- Scene/wrist inspection at approach, contact, post-contact, midpoint, and the
+  final state confirms a physical grasp-alignment miss with valid observations.
+  The full video is 4,799 frames at 1,280x720 and 60 fps; the sparse dual-camera
+  diagnostic is 42 frames at 512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0702827`.
+- Step 653,539 remains the randomized behavioral best. Continue final n500
+  training toward the fresh 750k gate; no randomized or object-disjoint strict
+  success exists through step 702,678.
