@@ -16588,3 +16588,29 @@ Smoke follow-up:
   deployment candidate. Continue training toward the fresh 900k gate; the
   step-850k failure reinforces acquisition/release separation as the main
   remaining behavioral bottleneck.
+
+## 2026-07-06T23:21:00Z Step-850K Randomized Reproducibility Matrix
+
+- L40S jobs `1100665` through `1100668` evaluated paired environment/policy
+  seeds 43 through 46 from the same immutable step-850,092 checkpoint. All
+  four exited zero after 4,800 uninterrupted dynamics steps with no reset,
+  termination, truncation, renderer loss, or malformed video.
+- Additional strict success was `0/4`, making the step-850k paired-seed result
+  seeds 42 through 46 equal to strict `0/5`. This is worse than the step-800k
+  checkpoint's bounded `1/5`, although seed 42 at 850k remained a meaningful
+  high-lift, near-placement trajectory.
+- Seed 43 never activated the grasp flag, moved the object by less than
+  `1e-6 m`, and produced no lift. Seed 44 activated the grasp flag at step 265
+  but reached only `0.014221 m` lift and `0.061565 m` XY displacement. Seed 45
+  activated it at step 490 but reached only `0.007342 m` lift and
+  `0.154208 m` XY displacement. Seed 46 activated it at step 279 but reached
+  only `0.006422 m` lift and `0.140110 m` XY displacement. None crossed the
+  physical-lift threshold or entered oriented bin XY containment.
+- Sparse scene/wrist inspection at steps 600, 1,200, and 4,800 confirms one
+  untouched object and three drag/nudge failures; both camera streams remain
+  valid. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0850092_repro_20260706T2257Z_s{43,44,45,46}`.
+  The four-way comparison is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0850092_repro_20260706T2257Z/seeds43-46_dual_sparse_grid.mp4`.
+- Keep step 800,954 as the deployment candidate and continue the approved long
+  run toward the fresh 900k randomized gate without changing configuration.
