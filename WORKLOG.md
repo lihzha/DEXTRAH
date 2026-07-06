@@ -16436,3 +16436,31 @@ Smoke follow-up:
   range, so no requeue is warranted.
 - Continue toward the fresh 800k randomized evaluation under L40 monitor PID
   `3976525`.
+
+## 2026-07-06T16:10:00Z First Randomized Strict Success At Step 801K
+
+- The monitor latched raw step 800,071, rejected the pre-threshold step-796,040
+  checkpoint, waited for the fresh epoch-135 checkpoint
+  (`global_step=800954`, `val_loss=0.0251716`), and submitted L40S job
+  `1100237` from immutable snapshot `step_0801000.ckpt`.
+- Job `1100237` completed cleanly in 18:08 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, finger/table violation, or
+  logged exception. Corrected settled-bin success was strict `1/1`, the first
+  randomized-scene success for the final n500 policy.
+- The grasp flag activated at step 195, the gripper closed at step 260, and
+  physical lift began at step 459. Maximum lift reached `0.242204 m` at step
+  864. The policy released at step 965, entered corrected oriented bin XY
+  containment at step 991, formed a settled drop candidate at step 1,007, and
+  first satisfied strict success at step 1,012.
+- Success remained active through step 4,800. Final object position was
+  `(-0.207289, 0.222282, 0.059325) m` with positive oriented containment
+  margins `x=0.017336 m`, `y=0.041762 m`; final linear/angular speeds were
+  `0.000191 m/s` and `0.003874 rad/s`.
+- Scene/wrist inspection confirms a real pickup, high transport, release into
+  the bin, and long settled hold. Both streams remain valid. The full video is
+  4,799 frames at 1,280x720 and 60 fps; the sparse dual-camera diagnostic is 42
+  frames at 512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0801000`.
+- Promote step 800,954 as the current deployment candidate. Run a bounded
+  seed-43 through seed-46 randomized reproducibility matrix at this immutable
+  checkpoint while long training continues toward the 850k gate.
