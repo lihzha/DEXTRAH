@@ -16421,3 +16421,18 @@ Smoke follow-up:
   with finite loss, preserving optimizer, EMA, scheduler, and data state.
 - Continue toward the fresh 800k randomized evaluation under L40 monitor PID
   `3976525`.
+
+## 2026-07-06T15:00:00Z Final N500 Twenty-Fifth Handoff
+
+- Allocation `29909988` timed out normally after 3:50:26 at raw step 795,815.
+  Its latest durable checkpoint was step 791,128, leaving a 4,687-update
+  unsaved tail; all persisted state and emitted losses were finite.
+- Submitter PID `402586` observed the terminal state and launched exactly one
+  replacement, job `29913912`, at `2026-07-06T14:11:01Z` on
+  `batch-block7-03139`.
+- The replacement explicitly loaded step 791,128, replayed the expected tail,
+  and passed the prior high-water at step 796,037 with finite loss. The node is
+  slower than `batch-block5-03147` but remains within the accepted throughput
+  range, so no requeue is warranted.
+- Continue toward the fresh 800k randomized evaluation under L40 monitor PID
+  `3976525`.
