@@ -16360,3 +16360,18 @@ Smoke follow-up:
   healthy.
 - Continue toward the fresh 750k randomized evaluation under L40 monitor PID
   `3976525`.
+
+## 2026-07-06T06:46:00Z Final N500 Twenty-Third Handoff
+
+- Allocation `29893360` timed out normally after 3:50:23 at raw step 738,530.
+  Its latest durable epoch-125 checkpoint was step 737,075 with validation loss
+  `0.0271406`, leaving a 1,455-update unsaved tail.
+- Submitter PID `402586` launched exactly one replacement, job `29901717`, at
+  `2026-07-06T06:26:45Z` on `batch-block7-01718`, despite continued bounded
+  scheduler-query retries.
+- The replacement explicitly loaded step 737,075, replayed the expected tail,
+  and passed the prior high-water at step 739,035 with finite loss. Throughput
+  is slightly lower than the preceding node but remains within the normal
+  operating range.
+- Continue toward the fresh 750k randomized evaluation under L40 monitor PID
+  `3976525`.
