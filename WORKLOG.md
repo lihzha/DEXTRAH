@@ -16558,3 +16558,33 @@ Smoke follow-up:
   checkpoint recovery, NaN, OOM, or duplicate allocation occurred.
 - Continue through the current epoch to the fresh checkpoint immediately above
   850k, then inspect the automatically submitted randomized L40 evaluation.
+
+## 2026-07-06T22:57:00Z Final N500 Step-850K Eval Result
+
+- The monitor latched raw step 850,069, rejected the older step-845,179
+  checkpoint, waited for the fresh epoch-143 checkpoint
+  (`global_step=850092`, `val_loss=0.0242514`), and submitted L40S job
+  `1100655` from immutable snapshot `step_0850204.ckpt`.
+- Job `1100655` completed cleanly in 18:22 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, finger/table violation, or
+  logged exception. Strict settled-bin success was `0/1`.
+- The grasp flag activated at step 191, the gripper closed at step 260, and
+  physical lift began at step 466. Maximum lift reached `0.195394 m` at step
+  685, and maximum XY transport reached `0.373352 m`.
+- The gripper reopened at step 814, but the hand never separated from the
+  object after grasp. The arm kept the object pinned against the bin wall for
+  the remainder of the rollout. Oriented bin XY containment never activated;
+  the best x margin was `-0.004884 m`, and final margins were
+  `x=-0.028642 m`, `y=-0.016867 m`.
+- Final object linear/angular speeds were still `0.095835 m/s` and
+  `1.844921 rad/s`, consistent with continued contact rather than a settled
+  drop. Scene/wrist inspection through step 4,800 confirms the persistent
+  arm/object/bin contact.
+- The full video contains 4,799 frames at 1,280x720 and 60 fps; the sparse
+  dual-camera diagnostic contains 42 frames at 512x284 and 4 fps. Local
+  evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0850204`.
+- Step 800,954 remains the only strict randomized success and the current
+  deployment candidate. Continue training toward the fresh 900k gate; the
+  step-850k failure reinforces acquisition/release separation as the main
+  remaining behavioral bottleneck.
