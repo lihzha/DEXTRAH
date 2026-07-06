@@ -16530,3 +16530,18 @@ Smoke follow-up:
 - Continue the approved long run unchanged and use the fresh 850k randomized
   gate to test whether additional optimization improves acquisition and the
   final containment margin before considering a training intervention.
+
+## 2026-07-06T18:34:00Z Final N500 Twenty-Sixth Handoff
+
+- Allocation `29913912` timed out normally after 3:50:17 at raw step 819,043.
+  Its latest durable epoch-138 checkpoint was global step 815,696 with
+  validation loss `0.0272524`, leaving a 3,347-update unsaved tail.
+- Submitter PID `402586` observed the terminal state and launched exactly one
+  replacement, job `29922058`, at `2026-07-06T18:03:48Z` on
+  `batch-block5-02014`.
+- The replacement explicitly loaded the valid step-815,696 checkpoint,
+  restored training state, replayed the expected tail, and passed the prior
+  high-water at step 819,371 with finite loss. No checkpoint recovery, NaN,
+  OOM, or duplicate allocation occurred.
+- Continue toward the fresh 850k randomized evaluation under L40 monitor PID
+  `3976525`.
