@@ -16493,3 +16493,40 @@ Smoke follow-up:
 - Grasp acquisition is the dominant remaining randomized failure mode. Keep
   step 800,954 as the first-success candidate, continue the approved 2M-step
   run, and compare the next fresh 850k checkpoint under the same seed-42 gate.
+
+## 2026-07-06T17:54:00Z Step-801K Scene/Sampler Factorization
+
+- L40S jobs `1100582` through `1100589` separated scene randomization from
+  DDPM sampling at the immutable step-800,954 checkpoint. Four rollouts fixed
+  environment seed 42 and varied policy-sample seeds 43 through 46; four fixed
+  policy-sample seed 42 and varied environment seeds 43 through 46. All eight
+  jobs exited zero after 4,800 uninterrupted dynamics steps with valid
+  4,799-frame videos and no reset, termination, truncation, or renderer loss.
+- The fixed-scene sampler sweep produced strict `0/4`. Policy seed 44 did
+  reproduce a real grasp, `0.191216 m` lift, and oriented bin XY entry at step
+  602, proving that the successful scene is solvable by another diffusion
+  sample. It released against the bin wall and settled with final containment
+  margins `x=-0.022479 m`, `y=+0.027804 m`, so no strict drop candidate formed.
+  Policy seeds 43, 45, and 46 stayed below the physical-lift threshold.
+- The fixed-sampler scene sweep also produced strict `0/4`. Environment seed
+  45 reached a real grasp, `0.212845 m` lift, and oriented bin XY entry at step
+  750. It released into the bin but settled against the opposite wall with
+  final margins `x=+0.070164 m`, `y=-0.013991 m`, again correctly failing strict
+  containment. Environment seeds 43, 44, and 46 stayed below the physical-lift
+  threshold; seed 43 moved the object by less than `1e-6 m`.
+- Scene/wrist inspection confirms both wall-contact near misses and the six
+  acquisition/drag failures. The strict metric is behaving correctly even
+  when a large object appears visually inside the bin: its oriented projected
+  footprint must be fully inside both interior axes.
+- Across the 13 deliberately selected seed combinations now tested at this
+  checkpoint, strict success is `1/13`; this diagnostic ratio is not an IID
+  success-rate estimate because scene 42 and policy seed 42 are repeated.
+  Both scene generalization and DDPM sample stability are material, with grasp
+  acquisition primary and release/containment precision secondary.
+- Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0800954_factor_20260706T1701Z_env*_pol*`.
+  The eight-way sparse dual-camera comparison is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0800954_factor_20260706T1701Z/factorized_dual_sparse_grid.mp4`.
+- Continue the approved long run unchanged and use the fresh 850k randomized
+  gate to test whether additional optimization improves acquisition and the
+  final containment margin before considering a training intervention.
