@@ -16345,3 +16345,18 @@ Smoke follow-up:
 - Step 653,539 remains the randomized behavioral best. Continue final n500
   training toward the fresh 750k gate; no randomized or object-disjoint strict
   success exists through step 702,678.
+
+## 2026-07-06T02:51:00Z Final N500 Twenty-Second Handoff
+
+- Allocation `29888243` timed out normally after 3:50 at raw step 709,188. Its
+  latest durable epoch-120 checkpoint was step 707,592, leaving a 1,596-update
+  unsaved tail; the checkpoint and all emitted losses were finite.
+- Submitter PID `402586` observed the terminal state despite bounded scheduler
+  query retries and launched exactly one replacement, job `29893360`, at
+  `2026-07-06T02:34:44Z` on `batch-block5-01372`.
+- The replacement explicitly loaded step 707,592, replayed the expected tail
+  at normal throughput, and passed the prior high-water at step 709,465 with
+  finite loss. Optimizer, EMA, scheduler, and data-loader continuity remain
+  healthy.
+- Continue toward the fresh 750k randomized evaluation under L40 monitor PID
+  `3976525`.
