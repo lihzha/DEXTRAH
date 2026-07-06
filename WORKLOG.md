@@ -16545,3 +16545,16 @@ Smoke follow-up:
   OOM, or duplicate allocation occurred.
 - Continue toward the fresh 850k randomized evaluation under L40 monitor PID
   `3976525`.
+
+## 2026-07-06T22:10:00Z Final N500 Twenty-Seventh Handoff
+
+- Allocation `29922058` timed out normally after 3:50:14 at raw step 846,309.
+  Its latest durable epoch-143 checkpoint was global step 845,179 with
+  validation loss `0.0274562`, leaving a 1,130-update unsaved tail.
+- Submitter PID `402586` launched exactly one replacement, job `29929776`, at
+  `2026-07-06T21:55:52Z` on `batch-block5-03148`.
+- The replacement explicitly loaded step 845,179, replayed the expected tail,
+  and passed the prior high-water at step 846,795 with finite loss. No
+  checkpoint recovery, NaN, OOM, or duplicate allocation occurred.
+- Continue through the current epoch to the fresh checkpoint immediately above
+  850k, then inspect the automatically submitted randomized L40 evaluation.
