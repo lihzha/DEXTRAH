@@ -16375,3 +16375,32 @@ Smoke follow-up:
   operating range.
 - Continue toward the fresh 750k randomized evaluation under L40 monitor PID
   `3976525`.
+
+## 2026-07-06T08:50:00Z Final N500 Step-752K Eval Result
+
+- The monitor latched raw step 750,023, rejected the pre-threshold step-746,902
+  checkpoint, waited for the fresh epoch-127 checkpoint
+  (`global_step=751816`, `val_loss=0.0256896`), and submitted L40S job
+  `1099789` from immutable snapshot `step_0751856.ckpt`.
+- Job `1099789` completed cleanly in 18:30 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, finger/table violation, or
+  logged exception. Strict settled-bin success was `0/1`.
+- The policy spent most of the episode dragging the object, then produced a
+  genuine late grasp: `has_lifted_cube` activated at step 3,851, maximum lift
+  reached `0.098941 m` at step 3,957, and maximum XY transport reached
+  `0.325694 m` at step 4,037. Hand/object distance stayed near `0.077874 m`
+  while the gripper remained closed, confirming a held object rather than a
+  free collision launch.
+- The grasp was unstable and badly directed. The object spun near `10 rad/s`
+  during the carry, never entered oriented bin containment, and remained
+  outside both interior axes. The gripper opened at step 4,265; separation at
+  step 4,271 produced a `1.08933 m/s` impact outside the bin. No drop candidate
+  formed.
+- Scene/wrist inspection confirms the long drag, late lift, approach toward the
+  bin exterior, and hard outside release. The full video is 4,799 frames at
+  1,280x720 and 60 fps; the sparse dual-camera diagnostic is 42 frames at
+  512x284 and 4 fps. Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0751856`.
+- Step 653,539 remains the randomized behavioral best because it briefly
+  reached oriented bin XY containment. Continue training toward the fresh 800k
+  gate; randomized and object-disjoint strict success remain zero.
