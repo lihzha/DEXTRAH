@@ -16838,3 +16838,18 @@ Smoke follow-up:
   The comparison grid is
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1002421_repro_20260707T2010Z/seeds43-46_dual_sparse_grid.mp4`, ordered seeds 43/44 on the top row and
   45/46 on the bottom row.
+
+## 2026-07-07T22:13:00Z Final N500 Thirty-Third Handoff
+
+- Allocation `29966172` timed out normally after 3:50:27 at raw step
+  1,019,159. Its latest durable epoch-172 checkpoint was global step 1,017,163
+  with validation loss `0.0286058`, leaving a 1,996-update unsaved tail.
+- Submitter PID `967801` launched exactly one replacement, job `29974099`, at
+  `2026-07-07T21:53:08Z` on the same healthy `batch-block4-2016` node. Both
+  known slow nodes remain excluded.
+- The replacement explicitly loaded step 1,017,163, sustained about `2.05`
+  updates/s with finite losses, and passed the prior raw high-water at step
+  1,019,359. No checkpoint recovery, NaN, OOM, duplicate allocation, or
+  model/data/hyperparameter change occurred.
+- Continue toward the fresh 1.05M randomized gate. Step 1,002,421 remains the
+  promoted candidate with strict `2/5` paired-seed success.
