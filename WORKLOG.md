@@ -16687,3 +16687,20 @@ Smoke follow-up:
   process inspection showed it was the transient remote query shell; only
   submitter PID `714838` persists. Continue toward the fresh 950k randomized
   evaluation under L40 monitor PID `3976525`.
+
+## 2026-07-07T10:28:00Z Final N500 Thirtieth Handoff
+
+- Allocation `29942928` timed out normally after 3:50 at raw step 937,037.
+  Its latest durable epoch-158 checkpoint was global step 933,628 with
+  validation loss `0.0284436`, leaving a 3,409-update unsaved tail.
+- Submitter PID `714838` observed the terminal state and launched exactly one
+  replacement, job `29954024`, at `2026-07-07T09:55:39Z` on
+  `batch-block5-01178`; slow node `batch-block5-02014` remains excluded.
+- The first watcher sample still reflected the prior process's final metric.
+  Direct log inspection then confirmed that the replacement loaded step
+  933,628, produced fresh finite losses at about `2.6` updates/s, and passed
+  the previous raw high-water at step 938,397.
+- No checkpoint recovery, NaN, OOM, duplicate allocation, or model, optimizer,
+  EMA, scheduler, dataset, or hyperparameter change occurred. Continue toward
+  the fresh checkpoint above 950k and its automatic randomized L40S
+  evaluation under monitor PID `3976525`.
