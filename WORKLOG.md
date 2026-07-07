@@ -16614,3 +16614,26 @@ Smoke follow-up:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step0850092_repro_20260706T2257Z/seeds43-46_dual_sparse_grid.mp4`.
 - Keep step 800,954 as the deployment candidate and continue the approved long
   run toward the fresh 900k randomized gate without changing configuration.
+
+## 2026-07-07T02:42:00Z Final N500 Twenty-Eighth Handoff And Slow-Node Recovery
+
+- Allocation `29929776` timed out normally after 3:50:18 at raw step 878,248.
+  Its latest durable epoch-148 checkpoint was global step 874,662 with
+  validation loss `0.0260241`, leaving a 3,586-update unsaved tail.
+- The original submitter launched job `29938032` at
+  `2026-07-07T01:48:23Z` on `batch-block5-02014`, but the replacement was
+  persistently input-bound: throughput averaged about `0.35` updates/s versus
+  the normal `~2.1` updates/s, ten consecutive GPU samples reported 0% SM
+  utilization, and multiple data workers were in uninterruptible I/O wait.
+- Job `29938032` was cancelled after 17:24 at raw step 874,897, sacrificing
+  only 235 unsaved updates. Its conservative non-timeout/no-progress guard
+  stopped the old submitter rather than launching a duplicate.
+- The same submitter configuration was restarted as PID `714838` with only
+  `SBATCH_EXCLUDE=batch-block5-02014` added. It launched exactly one job,
+  `29938504`, at `2026-07-07T02:10:33Z` on `batch-block5-01936` from the same
+  valid step-874,662 checkpoint.
+- Job `29938504` restored normal throughput at about `2.06` updates/s and
+  passed the prior raw high-water at step 878,701 with finite loss. No model,
+  optimizer, EMA, scheduler, dataset, or hyperparameter change was made.
+- Continue toward the fresh 900k randomized evaluation under L40 monitor PID
+  `3976525`.
