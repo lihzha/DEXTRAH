@@ -16637,3 +16637,35 @@ Smoke follow-up:
   optimizer, EMA, scheduler, dataset, or hyperparameter change was made.
 - Continue toward the fresh 900k randomized evaluation under L40 monitor PID
   `3976525`.
+
+## 2026-07-07T06:01:00Z Final N500 Step-904K Eval Result
+
+- The monitor crossed raw step 900,107, rejected the stale checkpoint, and
+  waited for the fresh epoch-153 checkpoint at global step 904,145
+  (`val_loss=0.0279319`). L40S job `1100837` evaluated its immutable
+  `step_0904145.ckpt` snapshot with paired environment/policy seed 42.
+- Job `1100837` completed cleanly in 17:48 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, or malformed video. The full
+  video contains 4,799 frames at 1,280x720 and 60 fps; the sparse dual-camera
+  diagnostic contains 42 frames at 512x284 and 4 fps.
+- Strict settled-bin success was `0/1`. The proximity-based grasp flag was
+  active from steps 166 through 1,174, but the object never crossed the
+  physical-lift threshold. Maximum lift was only `0.018041 m` at step 266,
+  while maximum table-plane displacement reached `0.149309 m` at step 287.
+- Scene and wrist observations show the gripper descending onto the object and
+  pushing it away instead of centering and lifting it. Oriented bin XY
+  containment and the drop-candidate metric were never active.
+- Finger/table clearance first became invalid at step 3,195, long after the
+  failed acquisition, and reached a minimum of `-0.009976 m` at step 3,612.
+  This is a downstream consequence of continuing the failed rollout, not the
+  cause of the acquisition failure. Final object linear/angular speeds were
+  `0.001590 m/s` and `0.026940 rad/s`.
+- Isaac Sim emitted the known Warp driver-entry and disabled-NGX startup
+  warnings, but rendering and simulation completed normally; no
+  `ERROR_DEVICE_LOST`, traceback, or runtime exception occurred.
+- Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0904145`.
+  Step 800,954 seed 42 remains the only strict randomized success and current
+  deployment candidate. Continue unchanged to the fresh 950k gate; skip a
+  bounded step-904k seed sweep because this primary rollout had no physical
+  lift or near-placement signal.
