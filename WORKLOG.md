@@ -16669,3 +16669,21 @@ Smoke follow-up:
   deployment candidate. Continue unchanged to the fresh 950k gate; skip a
   bounded step-904k seed sweep because this primary rollout had no physical
   lift or near-placement signal.
+
+## 2026-07-07T06:36:00Z Final N500 Twenty-Ninth Handoff
+
+- Allocation `29938504` timed out normally after 3:50:25 at raw step 907,661.
+  Its latest durable epoch-153 checkpoint was global step 904,145 with
+  validation loss `0.0279319`, leaving a 3,516-update unsaved tail.
+- Submitter PID `714838` observed the terminal state and launched exactly one
+  replacement, job `29942928`, at `2026-07-07T06:03:12Z` on
+  `batch-block5-01178`. The excluded slow node remains
+  `batch-block5-02014`.
+- The replacement explicitly loaded step 904,145, restored training state,
+  sustained about `2.1` updates/s with finite loss, and passed the prior raw
+  high-water at step 908,127. No checkpoint recovery, NaN, OOM, duplicate
+  allocation, or model/data/hyperparameter change occurred.
+- A watcher sample briefly listed PID `397532` beside the real submitter, but
+  process inspection showed it was the transient remote query shell; only
+  submitter PID `714838` persists. Continue toward the fresh 950k randomized
+  evaluation under L40 monitor PID `3976525`.
