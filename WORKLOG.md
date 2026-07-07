@@ -16749,3 +16749,26 @@ Smoke follow-up:
   optimizer, EMA, scheduler, dataset, or hyperparameter change occurred.
 - Continue toward the fresh 1.0M randomized evaluation under L40 monitor PID
   `3976525`; step 800,954 remains the sole strict success.
+
+## 2026-07-07T18:35:00Z Final N500 Thirty-Second Handoff And Slow-Node Recovery
+
+- Allocation `29959187` timed out normally after 3:50 at raw step 991,869.
+  Its latest durable epoch-167 checkpoint was global step 987,680 with
+  validation loss `0.0286286`, leaving a 4,189-update unsaved tail.
+- Submitter PID `714838` launched job `29965684` on
+  `batch-block5-03415`, but the node was persistently input-bound. Eight
+  consecutive GPU samples reported 0% SM utilization, dataloader workers and
+  unrelated jobs were blocked in `D` state, and the run produced only 47
+  replayed updates in 17:01 instead of the normal roughly two updates/s.
+- Job `29965684` was cancelled with no net-progress loss. Its conservative
+  non-timeout/no-progress guard stopped the original submitter instead of
+  launching a duplicate.
+- The unchanged submitter was restarted as PID `967801` with
+  `batch-block5-02014,batch-block5-03415` excluded. It launched exactly one
+  replacement, job `29966172`, at `2026-07-07T18:01:10Z` on the previously
+  healthy `batch-block4-2016` from the same valid step-987,680 checkpoint.
+- Job `29966172` restored normal throughput at about `2.45` updates/s with
+  finite loss and passed the prior raw high-water at step 992,245. No model,
+  optimizer, EMA, scheduler, dataset, or hyperparameter change was made.
+- Continue through the fresh 1.0M randomized gate under L40 monitor PID
+  `3976525`; step 800,954 remains the sole strict success.
