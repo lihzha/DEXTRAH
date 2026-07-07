@@ -16772,3 +16772,37 @@ Smoke follow-up:
   optimizer, EMA, scheduler, dataset, or hyperparameter change was made.
 - Continue through the fresh 1.0M randomized gate under L40 monitor PID
   `3976525`; step 800,954 remains the sole strict success.
+
+## 2026-07-07T20:10:00Z Final N500 Step-1.002M Eval Success
+
+- The periodic monitor crossed raw step 1,000,045, rejected the older
+  checkpoint, and waited for the fresh epoch-169 checkpoint at global step
+  1,002,421 (`val_loss=0.0268376`). L40S job `1101229` evaluated immutable
+  snapshot `step_1002534.ckpt` with paired environment/policy seed 42.
+- Job `1101229` completed cleanly in 18:22 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, finger/table violation, or
+  malformed video. Strict settled-bin success was `1/1`.
+- The object was captured at step 197, crossed the physical-lift threshold at
+  step 2,129, reached `0.372285 m` maximum lift at step 3,435, and traveled up
+  to `0.559708 m` in the table plane. The hand separated at step 4,004,
+  oriented XY containment began at step 4,006, the settled-drop candidate
+  began at step 4,052, and strict success began at step 4,057.
+- Success remained active for all remaining 744 steps through step 4,800.
+  Final oriented containment margins were `x=0.077193 m` and `y=0.007594 m`;
+  final object linear/angular speeds were `0.000974 m/s` and
+  `0.022761 rad/s`. Minimum finger/table clearance remained positive at
+  `0.083524 m`.
+- Scene/wrist inspection confirms a genuine but long and inefficient
+  pick-transport-place sequence rather than an accidental bounce. The object
+  remains captured between the fingers, is carried across the table, then
+  separates over the bin and settles inside.
+- The full scene video has 4,799 frames at 1,280x720 and 60 fps; the sparse
+  dual-camera diagnostic has 42 frames at 512x284 and 4 fps. Isaac Sim emitted
+  only the known Warp driver-entry and disabled-NGX startup warnings; no
+  `ERROR_DEVICE_LOST`, traceback, or runtime exception occurred. Local
+  evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step1002534`.
+- This is the second strict randomized success after step 800,954. L40S jobs
+  `1101233` through `1101236` are evaluating paired seeds 43 through 46 from
+  the same checkpoint to measure reproducibility before promoting it over the
+  step-800,954 candidate.
