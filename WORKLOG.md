@@ -16704,3 +16704,33 @@ Smoke follow-up:
   EMA, scheduler, dataset, or hyperparameter change occurred. Continue toward
   the fresh checkpoint above 950k and its automatic randomized L40S
   evaluation under monitor PID `3976525`.
+
+## 2026-07-07T12:32:00Z Final N500 Step-953K Eval Result
+
+- The periodic monitor crossed raw step 950,131, rejected the older checkpoint,
+  and waited for the fresh epoch-161 checkpoint at global step 953,283
+  (`val_loss=0.0253413`). L40S job `1100936` evaluated immutable snapshot
+  `step_0953395.ckpt` with paired environment/policy seed 42.
+- Job `1100936` completed cleanly in 18:02 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, or malformed video. Strict
+  settled-bin success was `0/1`.
+- The proximity grasp flag was active from steps 165 through 308, but the
+  object never crossed the physical-lift threshold. Maximum lift was only
+  `0.004988 m` at step 234, while maximum table-plane displacement reached
+  `0.089684 m` at step 268. Oriented bin containment and the drop-candidate
+  metric never activated.
+- Scene/wrist inspection shows the fingers contact and push the object, after
+  which it remains untouched. Finger/table clearance first became invalid at
+  step 2,040 and reached `-0.030947 m` at step 4,716, so this was later policy
+  drift rather than the cause of the failed acquisition.
+- Final object linear/angular speeds were `0.000328 m/s` and
+  `0.004900 rad/s`. The full video has 4,799 frames at 1,280x720 and 60 fps;
+  the sparse dual-camera diagnostic has 42 frames at 512x284 and 4 fps.
+- Isaac Sim emitted only the known Warp driver-entry and disabled-NGX startup
+  warnings; no `ERROR_DEVICE_LOST`, traceback, or runtime exception occurred.
+  Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step0953395`.
+- Step 800,954 seed 42 remains the sole strict randomized success and current
+  deployment candidate. Continue unchanged toward the fresh 1.0M gate; skip a
+  step-953k seed sweep because this rollout had neither physical lift nor
+  near-placement signal.
