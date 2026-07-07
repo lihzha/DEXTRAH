@@ -16734,3 +16734,18 @@ Smoke follow-up:
   deployment candidate. Continue unchanged toward the fresh 1.0M gate; skip a
   step-953k seed sweep because this rollout had neither physical lift nor
   near-placement signal.
+
+## 2026-07-07T14:19:00Z Final N500 Thirty-First Handoff
+
+- Allocation `29954024` timed out normally after 3:50:25 at raw step 966,281.
+  Its latest durable epoch-163 checkpoint was global step 963,111 with
+  validation loss `0.0282147`, leaving a 3,170-update unsaved tail.
+- Submitter PID `714838` launched exactly one replacement, job `29959187`, at
+  `2026-07-07T13:48:17Z` on `batch-block4-2016`; slow node
+  `batch-block5-02014` remains excluded.
+- The replacement explicitly loaded step 963,111, sustained about `2.05`
+  updates/s with finite losses, and passed the prior raw high-water at step
+  966,578. No checkpoint recovery, NaN, OOM, duplicate allocation, or model,
+  optimizer, EMA, scheduler, dataset, or hyperparameter change occurred.
+- Continue toward the fresh 1.0M randomized evaluation under L40 monitor PID
+  `3976525`; step 800,954 remains the sole strict success.
