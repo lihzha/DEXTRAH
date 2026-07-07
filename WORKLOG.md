@@ -16806,3 +16806,35 @@ Smoke follow-up:
   `1101233` through `1101236` are evaluating paired seeds 43 through 46 from
   the same checkpoint to measure reproducibility before promoting it over the
   step-800,954 candidate.
+
+## 2026-07-07T20:34:00Z Step-1.002M Randomized Reproducibility Matrix
+
+- L40S jobs `1101233` through `1101236` evaluated paired environment/policy
+  seeds 43 through 46 from the same immutable step-1,002,421 checkpoint. All
+  four completed 4,800 uninterrupted dynamics steps with zero exit status, no
+  reset, termination, truncation, renderer loss, malformed video, or runtime
+  exception.
+- Seed 44 achieved strict success: grasp step 204, physical lift step 515,
+  maximum lift `0.160458 m` at step 877, hand separation and oriented XY
+  containment at step 1,095, settled candidate at step 1,115, and strict
+  success at step 1,125. Success remained active for 3,676 steps through the
+  end of the rollout.
+- Seed 44 finished with positive oriented margins `x=0.007503 m` and
+  `y=0.026646 m`, object speeds `0.000020 m/s` and `0.000086 rad/s`, and
+  minimum finger/table clearance `0.113733 m`. Visual inspection confirms a
+  clean pick, lift, place, and stable settle in both camera streams.
+- Seed 43 never activated grasp and moved the object by less than `1e-6 m`.
+  Seed 45 activated the proximity grasp flag at step 448 but reached only
+  `0.001067 m` lift and `0.005434 m` XY displacement. Seed 46 activated grasp
+  at step 255 but reached only `0.006233 m` lift and dragged the object
+  `0.148925 m` outside the bin; minimum finger/table clearance remained
+  positive at `0.009500 m`.
+- Combined with seed 42, the step-1,002,421 checkpoint scores strict `2/5`, an
+  improvement over step 800,954's `1/5` and step 850,092's `0/5`. Promote
+  step 1,002,421 as the current deployment candidate while continuing the
+  approved long run toward the fresh 1.05M gate.
+- Local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1002421_repro_20260707T2010Z_s{43,44,45,46}`.
+  The comparison grid is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1002421_repro_20260707T2010Z/seeds43-46_dual_sparse_grid.mp4`, ordered seeds 43/44 on the top row and
+  45/46 on the bottom row.
