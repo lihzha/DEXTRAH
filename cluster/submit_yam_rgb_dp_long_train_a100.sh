@@ -21,6 +21,7 @@ POLL_SECONDS="${POLL_SECONDS:-60}"
 JOB_NAME="${JOB_NAME:-yam_rgb_dp_train}"
 CODE_COMMIT="${CODE_COMMIT:-}"
 SLURM_QUERY_FAILURE_RETRIES="${SLURM_QUERY_FAILURE_RETRIES:-5}"
+SLURM_QUERY_FAILURE_FATAL="${SLURM_QUERY_FAILURE_FATAL:-false}"
 SLURM_QUERY_TIMEOUT_SECONDS="${SLURM_QUERY_TIMEOUT_SECONDS:-30}"
 SBATCH_RETRIES="${SBATCH_RETRIES:-5}"
 SBATCH_RETRY_SECONDS="${SBATCH_RETRY_SECONDS:-60}"
@@ -65,6 +66,7 @@ payload = {
     "wrapper": "$WRAPPER",
     "max_submissions": int("$MAX_SUBMISSIONS"),
     "poll_seconds": int("$POLL_SECONDS"),
+    "slurm_query_failure_fatal": "$SLURM_QUERY_FAILURE_FATAL" == "true",
     "slurm_query_timeout_seconds": int("$SLURM_QUERY_TIMEOUT_SECONDS"),
     "sbatch_timeout_seconds": int("$SBATCH_TIMEOUT_SECONDS"),
     "adopt_job_id": "$ADOPT_JOB_ID" or None,
@@ -165,7 +167,11 @@ wait_for_job() {
       failures=$((failures + 1))
       echo "squeue_query_failed job_id=$job_id attempt=$failures rc=$rc output=$out" >&2
       if [ "$failures" -ge "$SLURM_QUERY_FAILURE_RETRIES" ]; then
-        return "$rc"
+        if [ "$SLURM_QUERY_FAILURE_FATAL" = "true" ]; then
+          return "$rc"
+        fi
+        echo "squeue_query_outage_continuing job_id=$job_id failures=$failures" >&2
+        failures=0
       fi
       sleep "$POLL_SECONDS"
       continue
