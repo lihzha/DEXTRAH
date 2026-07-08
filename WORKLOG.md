@@ -16853,3 +16853,18 @@ Smoke follow-up:
   model/data/hyperparameter change occurred.
 - Continue toward the fresh 1.05M randomized gate. Step 1,002,421 remains the
   promoted candidate with strict `2/5` paired-seed success.
+
+## 2026-07-08T02:05:00Z Final N500 Thirty-Fourth Handoff
+
+- Allocation `29974099` timed out normally after 3:50 at raw step 1,048,007.
+  Its latest durable epoch-177 checkpoint was global step 1,046,646 with
+  validation loss `0.0279823`, leaving a 1,361-update unsaved tail.
+- Submitter PID `967801` launched exactly one replacement, job `29980312`, at
+  `2026-07-08T01:45:14Z` on the same healthy `batch-block4-2016` node with both
+  known slow nodes still excluded.
+- The replacement loaded step 1,046,646, restored normal throughput with
+  finite losses, and passed the prior raw high-water at step 1,049,084. No
+  checkpoint recovery, NaN, OOM, duplicate allocation, or configuration
+  change occurred.
+- Continue through the imminent fresh 1.05M randomized evaluation. Step
+  1,002,421 remains the promoted `2/5` paired-seed candidate.
