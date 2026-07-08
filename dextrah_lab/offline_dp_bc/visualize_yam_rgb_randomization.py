@@ -267,7 +267,10 @@ def main():
     background_texture_families = {
         Path(name).stem for name in categorical["background_textures"] if name != "<missing>"
     }
-    table_dome_pairs = {(record["table_texture"], Path(record["dome_texture"]).stem) for record in records}
+    table_dome_pairs = {
+        (Path(record["table_texture"]).stem, Path(record["dome_texture"]).stem) for record in records
+    }
+    rendered_background_wall_count = categorical["background_walls_enabled"].get("True", 0)
 
     summary = {
         "manifest": str(manifest_path),
@@ -287,6 +290,7 @@ def main():
         "unique_dome_texture_families": len(dome_texture_families),
         "unique_background_textures": len(categorical["background_textures"]),
         "unique_background_texture_families": len(background_texture_families),
+        "rendered_background_wall_trajectories": rendered_background_wall_count,
         "unique_table_dome_pairs": len(table_dome_pairs),
         "object_material_overrides_applied": categorical["object_material_override_applied"].get("True", 0),
         "robot_material_records": categorical["robot_material_recorded"].get("True", 0),
@@ -345,12 +349,16 @@ def main():
         ),
         "- Train/validation target overlap: `{}`".format(summary["train_val_target_overlap"]),
         "- Recovery trajectories: `{}` (`{:.1%}`)".format(recovery_count, summary["recovery_fraction"]),
-        "- Unique selected table / dome / background asset files: `{}` / `{}` / `{}`".format(
-            summary["unique_table_textures"], summary["unique_dome_textures"], summary["unique_background_textures"]
+        "- Unique rendered table / dome asset files: `{}` / `{}`".format(
+            summary["unique_table_textures"], summary["unique_dome_textures"]
         ),
-        "- Unique table / dome / background texture families: `{}` / `{}` / `{}`".format(
+        "- Unique rendered table / dome texture families: `{}` / `{}`".format(
             summary["unique_table_texture_families"],
             summary["unique_dome_texture_families"],
+        ),
+        "- Background-wall trajectories rendered: `{}/{}`; `{}` selected background texture families are metadata-only because walls are disabled".format(
+            summary["rendered_background_wall_trajectories"],
+            summary["num_trajectories"],
             summary["unique_background_texture_families"],
         ),
         "- Unique selected table+dome family pairs: `{}`".format(summary["unique_table_dome_pairs"]),
