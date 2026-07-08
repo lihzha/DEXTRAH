@@ -17116,3 +17116,23 @@ Smoke follow-up:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1203888_repro_20260708T2245Z_seeds43-46_dual_sparse_grid.mp4`.
 - Continue the approved run toward the fresh 1.25M gate under long-train
   submitter PID `967801` and periodic-eval monitor PID `3976525`.
+
+## 2026-07-08T23:59:00Z N500 Slurm-Outage Supervisor Recovery
+
+- Training allocation `30003486` remained healthy and advanced through raw
+  step 1,217,199, but long-train submitter PID `967801` exited after five
+  consecutive `squeue` calls timed out. Its log contains no model, data,
+  checkpoint, or training failure; the finite scheduler-query retry limit was
+  the sole exit cause.
+- Commit `9672f9b1` makes scheduler-query exhaustion nonfatal by default while
+  retaining `SLURM_QUERY_FAILURE_FATAL=true` as an explicit fail-fast option.
+  `bash -n` and `git diff --check` pass, and the commit is pushed and deployed
+  in detached A100 worktree
+  `yam-submit-slurmoutage-9672f9b1-20260708`.
+- A temporary adopter was replaced cleanly with the committed supervisor.
+  Detached PID `3887635`, reparented to PID 1, adopted the one existing job
+  `30003486` at raw step 1,218,038. No duplicate allocation was submitted, and
+  training continued to step 1,218,080 with finite loss during verification.
+- The supervisor preserves the same frozen 500-trajectory manifest, batch 80,
+  2M-step target, model settings, excluded slow nodes, and checkpoint-resume
+  behavior. L40S periodic-eval monitor PID `3976525` remains unchanged.
