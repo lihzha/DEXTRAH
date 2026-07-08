@@ -17029,10 +17029,10 @@ Smoke follow-up:
 
 - Added reproducible all-shard audit tool
   `dextrah_lab/offline_dp_bc/visualize_yam_rgb_randomization.py` in commits
-  `25ad8449` and `af71540e`. Python compilation and diff checks pass. The exact
-  final commit is deployed in detached L40S worktree
-  `yam-rgb-randreport-25ad8449-20260708`; the report is metadata/mmap based and
-  required no simulator or GPU allocation.
+  `25ad8449`, `af71540e`, and `cf6ffc8f`. Python compilation and diff checks
+  pass. The exact final report-generator commit is deployed in detached L40S
+  worktree `yam-rgb-randreport-25ad8449-20260708`; the report is metadata/mmap
+  based and required no simulator or GPU allocation.
 - The audit read the frozen 500-shard v16 manifest and all 500 policy/source
   metadata records with zero missing sidecars. It confirms 437,183 control
   steps, 449/51 train/validation trajectories, 80 target objects split 67/13
@@ -17040,9 +17040,10 @@ Smoke follow-up:
 - Selected appearance diversity is 20 table files representing 19 texture
   families, 137 dome files representing 87 environment families, 90
   background texture families, and 248 distinct table+dome-family pairs.
-  Background walls are disabled in all 500 samples; robot material records are
-  present for all 500, while 358 objects accepted an explicit material
-  override and the remainder retain native asset appearance.
+  Background walls are rendered in 0/500 samples, so the 90 background paths
+  are metadata-only selections rather than policy-image textures. Robot
+  material records are present for all 500, while 358 objects accepted an
+  explicit material override and the remainder retain native asset appearance.
 - Measured camera-eye ranges are `x=[-0.51787,-0.48234]`,
   `y=[0.02801,0.05187]`, `z=[0.66210,0.69769] m`. Actual object starts span
   `x=[-0.36783,-0.18437]`, `y=[-0.19216,-0.01764] m`; bin centers span
