@@ -16868,3 +16868,33 @@ Smoke follow-up:
   change occurred.
 - Continue through the imminent fresh 1.05M randomized evaluation. Step
   1,002,421 remains the promoted `2/5` paired-seed candidate.
+
+## 2026-07-08T02:55:00Z Final N500 Step-1.052M Eval Result
+
+- The periodic monitor crossed raw step 1,050,085, rejected the older
+  checkpoint, and waited for the fresh epoch-177 checkpoint at global step
+  1,051,559 (`val_loss=0.0254270`). L40S job `1101500` evaluated immutable
+  snapshot `step_1051679.ckpt` with paired environment/policy seed 42.
+- Job `1101500` completed cleanly in 18:32 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, malformed video, or runtime
+  exception. Strict settled-bin success was `0/1`.
+- The grasp flag activated at step 190 and remained active through step 4,800.
+  Physical lift began only at step 2,832 and peaked at `0.040896 m` at step
+  2,834. Maximum XY displacement reached `0.441088 m`, but the object never
+  separated from the hand, entered oriented bin containment, or became a
+  settled-drop candidate.
+- Finger/table clearance first became invalid at step 1,798 and reached
+  `-0.013629 m` at step 2,696. Final object speeds remained high at
+  `0.182941 m/s` and `5.882674 rad/s`; final containment margins were
+  `x=-0.092295 m` and `y=-0.386996 m`.
+- Scene/wrist inspection confirms persistent object-hand-table contact near
+  the pickup region rather than transport toward the bin. The wrist view is
+  eventually occluded by the contact geometry, while the scene stream remains
+  valid.
+- The full video has 4,799 frames at 1,280x720 and 60 fps; the sparse
+  dual-camera diagnostic has 42 frames at 512x284 and 4 fps. Local evidence is
+  under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step1051679`.
+- Keep step 1,002,421 as the promoted strict `2/5` candidate and continue the
+  approved long run toward the fresh 1.10M gate. Skip a step-1.052M seed sweep
+  because this rollout showed neither release nor near-placement behavior.
