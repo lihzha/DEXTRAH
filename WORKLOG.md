@@ -16898,3 +16898,64 @@ Smoke follow-up:
 - Keep step 1,002,421 as the promoted strict `2/5` candidate and continue the
   approved long run toward the fresh 1.10M gate. Skip a step-1.052M seed sweep
   because this rollout showed neither release nor near-placement behavior.
+
+## 2026-07-08T06:10:00Z Final N500 Thirty-Fifth Handoff
+
+- Allocation `29980312` timed out normally after 3:50:29 at raw step
+  1,079,073. Its latest durable epoch-182 checkpoint was global step 1,076,129
+  with validation loss `0.0279232`, leaving a 2,944-update unsaved tail.
+- Submitter PID `967801` launched exactly one replacement, job `29985941`, at
+  `2026-07-08T05:37:14Z` on `batch-block7-00856`. Both known slow nodes
+  remained excluded.
+- The replacement loaded the durable checkpoint, sustained finite loss, and
+  passed the prior raw high-water at step 1,079,364. No checkpoint recovery,
+  NaN, OOM, duplicate allocation, or model/data/hyperparameter change occurred.
+
+## 2026-07-08T09:40:00Z Final N500 Thirty-Sixth Handoff
+
+- Allocation `29985941` timed out normally after 3:50:07 at raw step
+  1,106,270. Its latest durable epoch-187 checkpoint was global step 1,105,612
+  with validation loss `0.0286970`, leaving a 658-update unsaved tail.
+- Submitter PID `967801` launched exactly one replacement, job `29991444`, at
+  `2026-07-08T09:28:57Z`. The replacement loaded the durable checkpoint and
+  passed the prior high-water at step 1,106,451 with finite loss. Both known
+  slow nodes remained excluded, and no configuration change was made.
+
+## 2026-07-08T09:45:00Z N500 Step-1.101M Eval And Reproducibility Matrix
+
+- The periodic monitor crossed raw step 1,100,117, rejected the older
+  checkpoint, and waited for the fresh epoch-186 checkpoint at global step
+  1,100,698 (`val_loss=0.0290239`). L40S job `1101552` evaluated immutable
+  snapshot `step_1100746.ckpt` with paired environment/policy seed 42.
+- Job `1101552` completed cleanly in 18:09 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, finger/table violation, or
+  malformed video. Strict settled-bin success was `0/1`.
+- Seed 42 was a near placement: grasp began at step 184, maximum lift reached
+  `0.123378 m` at step 788, and oriented XY containment held for 78 steps from
+  832 through 909. Opening began at step 905, but hand separation occurred at
+  step 910 exactly as the object left strict Y containment. Release speed
+  peaked at `0.986369 m/s`; no settled-drop candidate formed. Final margins
+  were `x=0.041627 m`, `y=-0.023806 m`.
+- Because the primary rollout reached the bin, jobs `1101553` through
+  `1101556` evaluated paired seeds 43 through 46 with the identical 4,800-step
+  quality-rendered protocol, 100 diffusion inference steps, and action chunk
+  eight. All four completed in 17:40--19:17 with zero exit status and strict
+  success `0/4`.
+- Seed 43 never grasped or moved the object materially. Seed 44 grasped but
+  lifted only `0.009552 m`. Seed 45 did not grasp and pushed the object
+  `0.150750 m`. Seed 46 grasped and lifted `0.150135 m`, transported over the
+  bin, but never achieved strict oriented containment; it finished wedged
+  against the wall with margins `x=-0.034670 m`, `y=-0.011058 m`.
+- The checkpoint therefore scores strict `0/5`; keep global step 1,002,421 as
+  the promoted candidate at `2/5`. Visual inspection agrees with the metrics:
+  seed 42 releases too fast and rests against a wall, seeds 43--45 fail before
+  transport, and seed 46 carries to the bin but leaves the object protruding.
+- Primary local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step1100746`.
+  Paired-seed evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1100698_repro_20260708T0915Z_s{43,44,45,46}`.
+  The 42-frame, 1,024x568, 4 fps comparison grid is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1100698_repro_20260708T0915Z_seeds43-46_dual_sparse_grid.mp4`,
+  ordered seeds 43/44 on the top row and 45/46 on the bottom row.
+- Continue the approved run toward the fresh 1.15M gate under long-train
+  submitter PID `967801` and periodic-eval monitor PID `3976525`.
