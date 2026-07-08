@@ -201,6 +201,11 @@ def main():
         categorical["control_mode"][str(recording.get("control_mode", "missing"))] += 1
         categorical["background_walls_enabled"][str(bool(background_walls.get("enabled", False)))] += 1
         categorical["dynamic_replay"][str(bool(recording.get("dynamics_mode", False)))] += 1
+        categorical["object_material_recorded"][str(bool(object_material))] += 1
+        categorical["object_material_override_applied"][
+            str(bool(object_material.get("override_applied", False)))
+        ] += 1
+        categorical["robot_material_recorded"][str(bool(robot_material))] += 1
         replay_gate = recording.get("replay_gate") or {}
         categorical["replay_gate_passed"][str(bool(replay_gate.get("passed", False)))] += 1
         categorical["exact_visual_resample"][str(bool(recording.get("exact_visual_resample", False)))] += 1
@@ -257,6 +262,12 @@ def main():
     train_targets = {record["target_uuid"] for record in records if record["split"] == "train"}
     val_targets = {record["target_uuid"] for record in records if record["split"] == "val"}
     recovery_count = categorical["recovery_data"].get("True", 0)
+    table_texture_families = {Path(name).stem for name in categorical["table_textures"] if name != "<missing>"}
+    dome_texture_families = {Path(name).stem for name in categorical["dome_textures"] if name != "<missing>"}
+    background_texture_families = {
+        Path(name).stem for name in categorical["background_textures"] if name != "<missing>"
+    }
+    table_dome_pairs = {(record["table_texture"], Path(record["dome_texture"]).stem) for record in records}
 
     summary = {
         "manifest": str(manifest_path),
@@ -271,8 +282,14 @@ def main():
         "recovery_trajectories": recovery_count,
         "recovery_fraction": float(recovery_count / len(records)),
         "unique_table_textures": len(categorical["table_textures"]),
+        "unique_table_texture_families": len(table_texture_families),
         "unique_dome_textures": len(categorical["dome_textures"]),
+        "unique_dome_texture_families": len(dome_texture_families),
         "unique_background_textures": len(categorical["background_textures"]),
+        "unique_background_texture_families": len(background_texture_families),
+        "unique_table_dome_pairs": len(table_dome_pairs),
+        "object_material_overrides_applied": categorical["object_material_override_applied"].get("True", 0),
+        "robot_material_records": categorical["robot_material_recorded"].get("True", 0),
         "missing_source_metadata_count": len(missing_source_metadata),
     }
 
@@ -328,12 +345,33 @@ def main():
         ),
         "- Train/validation target overlap: `{}`".format(summary["train_val_target_overlap"]),
         "- Recovery trajectories: `{}` (`{:.1%}`)".format(recovery_count, summary["recovery_fraction"]),
-        "- Unique selected table / dome / background textures: `{}` / `{}` / `{}`".format(
+        "- Unique selected table / dome / background asset files: `{}` / `{}` / `{}`".format(
             summary["unique_table_textures"], summary["unique_dome_textures"], summary["unique_background_textures"]
+        ),
+        "- Unique table / dome / background texture families: `{}` / `{}` / `{}`".format(
+            summary["unique_table_texture_families"],
+            summary["unique_dome_texture_families"],
+            summary["unique_background_texture_families"],
+        ),
+        "- Unique selected table+dome family pairs: `{}`".format(summary["unique_table_dome_pairs"]),
+        "- Object material overrides / robot material records: `{}` / `{}`".format(
+            summary["object_material_overrides_applied"], summary["robot_material_records"]
         ),
         "- Missing source metadata: `{}`".format(summary["missing_source_metadata_count"]),
         "",
         "The 100-cell grids sample the frozen manifest uniformly. Each cell places `scene_rgb` on the left and `wrist_rgb` on the right. Cell metadata is in `randomization_stats.json`.",
+        "",
+        "### Initial Frames",
+        "",
+        "![Initial scene/wrist randomization grid](randomization_grid_initial_scene_wrist.png)",
+        "",
+        "### Midpoint Frames",
+        "",
+        "![Midpoint scene/wrist randomization grid](randomization_grid_midpoint_scene_wrist.png)",
+        "",
+        "### Final Frames",
+        "",
+        "![Final scene/wrist randomization grid](randomization_grid_final_scene_wrist.png)",
         "",
         "## Geometry And Camera",
         "",
