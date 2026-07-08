@@ -17013,3 +17013,55 @@ Smoke follow-up:
   ordered seeds 43/44 on the top row and 45/46 on the bottom row.
 - Continue the approved run toward the fresh 1.20M gate under long-train
   submitter PID `967801` and periodic-eval monitor PID `3976525`.
+
+## 2026-07-08T17:46:00Z Final N500 Thirty-Eighth Handoff
+
+- Allocation `29995156` timed out normally after 3:50:05 at raw step
+  1,167,461. Its latest durable epoch-197 checkpoint was global step 1,164,578
+  with validation loss `0.0293426`, leaving a 2,883-update unsaved tail.
+- Submitter PID `967801` launched exactly one replacement, job `29998110`, at
+  `2026-07-08T17:14:59Z` on `batch-block5-03317`. It loaded the durable
+  checkpoint with finite loss and passed the prior raw high-water at step
+  1,168,693. Both known slow nodes remained excluded and no training setting
+  changed.
+
+## 2026-07-08T17:50:00Z Final V16 Randomization Audit And 100-Way Grids
+
+- Added reproducible all-shard audit tool
+  `dextrah_lab/offline_dp_bc/visualize_yam_rgb_randomization.py` in commits
+  `25ad8449` and `af71540e`. Python compilation and diff checks pass. The exact
+  final commit is deployed in detached L40S worktree
+  `yam-rgb-randreport-25ad8449-20260708`; the report is metadata/mmap based and
+  required no simulator or GPU allocation.
+- The audit read the frozen 500-shard v16 manifest and all 500 policy/source
+  metadata records with zero missing sidecars. It confirms 437,183 control
+  steps, 449/51 train/validation trajectories, 80 target objects split 67/13
+  with zero overlap, and 45 recovery trajectories (`9.0%`).
+- Selected appearance diversity is 20 table files representing 19 texture
+  families, 137 dome files representing 87 environment families, 90
+  background texture families, and 248 distinct table+dome-family pairs.
+  Background walls are disabled in all 500 samples; robot material records are
+  present for all 500, while 358 objects accepted an explicit material
+  override and the remainder retain native asset appearance.
+- Measured camera-eye ranges are `x=[-0.51787,-0.48234]`,
+  `y=[0.02801,0.05187]`, `z=[0.66210,0.69769] m`. Actual object starts span
+  `x=[-0.36783,-0.18437]`, `y=[-0.19216,-0.01764] m`; bin centers span
+  `x=[-0.31946,-0.12184]`, `y=[0.10006,0.25968] m`; bin inner sizes span
+  `0.22026-0.31944 x 0.16598-0.23989 m`, with wall heights
+  `0.08014-0.13966 m`.
+- Dome/key intensities span `452.0-1594.1` and `250.6-1387.5`. Trajectories
+  contain 642-1,384 steps (mean 874.4); stationary-TCP runs have median six and
+  maximum 45 steps. All 500 records confirm quality rendering, dynamics,
+  exact visual resampling, passed action-only replay, hidden debug sites, and
+  no policy phase/progress/privileged input.
+- Generated initial/midpoint/final 100-cell scene+wrist grids at 2,624x1,324.
+  Visual inspection shows table-dominant external views with substantial
+  object, bin, wood, exposure, shadow, and robot variation. Wrist views vary
+  more strongly and sometimes include table-edge/dome context during transport
+  and retraction; no sampled stream is blank or malformed.
+- Remote report root:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/visualizations/yam_v16_randomization_report_20260708T1710Z`.
+  Local inspected artifacts are under
+  `cluster_results/l401/yam_v16_randomization_report_20260708T1710Z`, including
+  `randomization_report.md`, `randomization_stats.json`, and the three PNG
+  grids.
