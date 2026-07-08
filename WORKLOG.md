@@ -16959,3 +16959,57 @@ Smoke follow-up:
   ordered seeds 43/44 on the top row and 45/46 on the bottom row.
 - Continue the approved run toward the fresh 1.15M gate under long-train
   submitter PID `967801` and periodic-eval monitor PID `3976525`.
+
+## 2026-07-08T13:32:00Z Final N500 Thirty-Seventh Handoff
+
+- Allocation `29991444` timed out normally after 3:50:29 at raw step
+  1,135,949. Its latest durable epoch-192 checkpoint was global step 1,135,095
+  with validation loss `0.0292414`, leaving an 854-update unsaved tail.
+- Submitter PID `967801` launched exactly one replacement, job `29995156`, at
+  `2026-07-08T13:21:55Z`. It loaded the durable checkpoint, returned to the
+  normal finite-loss range, and passed the prior raw high-water at step
+  1,135,957. Both known slow nodes remained excluded and no training setting
+  changed.
+
+## 2026-07-08T16:32:00Z N500 Step-1.155M Eval And Reproducibility Matrix
+
+- The periodic monitor crossed raw step 1,150,117 and waited for the fresh
+  epoch-195 checkpoint at global step 1,154,750 (`val_loss=0.0287638`). L40S
+  job `1101599` evaluated immutable snapshot `step_1154781.ckpt` with paired
+  environment/policy seed 42.
+- Job `1101599` completed cleanly in 17:35 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, finger/table violation, or
+  malformed video. It achieved strict settled-bin success `1/1`.
+- Seed 42 grasped at step 198, crossed the physical-lift threshold at step
+  317, and reached `0.243545 m` maximum lift at step 653. The hand released by
+  step 750, oriented XY containment began at step 751, settled candidacy began
+  at step 776, and strict success began at step 781. Success stayed active for
+  all remaining 4,020 steps through step 4,800. Final margins were
+  `x=0.055270 m`, `y=0.030241 m`; final object speeds were `0.001747 m/s` and
+  `0.041711 rad/s`.
+- Jobs `1101600` through `1101603` evaluated paired seeds 43 through 46 with
+  the identical 4,800-step quality-rendered protocol, 100 DDPM inference
+  steps, and action chunk eight. All completed in 17:50--19:07 with zero exit
+  status.
+- Seed 43 never grasped or moved the object materially. Seed 44 grasped and
+  lifted `0.123782 m` but never entered bin containment. Seed 45 activated the
+  proximity grasp flag but lifted only `0.001175 m`. Seed 46 achieved a second
+  strict success: grasp step 273, physical lift step 2,505, maximum lift
+  `0.143087 m` at step 2,947, containment step 3,057, candidate step 3,115,
+  and success step 3,126 through step 4,800. Its final margins were
+  `x=0.043599 m`, `y=0.010680 m`, with object speeds `0.000346 m/s` and
+  `0.020378 rad/s`.
+- The checkpoint therefore scores strict `2/5`, tying global step 1,002,421
+  for the best measured five-seed rate. It is the provisional preferred
+  candidate because its successful rollouts reach strict success sooner on
+  average (steps 781 and 3,126 versus 4,057 and 1,125), while preserving
+  positive final margins and table clearance.
+- Primary local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step1154781`.
+  Paired-seed evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1154750_repro_20260708T1610Z_s{43,44,45,46}`.
+  The 42-frame, 1,024x568, 4 fps comparison grid is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1154750_repro_20260708T1610Z_seeds43-46_dual_sparse_grid.mp4`,
+  ordered seeds 43/44 on the top row and 45/46 on the bottom row.
+- Continue the approved run toward the fresh 1.20M gate under long-train
+  submitter PID `967801` and periodic-eval monitor PID `3976525`.
