@@ -17233,8 +17233,8 @@ Smoke follow-up:
 
 ## 2026-07-09T08:17:00Z L40S Periodic Monitor Recovery
 
-- Periodic-eval monitor PID `3976525` was no longer present after the L40S
-  login node exhausted process slots during concurrent evaluation inspection.
+- An L402-local process check could not see original L401 periodic-eval
+  monitor PID `3976525` after the L401 login node exhausted process slots.
   Training and all submitted eval jobs were unaffected; the durable ledger
   remained intact with 21 unique entries through snapshot `step_1253099`.
 - Relaunched the same commit, monitor name, quality-rendered 4,800-step
@@ -17244,9 +17244,14 @@ Smoke follow-up:
   `next_threshold=1300000`.
 - Set external-process retries effectively unbounded for this lightweight
   monitor instance so transient login-node fork or scheduler-query exhaustion
-  cannot discard its durable threshold state. No evaluation was duplicated.
-  Recovery output is in the monitor directory as
-  `restarted_monitor_20260709T081607Z.log`.
+  cannot discard its durable threshold state. Recovery output is in the
+  monitor directory as `restarted_monitor_20260709T081607Z.log`.
+- A direct L401 check at `2026-07-09T09:05Z` established that the old process
+  had remained alive in the separate L401 process namespace. Terminated only
+  its monitor process group `3976282` before the 1.30M threshold and retained
+  hardened L402 PID `2722107`. The shared ledger still had exactly 21 entries,
+  next threshold 1.30M, and no periodic evaluation was duplicated by this
+  monitor recovery.
 
 ## 2026-07-09T09:03:00Z Final N500 Forty-Second Handoff
 
