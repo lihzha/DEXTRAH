@@ -17553,3 +17553,29 @@ Smoke follow-up:
   worktree would violate future per-job commit checks. The validator fix will
   be deployed to a separate audit worktree, leaving all main/recovery/replacement
   jobs and submitters untouched.
+
+## 2026-07-09T14:29:00Z Corrected-Corpus Live Audit Passed
+
+- Deployed validator-only commit `65fe6ebc4ea27ab2d0a7fda715a75d0e5fcb50f9`
+  into the separate L40S audit worktree while leaving the active production
+  collection pinned to `482b1b3c4c2ce856e4ddb0570757e63c03ff1d89`.
+- Froze a symlink snapshot of exactly 16 admitted shards and ran post-hoc
+  curriculum job `1102304`. It accepted `16/16` trajectories (`13,994` control
+  steps), including 15 nominal pose-target and one pose-recovery trajectory.
+  Every shard passed quality rendering, exact visual resampling, dynamic
+  replay, ground-texture, strict placement, and recorded-action replay gates.
+- Randomization report job `1102310` confirmed ground overlays on `16/16`
+  trajectories, 12 floor texture families, 11 table texture families, 13 dome
+  families, 15 table+dome pairs, 15 target objects, and zero train/validation
+  target overlap. Ground tiling spans `2.26195--4.38676`; stationary TCP tails
+  are at most 19 steps.
+- Inspected initial, midpoint, and final 4x4 dual-camera grids. Scene views keep
+  the table, bin, object, and robot in frame without visible room background;
+  wrist views show textured floor instead of Isaac's fixed grid when looking
+  beyond the table. No blank frames, hidden initial targets, or visual labels
+  were observed.
+- Through accepted shard 31, all collection failures are expected physical or
+  dynamics-gate rejects (`no_successful_recorded_episode` or
+  `recorded_action_replay_gate_failed`); no `ERROR_DEVICE_LOST` events occurred.
+  Next: freeze and inspect a 50-shard milestone while the three ordinary-job
+  submitters continue backfilling rejects.
