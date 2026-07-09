@@ -65,3 +65,24 @@ def authoritative_recorded_visual_asset(
                 if selected:
                     return selected
     return str(fallback or "")
+
+
+def recorded_surface_texture_tiling_range(
+    *,
+    background_metadata: Mapping[str, object],
+    ground_metadata: Mapping[str, object],
+    ground_enabled: bool,
+    eval_ground_fallback: object,
+) -> tuple[float, float]:
+    """Recover the RNG range that produced the shared background/floor draw."""
+    candidates = (
+        ground_metadata.get("texture_tiling_range"),
+        background_metadata.get("background_texture_tiling_range"),
+        eval_ground_fallback if ground_enabled else (1.0, 2.2),
+    )
+    for candidate in candidates:
+        if isinstance(candidate, (list, tuple)) and len(candidate) == 2:
+            low, high = float(candidate[0]), float(candidate[1])
+            if low <= high:
+                return low, high
+    raise ValueError("Could not recover a valid background/floor texture tiling range")

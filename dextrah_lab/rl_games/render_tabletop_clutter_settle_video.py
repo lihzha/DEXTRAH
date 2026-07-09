@@ -908,12 +908,18 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
             "background_texture_dir": args.yam_policy_background_texture_dir,
             "background_texture_path": background_texture_path or None,
             "background_texture_tiling": background_texture_tiling,
+            "background_texture_tiling_range": [
+                float(v) for v in background_texture_tiling_range
+            ],
         },
         "ground_texture": {
             "enabled": bool(args.yam_policy_ground_texture),
             "texture_dir": args.yam_policy_background_texture_dir,
             "texture_path": background_texture_path or None,
             "texture_tiling": background_texture_tiling,
+            "texture_tiling_range": [
+                float(v) for v in background_texture_tiling_range
+            ],
             "roughness": float(getattr(env_cfg, "yam_policy_background_wall_roughness")),
             "size": [float(v) for v in args.yam_policy_ground_texture_size],
             "z": float(getattr(env_cfg, "ground_plane_z", 0.0)) + 0.001,

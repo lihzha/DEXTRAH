@@ -17415,3 +17415,23 @@ Smoke follow-up:
   and `final_wrist_6m_vs_20m.png`. This source-replay path passes. Before
   scaling, convert this record to a policy shard and run the independent exact
   reset/dynamics path to verify authoritative floor restoration end to end.
+
+## 2026-07-09T13:48:00Z Exact Ground-Replay Range Bug
+
+- CPU job `1102241` converted smoke-2 row 22 to a mmap policy shard with the
+  production trim (`pose norm > 0.01`, keep zero preceding rows), yielding 776
+  policy steps. L40S exact action-replay job `1102242` then failed deliberately
+  at the deterministic appearance gate before environment creation.
+- Every replayed color, light, camera, and table value matched exactly, but the
+  shared background/floor tiling draw differed by `1.7557458`. Source replay
+  sampled the new floor range `[2.0, 5.0]`; exact replay still reconstructed
+  the legacy background-wall range `[1.0, 2.2]`.
+- Patched source metadata to persist the actual texture-tiling range in both
+  the background and ground records. Exact replay now prioritizes the recorded
+  ground range, then the recorded background range; the existing smoke shards
+  made before this metadata addition use the explicit eval-floor range only
+  when the ground overlay is enabled. Legacy ground-disabled v16 replay keeps
+  `[1.0, 2.2]` unchanged.
+- Python compilation, Ruff, and 24 focused exact-visual/curriculum tests pass,
+  including new recorded-range, early-ground-shard, and legacy-v16 cases.
+  Next: commit, deploy, and rerun the same exact action-replay gate.

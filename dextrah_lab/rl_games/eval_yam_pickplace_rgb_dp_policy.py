@@ -22,6 +22,7 @@ from isaaclab.app import AppLauncher
 from dextrah_lab.offline_dp_bc.bin_containment import projected_box_half_extents
 from dextrah_lab.offline_dp_bc.exact_visual_replay import (
     authoritative_recorded_visual_asset,
+    recorded_surface_texture_tiling_range,
     select_exact_visual_asset,
     should_replay_resampled_assets,
 )
@@ -926,7 +927,15 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         exts=SURFACE_TEXTURE_EXTS,
         exclude_tokens=("normal", "orm", "rough", "metal", "height"),
     )
-    background_texture_tiling = float(rng.uniform(1.0, 2.2))
+    background_texture_tiling_range = recorded_surface_texture_tiling_range(
+        background_metadata=background,
+        ground_metadata=ground_texture,
+        ground_enabled=bool(ground_texture.get("enabled", False)),
+        eval_ground_fallback=args_cli.yam_policy_ground_texture_tiling_range,
+    )
+    background_texture_tiling = float(
+        rng.uniform(background_texture_tiling_range[0], background_texture_tiling_range[1])
+    )
     dome_texture_roots = (
         args_cli.yam_policy_dome_light_texture_dir
         if args_cli.exact_visual_resample
@@ -1036,6 +1045,9 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         "table_texture_tiling": table_texture_tiling,
         "background_roughness": background_roughness,
         "background_texture_tiling": background_texture_tiling,
+        "background_texture_tiling_range": [
+            float(v) for v in background_texture_tiling_range
+        ],
         "bin_visual_roughness": bin_visual_roughness,
         "scene_eye": scene_eye,
         "scene_target": scene_target,
