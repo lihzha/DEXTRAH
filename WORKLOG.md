@@ -17663,3 +17663,28 @@ Smoke follow-up:
   steps with action chunk 8. Baseline comparator job `1102493` uses the same
   corrected environment and seed 42. Pilot step 216 was finite during the
   first health check.
+
+## 2026-07-09T15:52:00Z Corrected-Ground Baseline And Dual-Camera Eval Video
+
+- Baseline comparator `1102493` exposed a deployment-only failure: the new
+  isolated eval worktree had skipped LFS smudging and lacked the generated
+  `yam_linear.usd`. Materialized cached LFS objects with `git lfs checkout` and
+  copied the ignored 4.7 MB generated USD directory from the pinned production
+  worktree. Retry `1102508` then completed all 4,800 steps in 18 minutes with
+  the corrected floor/table/HDR/material randomization active.
+- Step-1,154,781 baseline failed seed 42 under the corrected appearance
+  (`0/1` strict success). It lifted `0.0857 m`, carried the object to the wrong
+  side of the bin, released it on the table, and continued without an episode
+  reset. The 79.98-second scene video and metrics were fetched under
+  `cluster_results/l401/yam_rgb_dp_v17_baseline1154781_ground_s42_retry_20260709T1515Z`.
+- The standard Gym video only exposed the scene renderer, so commit `66abbc45`
+  adds a dedicated full-rate policy-observation video. It concatenates raw
+  256x256 scene and wrist inputs horizontally before each action, encodes at
+  60 FPS without labels/overlays, records frame count/path/FPS in metrics, and
+  makes the eval wrapper fail if the requested dual video is missing.
+- L40S smoke `1102664` encoded `120/120` frames as a clean 512x256 scene-left /
+  wrist-right MP4 and passed artifact validation. Replaced the pre-5k monitor
+  before it submitted any jobs; dual-video monitor PID `3682294` now runs from
+  an isolated `66abbc45` worktree. Pilot training remains pinned independently
+  to `10c26560` and was at step 6,356 with finite loss. Corrected collection
+  reached 200 admitted trajectories with no device-loss events.
