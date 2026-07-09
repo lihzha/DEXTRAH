@@ -17510,3 +17510,30 @@ Smoke follow-up:
   randomized 24-texture floor. Main, failed-source recovery, and object-diverse
   replacement submitters will use ordinary jobs with explicit throttles; no
   Slurm arrays are used.
+
+## 2026-07-09T14:16:00Z V17 Corrected 500-Shard Replay Launch
+
+- Froze production code at commit `482b1b3c4c2ce856e4ddb0570757e63c03ff1d89`
+  in the isolated L40S worktree and normalized frozen v16's 500-row curriculum
+  into run-local `replacement_source_manifest_500.json` with container-visible
+  absolute shard paths. It contains 500 strict sources and 80 object-distinct
+  donor indices.
+- Launched main ordinary-job submitter PID `3519005` with prefix
+  `yv17main_482b`, ten-job throttle, 15-minute per-shard limit, quality
+  rendering, dynamics, dataset-pose control, two `256x256` streams, 64 warmup
+  frames, and every-50th full video. Recovery PID `3519142` uses three
+  `dataset_pose_recovery` slots; object-diverse replacement PID `3519192` uses
+  two slots. All three are detached PID-1 session leaders with durable TSV
+  ledgers and locks. No Slurm arrays are used.
+- Run root:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z`.
+  The first ten ordinary jobs were `1102251`--`1102260`.
+- Early audit at six accepted shards found six enabled `20x20 m` floor
+  overlays, five distinct floor files, tilings spanning `2.262--3.583`, zero
+  source-RNG numeric error, strict physical success, passed recorded-action
+  dynamics gates, and finite stored streams. Three initial failures entered
+  the recovery ledger as designed; failed episodes are not admitted.
+- Inspected smoke artifacts remain available at
+  `http://localhost:8765/view?path=cluster_results/l401/yam_controller_stateobs_v17_ground_smoke_source000000_20260709T1405Z/source000000_scene_wrist.mp4`
+  and
+  `http://localhost:8765/view?path=cluster_results/l401/yam_controller_stateobs_v17_ground_smoke_source000000_20260709T1405Z/source000000_12frame_grid.png`.
