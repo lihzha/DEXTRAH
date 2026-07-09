@@ -40,6 +40,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--val_ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
+        "--split_source_manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Inherit the authoritative target-UUID train/validation split from "
+            "an existing sharded manifest. Every accepted target UUID must be present."
+        ),
+    )
+    parser.add_argument(
         "--max_stationary_tcp_steps",
         type=int,
         default=60,
@@ -294,7 +303,11 @@ def _validate_shard(
 
 
 def _object_disjoint_order(
-    records: list[dict[str, Any]], val_ratio: float, seed: int, output_dir: Path
+    records: list[dict[str, Any]],
+    val_ratio: float,
+    seed: int,
+    output_dir: Path,
+    fixed_uuid_splits: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], set[str]]:
     if not 0.0 < val_ratio < 1.0:
         raise ValueError("val_ratio must be strictly between zero and one")
@@ -321,6 +334,16 @@ def _object_disjoint_order(
                 source_order.append(int(row["source_index"]))
                 uuid_splits[str(row["target_uuid"])] = str(row["split"])
 
+    if fixed_uuid_splits is not None:
+        conflicts = {
+            object_id: (uuid_splits[object_id], split)
+            for object_id, split in fixed_uuid_splits.items()
+            if object_id in uuid_splits and uuid_splits[object_id] != split
+        }
+        if conflicts:
+            raise ValueError(f"Persistent split registry conflicts with source manifest: {conflicts}")
+        uuid_splits.update(fixed_uuid_splits)
+
     invalid_splits = sorted({value for value in uuid_splits.values() if value not in {"train", "val"}})
     if invalid_splits:
         raise ValueError(f"Invalid persistent object splits: {invalid_splits}")
@@ -341,6 +364,13 @@ def _object_disjoint_order(
         counts[str(record["target_uuid"])] += 1
     if len(counts) < 2:
         raise ValueError("Object-disjoint validation requires at least two target UUIDs")
+    if fixed_uuid_splits is not None:
+        missing_object_ids = sorted(set(counts).difference(fixed_uuid_splits))
+        if missing_object_ids:
+            raise ValueError(
+                "Accepted target UUIDs missing from split source manifest: "
+                f"{missing_object_ids}"
+            )
     assigned_ids = set(uuid_splits).intersection(counts)
     assigned_rows = sum(counts[object_id] for object_id in assigned_ids)
     val_rows = sum(counts[object_id] for object_id in assigned_ids if uuid_splits[object_id] == "val")
@@ -371,6 +401,37 @@ def _object_disjoint_order(
     }
     registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return ordered, val_ids
+
+
+def _load_source_uuid_splits(manifest_path: Path) -> dict[str, str]:
+    try:
+        payload = json.loads(manifest_path.expanduser().resolve().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Cannot load split source manifest {manifest_path}: {exc}") from exc
+    rows = payload.get("shards")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"Split source manifest has no shard rows: {manifest_path}")
+    splits: dict[str, str] = {}
+    for row_index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise ValueError(f"Invalid split source row {row_index}: {row!r}")
+        object_id = str(row.get("target_uuid") or "")
+        split = str(row.get("split") or "")
+        if not object_id or split not in {"train", "val"}:
+            raise ValueError(
+                f"Invalid target UUID or split in source row {row_index}: "
+                f"target_uuid={object_id!r} split={split!r}"
+            )
+        previous = splits.get(object_id)
+        if previous is not None and previous != split:
+            raise ValueError(
+                f"Source manifest assigns target UUID {object_id!r} to both "
+                f"{previous!r} and {split!r}"
+            )
+        splits[object_id] = split
+    if set(splits.values()) != {"train", "val"}:
+        raise ValueError("Split source manifest must contain both train and validation objects")
+    return splits
 
 
 def _manifest_row(record: dict[str, Any], output_dir: Path, val_ids: set[str]) -> dict[str, Any]:
@@ -425,8 +486,22 @@ def main() -> None:
             f"Expected {args.expected_count} replay-gated shards, found {len(accepted)}; "
             f"see {output_dir / 'validation_audit.json'}"
         )
+    split_source_manifest = (
+        args.split_source_manifest.expanduser().resolve()
+        if args.split_source_manifest is not None
+        else None
+    )
+    fixed_uuid_splits = (
+        _load_source_uuid_splits(split_source_manifest)
+        if split_source_manifest is not None
+        else None
+    )
     ordered, val_ids = _object_disjoint_order(
-        accepted, float(args.val_ratio), int(args.seed), output_dir
+        accepted,
+        float(args.val_ratio),
+        int(args.seed),
+        output_dir,
+        fixed_uuid_splits=fixed_uuid_splits,
     )
     sizes = sorted(set(int(size) for size in args.sizes))
     if not sizes or sizes[0] < 1 or sizes[-1] > len(ordered):
@@ -448,6 +523,9 @@ def main() -> None:
             "num_train_shards": train_count,
             "num_val_shards": val_count,
             "object_disjoint_split": True,
+            "split_source_manifest": (
+                str(split_source_manifest) if split_source_manifest is not None else None
+            ),
             "image_keys": ["scene_rgb", "wrist_rgb"],
             "robot_state_key": "robot_state",
             "action_key": "action",
@@ -478,6 +556,9 @@ def main() -> None:
         "seed": int(args.seed),
         "val_ratio": float(args.val_ratio),
         "accepted_count": len(accepted),
+        "split_source_manifest": (
+            str(split_source_manifest) if split_source_manifest is not None else None
+        ),
         "val_target_uuids": sorted(val_ids),
         "stages": curriculum_rows,
     }

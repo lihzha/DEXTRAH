@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from dextrah_lab.offline_dp_bc.build_yam_controller_native_curriculum import (
+    _load_source_uuid_splits,
     _object_disjoint_order,
     _validate_shard,
 )
@@ -99,6 +100,62 @@ def _write_shard(
 
 
 class YamControllerNativeCurriculumValidationTest(unittest.TestCase):
+    def test_split_source_manifest_preserves_authoritative_object_assignments(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_manifest = root / "source_manifest.json"
+            source_manifest.write_text(
+                json.dumps(
+                    {
+                        "shards": [
+                            {"target_uuid": "train-object", "split": "train"},
+                            {"target_uuid": "val-object", "split": "val"},
+                            {"target_uuid": "future-object", "split": "train"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            records = [
+                {"source_index": 3, "target_uuid": "val-object"},
+                {"source_index": 5, "target_uuid": "train-object"},
+            ]
+            output_dir = root / "output"
+            output_dir.mkdir()
+
+            fixed_splits = _load_source_uuid_splits(source_manifest)
+            ordered, val_ids = _object_disjoint_order(
+                records,
+                0.1,
+                42,
+                output_dir,
+                fixed_uuid_splits=fixed_splits,
+            )
+
+            self.assertEqual([record["source_index"] for record in ordered], [3, 5])
+            self.assertEqual(val_ids, {"val-object"})
+            registry = json.loads(
+                (output_dir / "split_registry.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(registry["target_uuid_splits"], fixed_splits)
+
+    def test_split_source_manifest_rejects_unknown_accepted_object(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            records = [
+                {"source_index": 3, "target_uuid": "val-object"},
+                {"source_index": 5, "target_uuid": "unknown-object"},
+            ]
+
+            with self.assertRaisesRegex(ValueError, "missing from split source manifest"):
+                _object_disjoint_order(
+                    records,
+                    0.1,
+                    42,
+                    output_dir,
+                    fixed_uuid_splits={"train-object": "train", "val-object": "val"},
+                )
+
     def test_split_registry_allows_missing_future_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             output_dir = Path(directory)
