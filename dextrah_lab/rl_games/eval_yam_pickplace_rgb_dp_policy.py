@@ -1340,33 +1340,59 @@ def _bind_material_hierarchy(stage: Any, root_path: str, material: UsdShade.Mate
 
 
 def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
-    enabled = bool(args_cli.exact_visual_resample)
-    robot_enabled = enabled and bool(args_cli.yam_policy_robot_material_randomization)
-    object_enabled = enabled and bool(args_cli.yam_policy_object_material_randomization)
+    resample_enabled = bool(args_cli.exact_visual_resample)
+    recorded = authoritative_recorded_visual_value(
+        shard_metadata=exact_demo["shard_metadata"],
+        key="material_randomization",
+        fallback={},
+    )
+    restore_recorded = not resample_enabled and isinstance(recorded, dict) and bool(recorded.get("enabled"))
+    robot_enabled = (
+        bool(args_cli.yam_policy_robot_material_randomization)
+        if resample_enabled
+        else bool(recorded.get("robot_enabled")) if restore_recorded else False
+    )
+    object_enabled = (
+        bool(args_cli.yam_policy_object_material_randomization)
+        if resample_enabled
+        else bool(recorded.get("object_enabled")) if restore_recorded else False
+    )
     if not robot_enabled and not object_enabled:
         return {
             "enabled": False,
+            "mode": "none",
             "robot_enabled": robot_enabled,
             "object_enabled": object_enabled,
         }
 
     visual_replay = exact_demo["visual_replay"]
-    rng = np.random.default_rng(int(visual_replay["rng_seed"]) ^ 0x59414D5F)
     looks_root = "/World/Looks/YAMPolicyMaterialRandomization"
     UsdGeom.Xform.Define(stage, looks_root)
     summary: dict[str, Any] = {
         "enabled": True,
+        "mode": "rng_resample" if resample_enabled else "recorded",
         "robot_enabled": robot_enabled,
         "object_enabled": object_enabled,
     }
+    rng = np.random.default_rng(int(visual_replay["rng_seed"]) ^ 0x59414D5F)
     if robot_enabled:
-        body_value = float(rng.uniform(0.025, 0.18) if rng.random() < 0.85 else rng.uniform(0.20, 0.45))
-        body_color = tuple(
-            float(np.clip(body_value * value, 0.015, 0.52))
-            for value in rng.uniform(0.82, 1.18, size=3)
-        )
-        robot_roughness = float(rng.uniform(0.32, 0.88))
-        robot_metallic = float(rng.uniform(0.0, 0.28))
+        recorded_robot = recorded.get("robot") if restore_recorded else None
+        if restore_recorded and not isinstance(recorded_robot, dict):
+            raise ValueError("Recorded robot material randomization is malformed")
+        if restore_recorded:
+            body_color = tuple(float(v) for v in recorded_robot["body_color"])
+            robot_roughness = float(recorded_robot["roughness"])
+            robot_metallic = float(recorded_robot["metallic"])
+        else:
+            body_value = float(
+                rng.uniform(0.025, 0.18) if rng.random() < 0.85 else rng.uniform(0.20, 0.45)
+            )
+            body_color = tuple(
+                float(np.clip(body_value * value, 0.015, 0.52))
+                for value in rng.uniform(0.82, 1.18, size=3)
+            )
+            robot_roughness = float(rng.uniform(0.32, 0.88))
+            robot_metallic = float(rng.uniform(0.0, 0.28))
         body_mat = _usd_solid_material(
             stage,
             f"{looks_root}/robot_body",
@@ -1384,12 +1410,24 @@ def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) 
         }
 
     if object_enabled:
-        override_applied = bool(rng.random() < 0.65)
+        recorded_object = recorded.get("object") if restore_recorded else None
+        if restore_recorded and not isinstance(recorded_object, dict):
+            raise ValueError("Recorded object material randomization is malformed")
+        override_applied = (
+            bool(recorded_object.get("override_applied"))
+            if restore_recorded
+            else bool(rng.random() < 0.65)
+        )
         object_summary: dict[str, Any] = {"override_applied": override_applied}
         if override_applied:
-            object_color = tuple(float(v) for v in rng.uniform(0.08, 0.92, size=3))
-            object_roughness = float(rng.uniform(0.18, 0.95))
-            object_metallic = float(rng.uniform(0.0, 0.65))
+            if restore_recorded:
+                object_color = tuple(float(v) for v in recorded_object["color"])
+                object_roughness = float(recorded_object["roughness"])
+                object_metallic = float(recorded_object["metallic"])
+            else:
+                object_color = tuple(float(v) for v in rng.uniform(0.08, 0.92, size=3))
+                object_roughness = float(rng.uniform(0.18, 0.95))
+                object_metallic = float(rng.uniform(0.0, 0.65))
             object_mat = _usd_solid_material(
                 stage,
                 f"{looks_root}/object",
@@ -4002,12 +4040,10 @@ def main() -> None:
                 "initial_render_warmup_frames": int(args_cli.initial_render_warmup_frames),
                 "exact_visual_resample": bool(args_cli.exact_visual_resample),
                 "robot_material_randomization": bool(
-                    args_cli.exact_visual_resample
-                    and args_cli.yam_policy_robot_material_randomization
+                    (appearance_summary.get("material_randomization") or {}).get("robot_enabled")
                 ),
                 "object_material_randomization": bool(
-                    args_cli.exact_visual_resample
-                    and args_cli.yam_policy_object_material_randomization
+                    (appearance_summary.get("material_randomization") or {}).get("object_enabled")
                 ),
                 "dataset_drop_pose_max_correction_m": float(args_cli.dataset_drop_pose_max_correction_m),
                 "dataset_drop_retract_height_m": float(args_cli.dataset_drop_retract_height_m),
@@ -4177,10 +4213,10 @@ def main() -> None:
         "dataset_post_action_settle_steps": int(args_cli.dataset_post_action_settle_steps),
         "exact_visual_resample": bool(args_cli.exact_visual_resample),
         "robot_material_randomization": bool(
-            args_cli.exact_visual_resample and args_cli.yam_policy_robot_material_randomization
+            (appearance_summary.get("material_randomization") or {}).get("robot_enabled")
         ),
         "object_material_randomization": bool(
-            args_cli.exact_visual_resample and args_cli.yam_policy_object_material_randomization
+            (appearance_summary.get("material_randomization") or {}).get("object_enabled")
         ),
         "checkpoint": None if checkpoint is None else str(checkpoint),
         "official_workspace": None if workspace is None else workspace.__class__.__name__,

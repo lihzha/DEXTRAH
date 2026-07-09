@@ -17465,3 +17465,30 @@ Smoke follow-up:
   remains unavailable in this host Python, unchanged from prior validation.
   Next: deploy and replay one frozen v16 shard with the production pose-target
   controller before launching the 500-shard pass.
+
+## 2026-07-09T14:08:00Z V17 Production Smoke And Material-Restore Fix
+
+- L40S job `1102248` replayed frozen v16 source 0 through the production
+  dataset-pose controller in quality/dynamics mode. It selected independent
+  `hangar_concrete_floor_diff_1k.jpg` floor augmentation at tiling `3.393747`,
+  kept source visual RNG error zero, lifted `0.14651 m`, reached strict settled
+  placement, and passed the recorded-action dynamics gate at selected prefix
+  step 688. The admitted shard has 688 finite frames in each `256x256` stream.
+- Inspected the complete side-by-side video and 12-frame grid under
+  `cluster_results/l401/yam_controller_stateobs_v17_ground_smoke_source000000_20260709T1405Z`.
+  The target remains visible through pickup and placement, external framing is
+  table-only, and wrist pixels beyond the table show textured floor instead of
+  Isaac's grid. Viewer artifact: `source000000_scene_wrist.mp4`.
+- Pure exact restore job `1102249` restored the selected floor path, tiling,
+  size, height, table, HDR, camera, geometry, and 24-D state with zero numeric
+  error, but reset parity was only `25.49 dB` scene / `18.57 dB` wrist. Its
+  appearance record showed robot/object material randomization disabled even
+  though those overrides were present in the recorded shard.
+- Patched pure exact evaluation to bind authoritative recorded robot and object
+  colors, roughness, metallic values, and object-override decision. Nested
+  recording still samples fresh values and marks the mode `rng_resample`; pure
+  evaluation marks `recorded`. Top-level and recording metadata now report the
+  material state actually applied rather than inferring it only from the
+  resample flag. Compilation, Ruff, and 26 focused tests pass.
+- Next: deploy and rerun the one-step pure exact parity check. The full
+  500-shard launch remains gated on this result.
