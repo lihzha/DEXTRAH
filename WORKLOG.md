@@ -17756,3 +17756,25 @@ Smoke follow-up:
   source-policy metadata to the generated audit. Rerun `1102888` reproduced
   the one-off counts exactly with zero missing metadata. The collector was at
   286 admitted rows and remained active without a device-loss failure.
+
+## 2026-07-09T17:04:00Z Pilot Dataloader Stall Recovery
+
+- Pilot job `30025914` slowed after epoch 13 from roughly 2.7 batches/s to
+  0.3--0.5 batches/s. An in-allocation probe showed 0% GPU utilization while
+  dataloader workers blocked in Lustre `ptlrpc_set_wait` and
+  `cl_sync_io_wait`; the shared node also hosted unrelated high-I/O workers.
+  Loss remained finite. Preserved the completed epoch-13 checkpoint, stopped
+  supervisor PID `3260265`, and canceled the degraded allocation at step
+  13,769.
+- First relocation `30027714` reached a different A100 node but revealed that
+  the replacement supervisor had not inherited `LR=1e-5` and the baseline
+  `NORMALIZER_CHECKPOINT`. Although optimizer resume retained the scheduled
+  LR, the dataset normalizer override was absent and loss rose to
+  `0.02--0.05`. Canceled it before any checkpoint write; its 110 diagnostic
+  steps remain only in the append-only metric log and are not model state.
+- Relaunched full-resume job `30027785` on `batch-block4-2143`, excluding the
+  congested node and explicitly restoring LR, 500-step warmup, and baseline
+  normalizer. Wrapper output confirms the intended resolved config. Initial
+  resumed loss returned to `0.001--0.004` with normal throughput. New detached
+  supervisor PID is `1542927`; periodic L40S monitor PID `3754547` continues
+  from the existing evaluation ledger.
