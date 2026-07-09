@@ -209,6 +209,8 @@ parser.add_argument("--yam_policy_key_light_intensity_range", type=float, nargs=
 parser.add_argument("--yam_policy_material_value_range", type=float, nargs=2, default=(0.32, 0.82))
 parser.add_argument("--yam_policy_table_texture_dir", type=str, default="")
 parser.add_argument("--yam_policy_table_texture_tiling_range", type=float, nargs=2, default=(1.4, 3.8))
+parser.add_argument("--yam_policy_ground_texture_dir", type=str, default="")
+parser.add_argument("--yam_policy_ground_texture_tiling_range", type=float, nargs=2, default=(1.0, 2.2))
 parser.add_argument("--yam_policy_dome_light_texture_dir", type=str, default="")
 parser.add_argument(
     "--yam_policy_robot_material_randomization",
@@ -859,6 +861,7 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
     materials = scene.get("materials") if isinstance(scene.get("materials"), dict) else {}
     table_texture = scene.get("tabletop_texture") if isinstance(scene.get("tabletop_texture"), dict) else {}
     background = scene.get("background_walls") if isinstance(scene.get("background_walls"), dict) else {}
+    ground_texture = scene.get("ground_texture") if isinstance(scene.get("ground_texture"), dict) else {}
     lighting = scene.get("lighting") if isinstance(scene.get("lighting"), dict) else {}
     shard_recording = (
         exact_demo["shard_metadata"].get("recording")
@@ -873,7 +876,7 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
     recorded_background_texture = authoritative_recorded_visual_asset(
         shard_metadata=exact_demo["shard_metadata"],
         asset_name="background_texture",
-        fallback=background.get("background_texture_path"),
+        fallback=ground_texture.get("texture_path") or background.get("background_texture_path"),
     )
     recorded_dome_texture = authoritative_recorded_visual_asset(
         shard_metadata=exact_demo["shard_metadata"],
@@ -971,6 +974,11 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         "scene_target": _max_abs_error(scene_target, camera.get("target")),
         "shared_y_jitter": _max_abs_error(shared_y_jitter, camera.get("shared_y_jitter")),
     }
+    if bool(ground_texture.get("enabled", False)):
+        numeric_errors["ground_texture_tiling"] = _max_abs_error(
+            background_texture_tiling,
+            ground_texture.get("texture_tiling"),
+        )
     max_numeric_error = max(numeric_errors.values(), default=float("inf"))
     paths = {
         "table_texture": select_exact_visual_asset(
@@ -1026,11 +1034,17 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         "table_texture_roughness": table_texture_roughness,
         "table_texture_tiling": table_texture_tiling,
         "background_roughness": background_roughness,
+        "background_texture_tiling": background_texture_tiling,
         "bin_visual_roughness": bin_visual_roughness,
         "scene_eye": scene_eye,
         "scene_target": scene_target,
         "shared_y_jitter": shared_y_jitter,
         "background_color": background_color,
+        "ground_texture_enabled": bool(ground_texture.get("enabled", False)),
+        "ground_texture_size": [
+            float(v) for v in ground_texture.get("size", (6.0, 6.0))
+        ],
+        "ground_texture_z": float(ground_texture.get("z", -0.079)),
     }
 
 
@@ -1041,6 +1055,7 @@ def _apply_exact_demo_env_cfg(env_cfg: Any, exact_demo: dict[str, Any]) -> dict[
     surround = scene["tabletop_surround"]
     table_texture = scene["tabletop_texture"]
     background = scene["background_walls"]
+    ground_texture = scene.get("ground_texture") if isinstance(scene.get("ground_texture"), dict) else {}
     lighting = scene["lighting"]
     stable_scene = exact_demo["stable_scene"]
     bins = stable_scene.get("bins") if isinstance(stable_scene.get("bins"), dict) else {}
@@ -1108,6 +1123,14 @@ def _apply_exact_demo_env_cfg(env_cfg: Any, exact_demo: dict[str, Any]) -> dict[
     env_cfg.exact_table_texture_path = selected_table_texture
     env_cfg.exact_table_texture_tiling = float(visual_replay["table_texture_tiling"])
     env_cfg.exact_table_texture_roughness = float(visual_replay["table_texture_roughness"])
+    env_cfg.exact_ground_texture_enabled = bool(ground_texture.get("enabled", False))
+    env_cfg.exact_ground_texture_path = str(
+        visual_replay["paths"]["background_texture"]["selected"] or ""
+    )
+    env_cfg.exact_ground_texture_tiling = float(visual_replay["background_texture_tiling"])
+    env_cfg.exact_ground_texture_roughness = float(visual_replay["background_roughness"])
+    env_cfg.exact_ground_texture_size = tuple(float(v) for v in visual_replay["ground_texture_size"])
+    env_cfg.exact_ground_texture_z = float(visual_replay["ground_texture_z"])
     env_cfg.exact_dome_texture_path = str(visual_replay["paths"]["dome_texture"]["selected"] or "")
     env_cfg.exact_background_enabled = bool(background.get("enabled", False))
     if env_cfg.exact_background_enabled:
@@ -1349,8 +1372,22 @@ def _apply_exact_demo_appearance(task_env: Any, exact_demo: dict[str, Any]) -> d
             texture_path,
             roughness=float(cfg.exact_table_texture_roughness),
         )
+    ground_texture_path = str(cfg.exact_ground_texture_path or "")
+    ground_texture_mat = None
+    if bool(cfg.exact_ground_texture_enabled):
+        if not ground_texture_path:
+            raise RuntimeError("Exact ground texture overlay requested without a texture path")
+        if not Path(ground_texture_path).is_file():
+            raise FileNotFoundError(ground_texture_path)
+        ground_texture_mat = _usd_texture_material(
+            stage,
+            f"{looks_root}/ground_texture",
+            ground_texture_path,
+            roughness=float(cfg.exact_ground_texture_roughness),
+        )
     spawned: list[dict[str, Any]] = []
     texture_quads: list[dict[str, Any]] = []
+    ground_texture_quads: list[dict[str, Any]] = []
     for env_id, origin in enumerate(env_origins):
         center = (
             float(origin[0]) + float(cfg.table_center_x),
@@ -1381,6 +1418,40 @@ def _apply_exact_demo_appearance(task_env: Any, exact_demo: dict[str, Any]) -> d
                     "uv_scale": [float(v) for v in uv_scale],
                 }
             )
+        if ground_texture_mat is not None:
+            ground_size = tuple(float(v) for v in cfg.exact_ground_texture_size)
+            if len(ground_size) != 2:
+                raise ValueError(f"Expected two exact ground-plane dimensions, got {ground_size}")
+            ground_center = (
+                float(origin[0]),
+                float(origin[1]),
+                float(origin[2]) + float(cfg.exact_ground_texture_z),
+            )
+            ground_path = f"/World/envs/env_{env_id}/YAMPolicyGroundTexture"
+            ground_tiling = float(cfg.exact_ground_texture_tiling)
+            ground_uv_scale = (
+                ground_tiling,
+                ground_tiling * max(0.1, ground_size[1] / max(ground_size[0], 1.0e-6)),
+            )
+            _usd_add_xy_quad(
+                stage,
+                ground_path,
+                ground_center,
+                ground_size,
+                ground_texture_mat,
+                uv_scale=ground_uv_scale,
+            )
+            ground_texture_quads.append(
+                {
+                    "env_id": int(env_id),
+                    "path": ground_path,
+                    "center": [float(v) for v in ground_center],
+                    "size": [float(v) for v in ground_size],
+                    "texture_path": ground_texture_path,
+                    "uv_scale": [float(v) for v in ground_uv_scale],
+                    "roughness": float(cfg.exact_ground_texture_roughness),
+                }
+            )
     dome_texture_path = str(cfg.exact_dome_texture_path or "")
     dome_summary: dict[str, Any] = {"enabled": False}
     if dome_texture_path:
@@ -1403,6 +1474,8 @@ def _apply_exact_demo_appearance(task_env: Any, exact_demo: dict[str, Any]) -> d
         "thickness": float(thickness),
         "spawned": spawned,
         "table_texture_quads": texture_quads,
+        "ground_texture_enabled": bool(cfg.exact_ground_texture_enabled),
+        "ground_texture_quads": ground_texture_quads,
         "dome_light_texture": dome_summary,
         "material_randomization": material_summary,
         "rng_replay": exact_demo["visual_replay"],
@@ -1454,6 +1527,63 @@ def _apply_eval_table_texture(task_env: Any, rng: np.random.Generator) -> dict[s
     return {
         "enabled": True,
         "texture_dir": str(args_cli.yam_policy_table_texture_dir or ""),
+        "texture_path": texture_path,
+        "tiling": tiling,
+        "roughness": roughness,
+        "quads": records,
+    }
+
+
+def _apply_eval_ground_texture(task_env: Any, rng: np.random.Generator) -> dict[str, Any]:
+    texture_path = _sample_texture_path(
+        rng,
+        args_cli.yam_policy_ground_texture_dir,
+        exts=SURFACE_TEXTURE_EXTS,
+        include_tokens=("albedo", "diffuse", "diff", "basecolor", "color"),
+        exclude_tokens=("normal", "orm", "rough", "metal", "height"),
+    )
+    if not texture_path:
+        return {"enabled": False, "texture_dir": str(args_cli.yam_policy_ground_texture_dir or "")}
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        return {"enabled": False, "texture_path": texture_path, "reason": "missing_usd_stage"}
+    tiling_range = _range_pair(
+        args_cli.yam_policy_ground_texture_tiling_range,
+        name="yam_policy_ground_texture_tiling_range",
+    )
+    tiling = float(rng.uniform(tiling_range[0], tiling_range[1]))
+    roughness = float(rng.uniform(0.58, 0.95))
+    cfg = task_env.cfg
+    looks_root = "/World/Looks/YAMPolicyEvalTexture"
+    UsdGeom.Xform.Define(stage, looks_root)
+    mat = _usd_texture_material(stage, f"{looks_root}/ground_texture", texture_path, roughness=roughness)
+    env_origins = task_env.scene.env_origins.detach().float().cpu().numpy()
+    size_xy = tuple(float(v) for v in getattr(cfg, "ground_plane_size", (6.0, 6.0)))
+    if len(size_xy) != 2:
+        raise ValueError(f"Expected two eval ground-plane dimensions, got {size_xy}")
+    records: list[dict[str, Any]] = []
+    for env_id, origin in enumerate(env_origins):
+        center = (
+            float(origin[0]),
+            float(origin[1]),
+            float(origin[2]) + float(getattr(cfg, "ground_plane_z", 0.0)) + 0.001,
+        )
+        uv_scale = (tiling, tiling * max(0.1, size_xy[1] / max(size_xy[0], 1.0e-6)))
+        path = f"/World/envs/env_{env_id}/YAMPolicyEvalGroundTexture"
+        _usd_add_xy_quad(stage, path, center, size_xy, mat, uv_scale=uv_scale)
+        records.append(
+            {
+                "env_id": int(env_id),
+                "path": path,
+                "center": [float(v) for v in center],
+                "size": [float(v) for v in size_xy],
+                "uv_scale": [float(v) for v in uv_scale],
+            }
+        )
+    task_env.sim.forward()
+    return {
+        "enabled": True,
+        "texture_dir": str(args_cli.yam_policy_ground_texture_dir or ""),
         "texture_path": texture_path,
         "tiling": tiling,
         "roughness": roughness,
@@ -2980,6 +3110,7 @@ def main() -> None:
     if exact_demo is None:
         appearance_summary = {
             "table_texture": _apply_eval_table_texture(task_env, rng),
+            "ground_texture": _apply_eval_ground_texture(task_env, rng),
             "dome_light_texture": _apply_eval_dome_light_texture(rng),
         }
         exact_asset_summary = None

@@ -23,6 +23,7 @@ def _write_shard(
     stationary_tcp: bool = False,
     drop_settle_timed_out: bool = False,
     authoritative_visual_replay: bool = False,
+    ground_texture_replay: bool = False,
 ) -> Path:
     shard = root / "source_000005" / "policy_dataset" / "yam_rgb_policy_000005"
     shard.mkdir(parents=True)
@@ -80,9 +81,13 @@ def _write_shard(
     }
     if authoritative_visual_replay:
         metadata["exact_visual_replay"] = {
+            "ground_texture_enabled": ground_texture_replay,
             "paths": {
                 "table_texture": {"selected": "/textures/table.jpg"},
                 "dome_texture": {"selected": "/textures/light.hdr"},
+                "background_texture": {
+                    "selected": "/textures/floor.jpg" if ground_texture_replay else ""
+                },
             }
         }
     (shard / "metadata.json").write_text(
@@ -267,6 +272,37 @@ class YamControllerNativeCurriculumValidationTest(unittest.TestCase):
                 shard,
                 require_authoritative_visual_replay=True,
             )
+
+            self.assertIsNone(reason)
+            self.assertEqual(record["source_index"], 5)
+
+    def test_ground_texture_gate_rejects_legacy_visual_replay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shard = _write_shard(
+                Path(directory),
+                controller_version=15,
+                descent_started=True,
+                controller_path="staged_descent",
+                authoritative_visual_replay=True,
+            )
+
+            record, reason = _validate_shard(shard, require_ground_texture_replay=True)
+
+            self.assertIsNone(record)
+            self.assertEqual(reason, "ground_texture_overlay_not_enabled")
+
+    def test_ground_texture_gate_accepts_authoritative_floor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shard = _write_shard(
+                Path(directory),
+                controller_version=15,
+                descent_started=True,
+                controller_path="staged_descent",
+                authoritative_visual_replay=True,
+                ground_texture_replay=True,
+            )
+
+            record, reason = _validate_shard(shard, require_ground_texture_replay=True)
 
             self.assertIsNone(reason)
             self.assertEqual(record["source_index"], 5)

@@ -32,6 +32,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Reject shards that do not persist the table and dome assets that produced their RGB arrays.",
     )
+    parser.add_argument(
+        "--require_ground_texture_replay",
+        action="store_true",
+        help="Reject shards without an enabled ground overlay and authoritative floor texture asset.",
+    )
     parser.add_argument("--val_ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
@@ -72,6 +77,7 @@ def _validate_shard(
     max_stationary_tcp_steps: int | None = None,
     stationary_tcp_delta_m: float = 1.0e-5,
     require_authoritative_visual_replay: bool = False,
+    require_ground_texture_replay: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     metadata_path = shard / "metadata.json"
     if not metadata_path.is_file():
@@ -114,6 +120,22 @@ def _validate_shard(
             for name in ("table_texture", "dome_texture")
         ):
             return None, "authoritative_visual_replay_missing"
+    if require_ground_texture_replay:
+        visual_replay = (
+            metadata.get("exact_visual_replay")
+            if isinstance(metadata.get("exact_visual_replay"), dict)
+            else {}
+        )
+        visual_paths = visual_replay.get("paths") if isinstance(visual_replay.get("paths"), dict) else {}
+        background_asset = (
+            visual_paths.get("background_texture")
+            if isinstance(visual_paths.get("background_texture"), dict)
+            else {}
+        )
+        if not bool(visual_replay.get("ground_texture_enabled")):
+            return None, "ground_texture_overlay_not_enabled"
+        if not bool(background_asset.get("selected")):
+            return None, "authoritative_ground_texture_missing"
     if not bool(recording.get("robot_material_randomization")):
         return None, "robot_material_randomization_not_enabled"
     if not bool(recording.get("object_material_randomization")):
@@ -372,6 +394,7 @@ def main() -> None:
             max_stationary_tcp_steps=int(args.max_stationary_tcp_steps),
             stationary_tcp_delta_m=float(args.stationary_tcp_delta_m),
             require_authoritative_visual_replay=bool(args.require_authoritative_visual_replay),
+            require_ground_texture_replay=bool(args.require_ground_texture_replay),
         )
         if record is None:
             rejected.append({"path": str(shard), "reason": reason})

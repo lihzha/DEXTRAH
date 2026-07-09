@@ -200,6 +200,7 @@ def main():
         categorical["rendering_mode"][str(recording.get("rendering_mode", "missing"))] += 1
         categorical["control_mode"][str(recording.get("control_mode", "missing"))] += 1
         categorical["background_walls_enabled"][str(bool(background_walls.get("enabled", False)))] += 1
+        categorical["ground_texture_enabled"][str(bool(visual.get("ground_texture_enabled", False)))] += 1
         categorical["dynamic_replay"][str(bool(recording.get("dynamics_mode", False)))] += 1
         categorical["object_material_recorded"][str(bool(object_material))] += 1
         categorical["object_material_override_applied"][
@@ -231,6 +232,8 @@ def main():
         _add_vector(numeric, "key_light_rotation", lighting.get("key_light_rotation_deg"))
         _add_scalar(numeric, "table_texture_tiling", visual.get("table_texture_tiling"))
         _add_scalar(numeric, "table_texture_roughness", visual.get("table_texture_roughness"))
+        _add_scalar(numeric, "ground_texture_tiling", visual.get("background_texture_tiling"))
+        _add_scalar(numeric, "ground_texture_roughness", visual.get("background_roughness"))
         _add_scalar(numeric, "bin_visual_roughness", visual.get("bin_visual_roughness"))
         _add_vector(numeric, "object_color", object_material.get("color"))
         _add_scalar(numeric, "object_metallic", object_material.get("metallic"))
@@ -271,6 +274,7 @@ def main():
         (Path(record["table_texture"]).stem, Path(record["dome_texture"]).stem) for record in records
     }
     rendered_background_wall_count = categorical["background_walls_enabled"].get("True", 0)
+    rendered_ground_texture_count = categorical["ground_texture_enabled"].get("True", 0)
 
     summary = {
         "manifest": str(manifest_path),
@@ -291,6 +295,7 @@ def main():
         "unique_background_textures": len(categorical["background_textures"]),
         "unique_background_texture_families": len(background_texture_families),
         "rendered_background_wall_trajectories": rendered_background_wall_count,
+        "rendered_ground_texture_trajectories": rendered_ground_texture_count,
         "unique_table_dome_pairs": len(table_dome_pairs),
         "object_material_overrides_applied": categorical["object_material_override_applied"].get("True", 0),
         "robot_material_records": categorical["robot_material_recorded"].get("True", 0),
@@ -333,6 +338,22 @@ def main():
         json.dumps(report_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
+    if summary["rendered_ground_texture_trajectories"]:
+        ground_texture_line = (
+            "- Ground-texture trajectories rendered: `{}/{}` from `{}` selected floor texture families".format(
+                summary["rendered_ground_texture_trajectories"],
+                summary["num_trajectories"],
+                summary["unique_background_texture_families"],
+            )
+        )
+    else:
+        ground_texture_line = (
+            "- Ground-texture trajectories rendered: `0/{}`; `{}` selected background texture families are metadata-only".format(
+                summary["num_trajectories"],
+                summary["unique_background_texture_families"],
+            )
+        )
+
     lines = [
         "# YAM RGB Dataset Randomization Report",
         "",
@@ -356,11 +377,11 @@ def main():
             summary["unique_table_texture_families"],
             summary["unique_dome_texture_families"],
         ),
-        "- Background-wall trajectories rendered: `{}/{}`; `{}` selected background texture families are metadata-only because walls are disabled".format(
+        "- Background-wall trajectories rendered: `{}/{}`".format(
             summary["rendered_background_wall_trajectories"],
             summary["num_trajectories"],
-            summary["unique_background_texture_families"],
         ),
+        ground_texture_line,
         "- Unique selected table+dome family pairs: `{}`".format(summary["unique_table_dome_pairs"]),
         "- Object material overrides / robot material records: `{}` / `{}`".format(
             summary["object_material_overrides_applied"], summary["robot_material_records"]
@@ -402,7 +423,8 @@ def main():
             [
                 "dome_light_intensity", "key_light_intensity",
                 "key_light_rotation_x", "key_light_rotation_y", "key_light_rotation_z",
-                "table_texture_tiling", "table_texture_roughness", "bin_visual_roughness",
+                "table_texture_tiling", "table_texture_roughness",
+                "ground_texture_tiling", "ground_texture_roughness", "bin_visual_roughness",
                 "object_metallic", "object_roughness", "robot_metallic", "robot_roughness",
                 "trajectory_steps", "longest_stationary_tcp_steps",
             ],
@@ -411,12 +433,14 @@ def main():
     lines.append("")
     lines.extend(_counter_lines("Selected Table Textures", categorical["table_textures"]))
     lines.extend(_counter_lines("Selected Dome Textures", categorical["dome_textures"]))
+    lines.extend(_counter_lines("Selected Ground Textures", categorical["background_textures"]))
     lines.extend(_counter_lines("Controller Paths", categorical["controller_paths"]))
     lines.extend(_counter_lines("Admission And Rendering Checks", Counter({
         "quality rendering": categorical["rendering_mode"].get("quality", 0),
         "dynamic replay": categorical["dynamic_replay"].get("True", 0),
         "replay gate passed": categorical["replay_gate_passed"].get("True", 0),
         "background walls disabled": categorical["background_walls_enabled"].get("False", 0),
+        "ground texture enabled": categorical["ground_texture_enabled"].get("True", 0),
         "exact visual resample": categorical["exact_visual_resample"].get("True", 0),
     })))
     (args.output_dir / "randomization_report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")

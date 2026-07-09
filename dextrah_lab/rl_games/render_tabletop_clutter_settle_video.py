@@ -157,6 +157,12 @@ parser.add_argument("--yam_policy_background_wall_height", type=float, default=0
 parser.add_argument("--yam_policy_background_wall_thickness", type=float, default=0.025)
 parser.add_argument("--yam_policy_background_texture_dir", type=str, default=None)
 parser.add_argument("--yam_policy_background_texture_tiling_range", type=float, nargs=2, default=(1.0, 2.2))
+parser.add_argument(
+    "--yam_policy_ground_texture",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="Cover Isaac Lab's grid ground with the sampled background texture without changing collisions.",
+)
 parser.add_argument("--yam_policy_dome_light_texture_dir", type=str, default=None)
 parser.add_argument("--record_multicam_rgb", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--record_scene_rgb", action=argparse.BooleanOptionalAction, default=True)
@@ -834,6 +840,7 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
     dome_texture_path = _sample_texture_path(rng, dome_texture_roots, exts=DOME_TEXTURE_EXTS)
     setattr(env_cfg, "yam_policy_background_texture_path", background_texture_path)
     setattr(env_cfg, "yam_policy_background_texture_tiling", background_texture_tiling)
+    setattr(env_cfg, "yam_policy_ground_texture_enabled", bool(args.yam_policy_ground_texture))
     setattr(env_cfg, "yam_policy_dome_light_texture_path", dome_texture_path)
     setattr(env_cfg, "tabletop_goal_bin_floor_color", bin_floor_color)
     setattr(env_cfg, "tabletop_goal_bin_x_wall_color", x_wall_color)
@@ -899,6 +906,15 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
             "background_texture_dir": args.yam_policy_background_texture_dir,
             "background_texture_path": background_texture_path or None,
             "background_texture_tiling": background_texture_tiling,
+        },
+        "ground_texture": {
+            "enabled": bool(args.yam_policy_ground_texture),
+            "texture_dir": args.yam_policy_background_texture_dir,
+            "texture_path": background_texture_path or None,
+            "texture_tiling": background_texture_tiling,
+            "roughness": float(getattr(env_cfg, "yam_policy_background_wall_roughness")),
+            "size": [float(v) for v in getattr(env_cfg, "ground_plane_size", (6.0, 6.0))],
+            "z": float(getattr(env_cfg, "ground_plane_z", 0.0)) + 0.001,
         },
         "lighting": {
             "dome_light_intensity": dome_light,
@@ -2199,8 +2215,9 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
     surround_enabled = bool(getattr(cfg, "yam_policy_tabletop_surround_enabled", False))
     texture_enabled = bool(getattr(cfg, "yam_policy_tabletop_texture_enabled", False))
     walls_enabled = bool(getattr(cfg, "yam_policy_background_walls_enabled", False))
+    ground_texture_enabled = bool(getattr(cfg, "yam_policy_ground_texture_enabled", False))
     dome_texture_requested = bool(str(getattr(cfg, "yam_policy_dome_light_texture_path", "") or ""))
-    if not (surround_enabled or texture_enabled or walls_enabled or dome_texture_requested):
+    if not (surround_enabled or texture_enabled or walls_enabled or ground_texture_enabled or dome_texture_requested):
         return {"enabled": False}
     stage = omni.usd.get_context().get_stage()
     if stage is None:
@@ -2231,6 +2248,7 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
         )
     spawned: list[dict[str, object]] = []
     table_texture_quads: list[dict[str, object]] = []
+    ground_texture_quads: list[dict[str, object]] = []
     if surround_enabled:
         for env_id, origin in enumerate(env_origins):
             center = (
@@ -2259,6 +2277,48 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
                         "uv_scale": [float(v) for v in uv_scale],
                     }
                 )
+
+    if ground_texture_enabled:
+        ground_texture_path = str(getattr(cfg, "yam_policy_background_texture_path", "") or "")
+        if not ground_texture_path:
+            raise RuntimeError("Ground texture overlay requested without a sampled texture path")
+        if not Path(ground_texture_path).is_file():
+            raise FileNotFoundError(ground_texture_path)
+        ground_size = tuple(float(v) for v in getattr(cfg, "ground_plane_size", (6.0, 6.0)))
+        if len(ground_size) != 2:
+            raise ValueError(f"Expected two ground-plane dimensions, got {ground_size}")
+        ground_tiling = float(getattr(cfg, "yam_policy_background_texture_tiling", 1.5))
+        ground_roughness = float(getattr(cfg, "yam_policy_background_wall_roughness", 0.80))
+        ground_mat = _usd_material(
+            stage,
+            f"{looks_root}/ground_texture",
+            tuple(float(v) for v in getattr(cfg, "ground_plane_color", (0.35, 0.35, 0.35))),
+            roughness=ground_roughness,
+            texture_file=ground_texture_path,
+        )
+        for env_id, origin in enumerate(env_origins):
+            center = (
+                float(origin[0]),
+                float(origin[1]),
+                float(origin[2]) + float(getattr(cfg, "ground_plane_z", 0.0)) + 0.001,
+            )
+            path = f"/World/envs/env_{env_id}/YAMPolicyGroundTexture"
+            uv_scale = (
+                ground_tiling,
+                ground_tiling * max(0.1, ground_size[1] / max(ground_size[0], 1.0e-6)),
+            )
+            _usd_add_xy_quad(stage, path, center, ground_size, ground_mat, uv_scale=uv_scale)
+            ground_texture_quads.append(
+                {
+                    "env_id": int(env_id),
+                    "path": path,
+                    "center": [float(v) for v in center],
+                    "size": [float(v) for v in ground_size],
+                    "texture_path": ground_texture_path,
+                    "uv_scale": [float(v) for v in uv_scale],
+                    "roughness": ground_roughness,
+                }
+            )
 
     texture_patches: list[dict[str, object]] = []
     if texture_enabled:
@@ -2392,6 +2452,8 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
         "dome_light_texture": dome_light_texture,
         "spawned": spawned,
         "table_texture_quads": table_texture_quads,
+        "ground_texture_enabled": ground_texture_enabled,
+        "ground_texture_quads": ground_texture_quads,
         "texture_patches": texture_patches,
         "background_walls": background_walls,
     }

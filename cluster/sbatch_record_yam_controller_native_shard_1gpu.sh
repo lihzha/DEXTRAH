@@ -134,9 +134,12 @@ metadata = json.load(open(sys.argv[2], "r", encoding="utf-8"))
 provenance = metadata.get("recording") or {}
 visual_replay = metadata.get("exact_visual_replay") or {}
 visual_paths = visual_replay.get("paths") or {}
+required_visual_assets = ["table_texture", "dome_texture"]
+if bool(visual_replay.get("ground_texture_enabled")):
+    required_visual_assets.append("background_texture")
 authoritative_visual_assets = all(
     bool((visual_paths.get(name) or {}).get("selected"))
-    for name in ("table_texture", "dome_texture")
+    for name in required_visual_assets
 )
 fallback_used = provenance.get("episode_drop_fallback_used") or []
 release_hold = provenance.get("episode_drop_release_hold_started") or []

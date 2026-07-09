@@ -17342,3 +17342,32 @@ Smoke follow-up:
   configuration change occurred. Continue toward the fresh 1.35M L40S gate
   under training supervisor PID `3887635` and periodic-eval monitor PID
   `2722107`.
+
+## 2026-07-09T13:05:00Z Textured-Ground Sim-to-Real Correction
+
+- Native-resolution inspection of the v16 initial/midpoint/final grids exposed
+  Isaac Lab's fixed `GroundPlaneCfg` grid in many wrist-camera placement and
+  retraction frames. Background-wall textures were metadata-only because walls
+  were disabled, so color jitter did not remove this repeated visual feature.
+- Created isolated branch/worktree `codex/yam-ground-randomization-20260709` at
+  `3d47b8b5`. Added a visual-only USD ground quad 1 mm above the unchanged
+  collision plane. The overlay reuses the existing background-texture RNG draw,
+  so collection and exact replay consume the same RNG sequence. A recorded
+  `ground_texture.enabled` gate keeps legacy v16 shards unchanged.
+- Exact replay now restores the authoritative floor asset, tiling, roughness,
+  size, and height. Non-exact policy evaluation samples the same floor pool.
+  Curriculum validation can require both an enabled overlay and persisted floor
+  asset with `--require_ground_texture_replay`; the shard admission wrapper
+  enforces the background/floor asset automatically when the overlay is active.
+- Added 24 checksum-verified Poly Haven CC0 1K diffuse maps spanning concrete,
+  tile, carpet, marble, metal, painted industrial floor, and running track under
+  `dextrah_lab/assets/textures/floor_polyhaven`. The no-array replay defaults to
+  this pool with tiling range `2.0 5.0`; dome lighting remains on the independent
+  indoor HDR pool.
+- Validation passed: Python compilation, shell `bash -n`, `ruff --ignore E402`,
+  21 focused unit tests, 24/24 image decodes, and 24/24 API MD5 checks. The
+  texture contact sheet is
+  `cluster_results/local/yam_ground_texture_audit_20260709/floor_texture_grid.png`.
+- Next: commit/push, deploy the exact revision to an isolated L40S worktree, run
+  one quality-render dynamics replay, and inspect both camera streams before
+  scaling the corrected RGB replay.
