@@ -104,6 +104,8 @@ RENDERING_MODE="${RENDERING_MODE:-quality}"
 CAPTURE_VIDEO="${CAPTURE_VIDEO:-True}"
 VIDEO_LENGTH="${VIDEO_LENGTH:-4800}"
 VIDEO_NAME_PREFIX="${VIDEO_NAME_PREFIX:-yam-pickplace-rgb-dp-eval}"
+DUAL_CAMERA_VIDEO="${DUAL_CAMERA_VIDEO:-$CAPTURE_VIDEO}"
+DUAL_CAMERA_VIDEO_FPS="${DUAL_CAMERA_VIDEO_FPS:-60.0}"
 SEED="${SEED:-42}"
 
 CAMERA_EYE_X="${CAMERA_EYE_X:--0.50}"
@@ -315,6 +317,7 @@ echo "ACTION_CHUNK_STEPS=$ACTION_CHUNK_STEPS CLIP_ACTIONS=$CLIP_ACTIONS STOP_ON_
 echo "STOP_ON_BIN_DROP_SUCCESS=$STOP_ON_BIN_DROP_SUCCESS"
 echo "IMAGE_HEIGHT=$IMAGE_HEIGHT IMAGE_WIDTH=$IMAGE_WIDTH RENDERING_MODE=$RENDERING_MODE"
 echo "CAPTURE_VIDEO=$CAPTURE_VIDEO VIDEO_LENGTH=$VIDEO_LENGTH VIDEO_NAME_PREFIX=$VIDEO_NAME_PREFIX"
+echo "DUAL_CAMERA_VIDEO=$DUAL_CAMERA_VIDEO DUAL_CAMERA_VIDEO_FPS=$DUAL_CAMERA_VIDEO_FPS"
 echo "SEED=$SEED"
 echo "CAMERA_EYE=($CAMERA_EYE_X $CAMERA_EYE_Y $CAMERA_EYE_Z)"
 echo "CAMERA_TARGET=($CAMERA_TARGET_X $CAMERA_TARGET_Y $CAMERA_TARGET_Z)"
@@ -376,6 +379,10 @@ srun \
     VIDEO_ARGS=()
     if [ "$CAPTURE_VIDEO" = "True" ]; then
       VIDEO_ARGS=(--video --video_length "$VIDEO_LENGTH" --video_name_prefix "$VIDEO_NAME_PREFIX")
+    fi
+    DUAL_CAMERA_VIDEO_ARGS=(--dual_camera_video)
+    if [ "$DUAL_CAMERA_VIDEO" != "True" ]; then
+      DUAL_CAMERA_VIDEO_ARGS=(--no-dual_camera_video)
     fi
     STOP_ON_DONE_ARGS=(--stop_on_done)
     if [ "$STOP_ON_DONE" != "True" ]; then
@@ -519,6 +526,8 @@ srun \
       --output_dir "$RUN_DIR_CONTAINER"
       --metrics_path "$METRICS_CONTAINER"
       --video_folder "$RUN_DIR_CONTAINER/videos"
+      "${DUAL_CAMERA_VIDEO_ARGS[@]}"
+      --dual_camera_video_fps "$DUAL_CAMERA_VIDEO_FPS"
       --seed "$SEED"
       --camera_eye "$CAMERA_EYE_X" "$CAMERA_EYE_Y" "$CAMERA_EYE_Z"
       --camera_target "$CAMERA_TARGET_X" "$CAMERA_TARGET_Y" "$CAMERA_TARGET_Z"
@@ -570,6 +579,10 @@ srun \
 
 if [ ! -s "$RUN_DIR_HOST/metrics.json" ]; then
   echo "Missing eval metrics JSON: $RUN_DIR_HOST/metrics.json"
+  exit 1
+fi
+if [ "$DUAL_CAMERA_VIDEO" = "True" ] && ! find "$RUN_DIR_HOST/videos" -maxdepth 1 -type f -name '*-scene-wrist.mp4' -size +0c | grep -q .; then
+  echo "Missing scene+wrist evaluation video in $RUN_DIR_HOST/videos" >&2
   exit 1
 fi
 if [ -n "$RECORD_POLICY_SHARD_HOST" ] && [ ! -s "$RECORD_POLICY_SHARD_HOST/metadata.json" ]; then

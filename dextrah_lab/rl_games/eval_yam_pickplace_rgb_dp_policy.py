@@ -194,6 +194,8 @@ parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=720)
 parser.add_argument("--video_folder", type=str, default=None)
 parser.add_argument("--video_name_prefix", type=str, default="yam-pickplace-rgb-dp-eval")
+parser.add_argument("--dual_camera_video", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--dual_camera_video_fps", type=float, default=60.0)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=DEFAULT_SCENE_CAMERA_EYE)
 parser.add_argument("--camera_target", type=float, nargs=3, default=DEFAULT_SCENE_CAMERA_TARGET)
 parser.add_argument("--scene_camera_eye_jitter", type=float, nargs=3, default=(0.018, 0.018, 0.018))
@@ -2640,6 +2642,51 @@ def _latest_video_files(video_folder: Path | None) -> list[str]:
     return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
 
 
+def _dual_camera_frame(obs: dict[str, np.ndarray]) -> np.ndarray:
+    scene = np.asarray(obs["scene_rgb"], dtype=np.uint8)
+    wrist = np.asarray(obs["wrist_rgb"], dtype=np.uint8)
+    if scene.shape != wrist.shape or scene.ndim != 3 or scene.shape[-1] != 3:
+        raise ValueError(
+            f"Dual-camera video requires matching HWC RGB frames, got {scene.shape}/{wrist.shape}"
+        )
+    return np.ascontiguousarray(np.concatenate((scene, wrist), axis=1))
+
+
+def _write_dual_camera_video(
+    frames: list[np.ndarray],
+    video_folder: Path,
+    *,
+    fps: float,
+    name_prefix: str,
+) -> str | None:
+    if not frames:
+        return None
+    if not math.isfinite(float(fps)) or float(fps) <= 0.0:
+        raise ValueError(f"Dual-camera video FPS must be positive and finite, got {fps}")
+    from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
+
+    video_folder.mkdir(parents=True, exist_ok=True)
+    path = video_folder / f"{name_prefix}-scene-wrist.mp4"
+    clip = ImageSequenceClip(frames, fps=float(fps))
+    try:
+        clip.write_videofile(
+            str(path),
+            codec="libx264",
+            audio=False,
+            logger=None,
+        )
+    finally:
+        clip.close()
+    _stage(
+        "dual_camera_video_written",
+        path=str(path),
+        frames=len(frames),
+        fps=float(fps),
+        shape=list(frames[0].shape),
+    )
+    return str(path)
+
+
 def _write_recorded_policy_shard(
     shard_path: Path,
     *,
@@ -3261,6 +3308,7 @@ def main() -> None:
     policy_call_idx = 0
     env_closed = False
     debug_obs_paths: list[str] = []
+    dual_camera_frames: list[np.ndarray] = []
     exact_reset_summaries: list[dict[str, Any]] = []
     recovery_summaries: list[dict[str, Any]] = []
     exact_observation_parity: dict[str, Any] | None = None
@@ -3410,6 +3458,11 @@ def main() -> None:
                         np.asarray(current_obs["robot_state"], dtype=np.float32).copy()
                     )
                     episode_recorded_actions.append(np.asarray(action_np[0], dtype=np.float32).copy())
+                if (
+                    bool(args_cli.dual_camera_video)
+                    and len(dual_camera_frames) < max(0, int(args_cli.video_length))
+                ):
+                    dual_camera_frames.append(_dual_camera_frame(current_obs))
                 if debug_interval > 0 and (step == 0 or (step + 1) % debug_interval == 0):
                     _save_debug_obs_frame(
                         output_dir,
@@ -3973,6 +4026,17 @@ def main() -> None:
         gym_env.close()
         env_closed = True
 
+    dual_camera_video_file = (
+        _write_dual_camera_video(
+            dual_camera_frames,
+            video_folder,
+            fps=float(args_cli.dual_camera_video_fps),
+            name_prefix=str(args_cli.video_name_prefix),
+        )
+        if bool(args_cli.dual_camera_video)
+        else None
+    )
+
     recorded_policy_shard_summary = None
     if record_policy_shard is not None and recording_acceptance_pass:
         assert exact_demo is not None
@@ -4266,8 +4330,14 @@ def main() -> None:
         "action_max": action_max.astype(float).tolist(),
         "step_metric_summary": _summarize_step_metrics(step_metrics),
         "episodes": episode_summaries,
-        "video_enabled": bool(args_cli.video),
-        "video_files": _latest_video_files(video_folder if args_cli.video else None),
+        "video_enabled": bool(args_cli.video or args_cli.dual_camera_video),
+        "dual_camera_video_enabled": bool(args_cli.dual_camera_video),
+        "dual_camera_video_file": dual_camera_video_file,
+        "dual_camera_video_frames": len(dual_camera_frames),
+        "dual_camera_video_fps": float(args_cli.dual_camera_video_fps),
+        "video_files": _latest_video_files(
+            video_folder if args_cli.video or args_cli.dual_camera_video else None
+        ),
         "debug_obs_files": debug_obs_paths,
         "recorded_policy_shard": recorded_policy_shard_summary,
         "recording": {
