@@ -2667,7 +2667,10 @@ def _write_dual_camera_video(
 
     video_folder.mkdir(parents=True, exist_ok=True)
     path = video_folder / f"{name_prefix}-scene-wrist.mp4"
-    clip = ImageSequenceClip(frames, fps=float(fps))
+    # MoviePy 1.x schedules only len(sequence) - 1 frames for an image clip.
+    # Repeating the terminal image keeps every captured observation in the MP4.
+    encoder_frames = [*frames, frames[-1]]
+    clip = ImageSequenceClip(encoder_frames, fps=float(fps))
     try:
         clip.write_videofile(
             str(path),
@@ -2681,6 +2684,7 @@ def _write_dual_camera_video(
         "dual_camera_video_written",
         path=str(path),
         frames=len(frames),
+        encoder_frames=len(encoder_frames),
         fps=float(fps),
         shape=list(frames[0].shape),
     )
