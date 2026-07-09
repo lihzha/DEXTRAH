@@ -1341,24 +1341,15 @@ def _bind_material_hierarchy(stage: Any, root_path: str, material: UsdShade.Mate
     return root_path
 
 
-def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
-    resample_enabled = bool(args_cli.exact_visual_resample)
-    recorded = authoritative_recorded_visual_value(
-        shard_metadata=exact_demo["shard_metadata"],
-        key="material_randomization",
-        fallback={},
-    )
-    restore_recorded = not resample_enabled and isinstance(recorded, dict) and bool(recorded.get("enabled"))
-    robot_enabled = (
-        bool(args_cli.yam_policy_robot_material_randomization)
-        if resample_enabled
-        else bool(recorded.get("robot_enabled")) if restore_recorded else False
-    )
-    object_enabled = (
-        bool(args_cli.yam_policy_object_material_randomization)
-        if resample_enabled
-        else bool(recorded.get("object_enabled")) if restore_recorded else False
-    )
+def _apply_material_randomization(
+    stage: Any,
+    rng: np.random.Generator,
+    *,
+    robot_enabled: bool,
+    object_enabled: bool,
+    mode: str,
+    recorded: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not robot_enabled and not object_enabled:
         return {
             "enabled": False,
@@ -1367,21 +1358,19 @@ def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) 
             "object_enabled": object_enabled,
         }
 
-    visual_replay = exact_demo["visual_replay"]
     looks_root = "/World/Looks/YAMPolicyMaterialRandomization"
     UsdGeom.Xform.Define(stage, looks_root)
     summary: dict[str, Any] = {
         "enabled": True,
-        "mode": "rng_resample" if resample_enabled else "recorded",
+        "mode": mode,
         "robot_enabled": robot_enabled,
         "object_enabled": object_enabled,
     }
-    rng = np.random.default_rng(int(visual_replay["rng_seed"]) ^ 0x59414D5F)
     if robot_enabled:
-        recorded_robot = recorded.get("robot") if restore_recorded else None
-        if restore_recorded and not isinstance(recorded_robot, dict):
+        recorded_robot = recorded.get("robot") if recorded is not None else None
+        if recorded is not None and not isinstance(recorded_robot, dict):
             raise ValueError("Recorded robot material randomization is malformed")
-        if restore_recorded:
+        if recorded_robot is not None:
             body_color = tuple(float(v) for v in recorded_robot["body_color"])
             robot_roughness = float(recorded_robot["roughness"])
             robot_metallic = float(recorded_robot["metallic"])
@@ -1412,17 +1401,17 @@ def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) 
         }
 
     if object_enabled:
-        recorded_object = recorded.get("object") if restore_recorded else None
-        if restore_recorded and not isinstance(recorded_object, dict):
+        recorded_object = recorded.get("object") if recorded is not None else None
+        if recorded is not None and not isinstance(recorded_object, dict):
             raise ValueError("Recorded object material randomization is malformed")
         override_applied = (
             bool(recorded_object.get("override_applied"))
-            if restore_recorded
+            if recorded_object is not None
             else bool(rng.random() < 0.65)
         )
         object_summary: dict[str, Any] = {"override_applied": override_applied}
         if override_applied:
-            if restore_recorded:
+            if recorded_object is not None:
                 object_color = tuple(float(v) for v in recorded_object["color"])
                 object_roughness = float(recorded_object["roughness"])
                 object_metallic = float(recorded_object["metallic"])
@@ -1448,7 +1437,54 @@ def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) 
                 }
             )
         summary["object"] = object_summary
+    return summary
+
+
+def _apply_exact_material_randomization(stage: Any, exact_demo: dict[str, Any]) -> dict[str, Any]:
+    resample_enabled = bool(args_cli.exact_visual_resample)
+    recorded = authoritative_recorded_visual_value(
+        shard_metadata=exact_demo["shard_metadata"],
+        key="material_randomization",
+        fallback={},
+    )
+    restore_recorded = not resample_enabled and isinstance(recorded, dict) and bool(recorded.get("enabled"))
+    robot_enabled = (
+        bool(args_cli.yam_policy_robot_material_randomization)
+        if resample_enabled
+        else bool(recorded.get("robot_enabled")) if restore_recorded else False
+    )
+    object_enabled = (
+        bool(args_cli.yam_policy_object_material_randomization)
+        if resample_enabled
+        else bool(recorded.get("object_enabled")) if restore_recorded else False
+    )
+    visual_replay = exact_demo["visual_replay"]
+    rng = np.random.default_rng(int(visual_replay["rng_seed"]) ^ 0x59414D5F)
+    summary = _apply_material_randomization(
+        stage,
+        rng,
+        robot_enabled=robot_enabled,
+        object_enabled=object_enabled,
+        mode="rng_resample" if resample_enabled else "recorded" if restore_recorded else "none",
+        recorded=recorded if restore_recorded else None,
+    )
     visual_replay["material_randomization"] = summary
+    return summary
+
+
+def _apply_eval_material_randomization(task_env: Any) -> dict[str, Any]:
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        raise RuntimeError("Cannot randomize policy-eval materials without a USD stage")
+    rng = np.random.default_rng(int(args_cli.seed) ^ 0x59414D5F)
+    summary = _apply_material_randomization(
+        stage,
+        rng,
+        robot_enabled=bool(args_cli.yam_policy_robot_material_randomization),
+        object_enabled=bool(args_cli.yam_policy_object_material_randomization),
+        mode="rng_eval",
+    )
+    task_env.sim.forward()
     return summary
 
 
@@ -3287,6 +3323,7 @@ def main() -> None:
             "table_texture": _apply_eval_table_texture(task_env, rng),
             "ground_texture": _apply_eval_ground_texture(task_env, rng),
             "dome_light_texture": _apply_eval_dome_light_texture(rng),
+            "material_randomization": _apply_eval_material_randomization(task_env),
         }
         exact_asset_summary = None
     else:
