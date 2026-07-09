@@ -17247,3 +17247,16 @@ Smoke follow-up:
   cannot discard its durable threshold state. No evaluation was duplicated.
   Recovery output is in the monitor directory as
   `restarted_monitor_20260709T081607Z.log`.
+
+## 2026-07-09T09:03:00Z Final N500 Forty-Second Handoff
+
+- Allocation `30015011` timed out normally after 3:50:25 at raw step
+  1,293,990. Its latest durable epoch-219 checkpoint was global step 1,292,338
+  with validation loss `0.0332607`, leaving a 1,652-update unsaved tail.
+- Hardened supervisor PID `3887635` submitted exactly one successor, job
+  `30019101`, at `2026-07-09T08:45:45Z` on `batch-block5-01178`. It loaded the
+  durable checkpoint with unchanged configuration and passed the previous raw
+  high-water at step 1,294,113 with finite loss.
+- No duplicate allocation, checkpoint recovery, NaN, OOM, or model/data
+  setting change occurred. Continue toward the imminent fresh 1.30M L40S
+  gate under periodic-eval monitor PID `2722107`.
