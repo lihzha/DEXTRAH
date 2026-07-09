@@ -10,6 +10,7 @@ WRAPPER="${WRAPPER:-$CODE_NFS/cluster/sbatch_train_yam_pickplace_rgb_dp_1gpu.sh}
 MANIFEST="${MANIFEST:?Set MANIFEST to the YAM RGB policy manifest.json path.}"
 RUN_NAME="${RUN_NAME:-yam_pickplace_rgb_dp_long_$(date -u +%Y%m%dT%H%M%SZ)}"
 INIT_CHECKPOINT="${INIT_CHECKPOINT:-}"
+INIT_MODE="${INIT_MODE:-resume}"
 TARGET_TRAIN_STEPS="${TARGET_TRAIN_STEPS:-2000000}"
 NUM_EPOCHS="${NUM_EPOCHS:-50}"
 MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-$TARGET_TRAIN_STEPS}"
@@ -31,6 +32,10 @@ SBATCH_EXCLUDE="${SBATCH_EXCLUDE:-}"
 
 if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
   CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
+fi
+if [ "$INIT_MODE" != "resume" ] && [ "$INIT_MODE" != "weights" ]; then
+  echo "INIT_MODE must be resume or weights, got: $INIT_MODE" >&2
+  exit 2
 fi
 if [ ! -f "$WRAPPER" ]; then
   echo "Missing wrapper: $WRAPPER" >&2
@@ -57,6 +62,7 @@ payload = {
     "run_root": "$RUN_ROOT_HOST",
     "train_dir": "$TRAIN_DIR_HOST",
     "init_checkpoint": "$INIT_CHECKPOINT" or None,
+    "init_mode": "$INIT_MODE",
     "target_train_steps": int("$TARGET_TRAIN_STEPS"),
     "max_train_steps": int("$MAX_TRAIN_STEPS"),
     "num_epochs": int("$NUM_EPOCHS"),
@@ -224,7 +230,7 @@ submit_train_job() {
     set +e
     out="$(
       timeout --foreground "$SBATCH_TIMEOUT_SECONDS" sbatch "${sbatch_args[@]}" \
-        --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",RUN_NAME="$RUN_NAME",MANIFEST="$MANIFEST",INIT_CHECKPOINT="$init_arg",RESUME="$resume",NUM_EPOCHS="$NUM_EPOCHS",MAX_TRAIN_STEPS="$MAX_TRAIN_STEPS",TOPK_CHECKPOINTS="$TOPK_CHECKPOINTS",BATCH_SIZE="$BATCH_SIZE",VAL_BATCH_SIZE="$VAL_BATCH_SIZE",CODE_COMMIT="$CODE_COMMIT" \
+        --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",RUN_NAME="$RUN_NAME",MANIFEST="$MANIFEST",INIT_CHECKPOINT="$init_arg",INIT_MODE="$INIT_MODE",RESUME="$resume",NUM_EPOCHS="$NUM_EPOCHS",MAX_TRAIN_STEPS="$MAX_TRAIN_STEPS",TOPK_CHECKPOINTS="$TOPK_CHECKPOINTS",BATCH_SIZE="$BATCH_SIZE",VAL_BATCH_SIZE="$VAL_BATCH_SIZE",CODE_COMMIT="$CODE_COMMIT" \
         "$WRAPPER" \
         2>"$err"
     )"

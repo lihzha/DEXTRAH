@@ -29,6 +29,7 @@ SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
 RUN_NAME="${RUN_NAME:-yam_pickplace_rgb_dp_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
 MANIFEST="${MANIFEST:?Set MANIFEST to the YAM RGB policy manifest.json path.}"
 INIT_CHECKPOINT="${INIT_CHECKPOINT:-}"
+INIT_MODE="${INIT_MODE:-resume}"
 NORMALIZER_CHECKPOINT="${NORMALIZER_CHECKPOINT:-$INIT_CHECKPOINT}"
 COPY_FINAL_CHECKPOINT="${COPY_FINAL_CHECKPOINT:-True}"
 CODE_COMMIT="${CODE_COMMIT:-}"
@@ -121,6 +122,10 @@ if [ -n "$INIT_CHECKPOINT" ] && [ ! -f "$INIT_CHECKPOINT_HOST" ]; then
   echo "Missing init checkpoint: $INIT_CHECKPOINT_HOST"
   exit 2
 fi
+if [ "$INIT_MODE" != "resume" ] && [ "$INIT_MODE" != "weights" ]; then
+  echo "INIT_MODE must be resume or weights, got: $INIT_MODE" >&2
+  exit 2
+fi
 if [ -n "$NORMALIZER_CHECKPOINT" ] && [ ! -f "$NORMALIZER_CHECKPOINT_HOST" ]; then
   echo "Missing normalizer checkpoint: $NORMALIZER_CHECKPOINT_HOST"
   exit 2
@@ -140,12 +145,14 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 mkdir -p "$TORCH_CACHE_NFS/hub/checkpoints"
 
-if [ -n "$INIT_CHECKPOINT" ]; then
+if [ -n "$INIT_CHECKPOINT" ] && [ "$INIT_MODE" = "resume" ]; then
   cp "$INIT_CHECKPOINT_HOST" "$TRAIN_DIR_HOST/checkpoints/latest.ckpt"
   RESUME=true
+elif [ -n "$INIT_CHECKPOINT" ]; then
+  RESUME=false
 fi
 
-export RUN_NAME RUN_ROOT_CONTAINER TRAIN_DIR_CONTAINER MANIFEST_ARG INIT_CHECKPOINT_ARG NORMALIZER_CHECKPOINT_ARG
+export RUN_NAME RUN_ROOT_CONTAINER TRAIN_DIR_CONTAINER MANIFEST_ARG INIT_CHECKPOINT_ARG INIT_MODE NORMALIZER_CHECKPOINT_ARG
 export ROBOT_STATE_DIM IMAGE_SIZE VAL_RATIO LR NUM_EPOCHS MAX_TRAIN_STEPS MAX_VAL_STEPS LR_WARMUP_STEPS
 export BATCH_SIZE VAL_BATCH_SIZE NUM_WORKERS VAL_NUM_WORKERS USE_EMA TRAINING_DEVICE RESUME NUM_INFERENCE_STEPS
 export RGB_MODEL_WEIGHTS SHARE_RGB_MODEL IMAGE_AUGMENTATION
@@ -160,6 +167,7 @@ echo "RUN_NAME=$RUN_NAME"
 echo "TRAIN_DIR_HOST=$TRAIN_DIR_HOST"
 echo "MANIFEST_ARG=$MANIFEST_ARG"
 echo "INIT_CHECKPOINT_ARG=${INIT_CHECKPOINT_ARG:-}"
+echo "INIT_MODE=$INIT_MODE"
 echo "NORMALIZER_CHECKPOINT_ARG=${NORMALIZER_CHECKPOINT_ARG:-}"
 echo "ROBOT_STATE_DIM=$ROBOT_STATE_DIM IMAGE_SIZE=$IMAGE_SIZE"
 echo "VAL_RATIO=$VAL_RATIO LR=$LR NUM_EPOCHS=$NUM_EPOCHS MAX_TRAIN_STEPS=$MAX_TRAIN_STEPS"
@@ -189,6 +197,10 @@ srun \
     export WANDB_MODE=offline
     export TORCH_HOME=/root/.cache/torch
     mkdir -p "$TRAIN_DIR_CONTAINER/checkpoints"
+    WEIGHT_INIT_CHECKPOINT_ARG=""
+    if [ "$INIT_MODE" = "weights" ]; then
+      WEIGHT_INIT_CHECKPOINT_ARG="$INIT_CHECKPOINT_ARG"
+    fi
     cd /official_dp
     echo "container_host=$(hostname)"
     echo "container_cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
@@ -208,6 +220,7 @@ srun \
       "training.device=$TRAINING_DEVICE"
       "training.use_ema=$USE_EMA"
       "training.resume=$RESUME"
+      "training.init_checkpoint=$WEIGHT_INIT_CHECKPOINT_ARG"
       "training.num_epochs=$NUM_EPOCHS"
       "training.max_train_steps=$MAX_TRAIN_STEPS"
       "training.max_val_steps=$MAX_VAL_STEPS"

@@ -2,7 +2,7 @@
 # Policy observations intentionally exclude privileged object/bin state and
 # never include phase/progress features.
 
-_target_: diffusion_policy.workspace.train_diffusion_unet_image_workspace.TrainDiffusionUnetImageWorkspace
+_target_: dextrah_lab.offline_dp_bc.train_diffusion_unet_image_workspace.TrainDiffusionUnetImageWorkspaceWithInit
 
 name: train_diffusion_unet_image
 task_name: yam_pickplace_rgb
@@ -137,6 +137,8 @@ training:
   device: cuda:0
   debug: false
   resume: false
+  init_checkpoint: null
+  init_use_ema: true
   lr_scheduler: cosine
   lr_warmup_steps: 500
   num_epochs: 50
