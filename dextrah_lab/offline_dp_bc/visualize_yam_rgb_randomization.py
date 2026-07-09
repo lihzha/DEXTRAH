@@ -42,6 +42,12 @@ def _basename(path_text):
     return Path(path_text).name if path_text else "<missing>"
 
 
+def _recovery_enabled(metadata):
+    recording = metadata.get("recording") or {}
+    recovery_rows = recording.get("recovery") or []
+    return any(bool(row.get("enabled", False)) for row in recovery_rows if isinstance(row, dict))
+
+
 def _numeric_summary(values):
     array = np.asarray(values, dtype=np.float64)
     if array.size == 0:
@@ -163,6 +169,7 @@ def main():
     categorical = defaultdict(Counter)
     records = []
     missing_source_metadata = []
+    missing_source_policy_metadata = []
 
     for manifest_index, shard in enumerate(shards):
         shard_path = _resolve_shard_path(manifest_path, shard["path"])
@@ -175,6 +182,22 @@ def main():
             source_metadata = {}
         else:
             source_metadata = _load_json(source_metadata_path)
+
+        source_policy_shard = str(
+            metadata.get("source_policy_shard") or shard.get("source_policy_shard") or ""
+        )
+        source_policy_metadata_path = (
+            _host_results_path(source_policy_shard, args.results_root) / "metadata.json"
+            if source_policy_shard
+            else None
+        )
+        if source_policy_metadata_path is None or not source_policy_metadata_path.is_file():
+            source_policy_metadata = None
+            missing_source_policy_metadata.append(
+                str(source_policy_metadata_path) if source_policy_metadata_path is not None else "<missing>"
+            )
+        else:
+            source_policy_metadata = _load_json(source_policy_metadata_path)
 
         visual = metadata.get("exact_visual_replay") or {}
         visual_paths = visual.get("paths") or {}
@@ -210,9 +233,24 @@ def main():
         replay_gate = recording.get("replay_gate") or {}
         categorical["replay_gate_passed"][str(bool(replay_gate.get("passed", False)))] += 1
         categorical["exact_visual_resample"][str(bool(recording.get("exact_visual_resample", False)))] += 1
-        recovery_rows = recording.get("recovery") or []
-        recovery_enabled = any(bool(row.get("enabled", False)) for row in recovery_rows if isinstance(row, dict))
+        recovery_enabled = _recovery_enabled(metadata)
+        source_recovery_enabled = (
+            _recovery_enabled(source_policy_metadata) if source_policy_metadata is not None else None
+        )
+        if source_recovery_enabled is None:
+            recovery_provenance = "unknown_source"
+        elif recovery_enabled and source_recovery_enabled:
+            recovery_provenance = "inherited_recovery"
+        elif recovery_enabled:
+            recovery_provenance = "synthesized_recovery_from_nominal"
+        elif source_recovery_enabled:
+            recovery_provenance = "source_recovery_replayed_nominally"
+        else:
+            recovery_provenance = "nominal"
         categorical["recovery_data"][str(recovery_enabled)] += 1
+        categorical["source_recovery_data"][str(source_recovery_enabled)] += 1
+        categorical["recovery_provenance"][recovery_provenance] += 1
+        categorical["source_policy_shards"][source_policy_shard or "<missing>"] += 1
         for controller_path in recording.get("episode_controller_paths") or []:
             categorical["controller_paths"][str(controller_path)] += 1
 
@@ -254,6 +292,8 @@ def main():
                 "dome_texture": dome_texture,
                 "background_texture": background_texture,
                 "recovery_data": recovery_enabled,
+                "recovery_provenance": recovery_provenance,
+                "source_policy_shard": source_policy_shard,
                 "object_initial": initial_state.get("cube_initial_pos"),
                 "goal_bin": goal_bin,
             }
@@ -275,6 +315,14 @@ def main():
     }
     rendered_background_wall_count = categorical["background_walls_enabled"].get("True", 0)
     rendered_ground_texture_count = categorical["ground_texture_enabled"].get("True", 0)
+    source_policy_counts = {
+        path: count
+        for path, count in categorical["source_policy_shards"].items()
+        if path != "<missing>"
+    }
+    reused_source_policy_counts = {
+        path: count for path, count in source_policy_counts.items() if count > 1
+    }
 
     summary = {
         "manifest": str(manifest_path),
@@ -288,6 +336,11 @@ def main():
         "train_val_target_overlap": len(train_targets.intersection(val_targets)),
         "recovery_trajectories": recovery_count,
         "recovery_fraction": float(recovery_count / len(records)),
+        "recovery_provenance": dict(sorted(categorical["recovery_provenance"].items())),
+        "unique_source_policy_shards": len(source_policy_counts),
+        "reused_source_policy_shards": len(reused_source_policy_counts),
+        "rows_on_reused_source_policy_shards": int(sum(reused_source_policy_counts.values())),
+        "max_source_policy_shard_reuse": int(max(source_policy_counts.values(), default=0)),
         "unique_table_textures": len(categorical["table_textures"]),
         "unique_table_texture_families": len(table_texture_families),
         "unique_dome_textures": len(categorical["dome_textures"]),
@@ -300,6 +353,7 @@ def main():
         "object_material_overrides_applied": categorical["object_material_override_applied"].get("True", 0),
         "robot_material_records": categorical["robot_material_recorded"].get("True", 0),
         "missing_source_metadata_count": len(missing_source_metadata),
+        "missing_source_policy_metadata_count": len(missing_source_policy_metadata),
     }
 
     grid_count = min(args.grid_count, len(records))
@@ -333,6 +387,7 @@ def main():
             "records": selected_records,
         },
         "missing_source_metadata": missing_source_metadata,
+        "missing_source_policy_metadata": missing_source_policy_metadata,
     }
     (args.output_dir / "randomization_stats.json").write_text(
         json.dumps(report_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -370,6 +425,18 @@ def main():
         ),
         "- Train/validation target overlap: `{}`".format(summary["train_val_target_overlap"]),
         "- Recovery trajectories: `{}` (`{:.1%}`)".format(recovery_count, summary["recovery_fraction"]),
+        "- Recovery provenance nominal/inherited/new/replayed-nominal: `{}` / `{}` / `{}` / `{}`".format(
+            summary["recovery_provenance"].get("nominal", 0),
+            summary["recovery_provenance"].get("inherited_recovery", 0),
+            summary["recovery_provenance"].get("synthesized_recovery_from_nominal", 0),
+            summary["recovery_provenance"].get("source_recovery_replayed_nominally", 0),
+        ),
+        "- Unique/reused source policy shards; rows on reused sources; maximum reuse: `{}` / `{}`; `{}`; `{}`".format(
+            summary["unique_source_policy_shards"],
+            summary["reused_source_policy_shards"],
+            summary["rows_on_reused_source_policy_shards"],
+            summary["max_source_policy_shard_reuse"],
+        ),
         "- Unique rendered table / dome asset files: `{}` / `{}`".format(
             summary["unique_table_textures"], summary["unique_dome_textures"]
         ),
@@ -387,6 +454,9 @@ def main():
             summary["object_material_overrides_applied"], summary["robot_material_records"]
         ),
         "- Missing source metadata: `{}`".format(summary["missing_source_metadata_count"]),
+        "- Missing source-policy metadata: `{}`".format(
+            summary["missing_source_policy_metadata_count"]
+        ),
         "",
         "The 100-cell grids sample the frozen manifest uniformly. Each cell places `scene_rgb` on the left and `wrist_rgb` on the right. Cell metadata is in `randomization_stats.json`.",
         "",
@@ -434,6 +504,7 @@ def main():
     lines.extend(_counter_lines("Selected Table Textures", categorical["table_textures"]))
     lines.extend(_counter_lines("Selected Dome Textures", categorical["dome_textures"]))
     lines.extend(_counter_lines("Selected Ground Textures", categorical["background_textures"]))
+    lines.extend(_counter_lines("Recovery Provenance", categorical["recovery_provenance"]))
     lines.extend(_counter_lines("Controller Paths", categorical["controller_paths"]))
     lines.extend(_counter_lines("Admission And Rendering Checks", Counter({
         "quality rendering": categorical["rendering_mode"].get("quality", 0),
