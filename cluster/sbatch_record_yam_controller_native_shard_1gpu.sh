@@ -92,6 +92,7 @@ fi
 mapfile -t SOURCE_FIELDS < <(
   python3 - "$SOURCE_MANIFEST" "$SOURCE_INDEX" <<'PY'
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -102,7 +103,10 @@ shards = payload.get("shards") or []
 if not 0 <= index < len(shards):
     raise SystemExit(f"source index {index} outside [0, {len(shards)})")
 row = shards[index]
-print(row["path"])
+source_path = Path(str(row["path"])).expanduser()
+if not source_path.is_absolute():
+    source_path = Path(os.path.abspath(manifest.parent / source_path))
+print(source_path)
 print(int(row.get("num_steps") or row["action_shape"][0]))
 PY
 )
