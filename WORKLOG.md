@@ -17150,3 +17150,56 @@ Smoke follow-up:
   passed the prior raw high-water at step 1,227,405 with finite loss. No
   duplicate allocation, checkpoint recovery, NaN, OOM, or model/data setting
   change occurred.
+
+## 2026-07-09T05:02:00Z N500 Step-1.253M Eval And Reproducibility Matrix
+
+- The periodic monitor crossed raw step 1,250,000, rejected the older
+  checkpoint, and selected the fresh epoch-212 checkpoint at global step
+  1,253,027 (`val_loss=0.0299178`). L40S job `1101974` evaluated immutable
+  snapshot `step_1253099.ckpt` with paired environment/policy seed 42.
+- Job `1101974` completed cleanly in 17:58 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, malformed video, or runtime
+  exception. Strict settled-bin success was `0/1`.
+- Seed 42 grasped at step 193, crossed the physical-lift threshold at step
+  3,217, and reached `0.121593 m` maximum lift at step 3,763. It entered only
+  legacy radius containment for steps 3,775--3,777 and never entered oriented
+  object-aware containment. Its best strict margins were `x=0.003993 m` and
+  `y=-0.004478 m` while moving at `0.215753 m/s` and `3.607169 rad/s`; it
+  settled with margins `x=0.003136 m`, `y=-0.007992 m`. Minimum finger/table
+  clearance was `-0.006690 m` at step 2,504.
+- Because the primary visibly delivered the object to the bin, jobs `1101980`
+  through `1101983` evaluated paired seeds 43 through 46 with the identical
+  quality renderer, 4,800-step dynamics protocol, 100 DDPM inference steps,
+  and action chunk eight. All four completed cleanly with strict success
+  `0/4`.
+- Seed 43 never grasped or moved the object. Seed 44 grasped at step 218,
+  lifted `0.143051 m`, entered oriented containment for steps 3,099--3,105,
+  and released, but crossed the bin while moving at `0.140646 m/s` and
+  `4.358745 rad/s`; it settled against the wall with final margins
+  `x=0.050518 m`, `y=-0.006932 m`. Seed 45 lifted only `0.005517 m`. Seed 46
+  lifted `0.131993 m` but left the object on the rim/outside with final margins
+  `x=-0.154421 m`, `y=0.020142 m`.
+- The checkpoint therefore scores strict `0/5`. Both-camera inspection agrees
+  with the metrics: seeds 42 and 44 place visually inside the bin but settle
+  about 7--8 mm beyond the near-wall oriented margin, while seed 46 rests on
+  the rim. Keep global step 1,154,750 as the provisional preferred checkpoint
+  at strict `2/5`.
+- Primary local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step1253099`.
+  Paired-seed evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1253027_repro_20260709T0436Z_s{43,44,45,46}`;
+  the inspected 42-frame comparison video is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1253027_repro_20260709T0436Z_seeds43-46_dual_sparse_grid.mp4`.
+
+## 2026-07-09T05:03:00Z Final N500 Forty-First Handoff
+
+- Allocation `30010722` timed out normally after 3:50:15 at raw step
+  1,258,778. Its latest durable epoch-213 checkpoint was global step 1,257,941
+  with validation loss `0.0332104`, leaving an 837-update unsaved tail.
+- Hardened supervisor PID `3887635` submitted exactly one successor, job
+  `30015011`, at `2026-07-09T04:53:26Z` on `batch-block5-01178`. The successor
+  loaded the durable checkpoint with unchanged configuration and passed the
+  prior raw high-water at step 1,259,072 with finite loss.
+- No duplicate allocation, checkpoint recovery, NaN, OOM, or model/data
+  setting change occurred. Continue toward the fresh 1.30M L40S gate under
+  periodic-eval monitor PID `3976525`.
