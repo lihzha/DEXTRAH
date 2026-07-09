@@ -17230,3 +17230,20 @@ Smoke follow-up:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1253027_repro_20260709T0435Z_s{44,45,46}`
   plus `_s43_retry1`. Its inspected comparison video is
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1253027_repro_20260709T0435Z_seeds43-46_dual_sparse_grid.mp4`.
+
+## 2026-07-09T08:17:00Z L40S Periodic Monitor Recovery
+
+- Periodic-eval monitor PID `3976525` was no longer present after the L40S
+  login node exhausted process slots during concurrent evaluation inspection.
+  Training and all submitted eval jobs were unaffected; the durable ledger
+  remained intact with 21 unique entries through snapshot `step_1253099`.
+- Relaunched the same commit, monitor name, quality-rendered 4,800-step
+  protocol, and fixed seed-42 configuration as detached PID `2722107` on the
+  shared L40S filesystem. The process reparented to PID 1 and explicitly
+  resumed with `submitted_evals=21`, `last_submitted_step=1253099`, and
+  `next_threshold=1300000`.
+- Set external-process retries effectively unbounded for this lightweight
+  monitor instance so transient login-node fork or scheduler-query exhaustion
+  cannot discard its durable threshold state. No evaluation was duplicated.
+  Recovery output is in the monitor directory as
+  `restarted_monitor_20260709T081607Z.log`.
