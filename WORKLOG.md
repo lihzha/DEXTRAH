@@ -17136,3 +17136,17 @@ Smoke follow-up:
 - The supervisor preserves the same frozen 500-trajectory manifest, batch 80,
   2M-step target, model settings, excluded slow nodes, and checkpoint-resume
   behavior. L40S periodic-eval monitor PID `3976525` remains unchanged.
+
+## 2026-07-09T01:26:00Z Final N500 Fortieth Handoff
+
+- Allocation `30003486` timed out normally after 3:51:43 at raw step
+  1,227,243. Its latest durable epoch-207 checkpoint was global step 1,223,543
+  with validation loss `0.029451`, leaving a 3,700-update unsaved tail.
+- Hardened supervisor PID `3887635` stayed alive through the Slurm query
+  outage, classified the adopted allocation as `TIMEOUT`, and submitted
+  exactly one successor, job `30010722`, at `2026-07-09T01:01:11Z` on
+  `batch-block5-01178`.
+- The successor loaded the durable checkpoint with unchanged configuration and
+  passed the prior raw high-water at step 1,227,405 with finite loss. No
+  duplicate allocation, checkpoint recovery, NaN, OOM, or model/data setting
+  change occurred.
