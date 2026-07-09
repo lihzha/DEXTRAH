@@ -17603,3 +17603,26 @@ Smoke follow-up:
   `cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_live50`.
   Production collection had advanced to 57 admitted trajectories by the end of
   inspection, with all three detached submitters still active.
+
+## 2026-07-09T14:53:00Z Source Object Split Inheritance Fixed
+
+- Compared the first 50 corrected rows against frozen v16's authoritative
+  500-row source manifest and found nine row-level split mismatches. The prior
+  partial-corpus registry was object-disjoint internally, but it recomputed the
+  assignment before all 80 objects were present and therefore was not a valid
+  held-out-object continuation of baseline training.
+- Added `--split_source_manifest` to the curriculum builder. It loads and
+  validates one immutable split per target UUID, requires every accepted UUID
+  to be represented, rejects conflicts with an existing registry, and records
+  source-manifest provenance in generated manifests. Compilation, Ruff, and all
+  16 focused curriculum tests pass at commit `0eff266c`.
+- Deployed the fix through a Git ref into the separate audit worktree; active
+  production replay remains pinned to `482b1b3c`. Initial audit job `1102414`
+  correctly rejected a requested 10-row stage because the authoritative source
+  split has no validation row among those first ten IDs. No such stage is
+  needed for corrected-data fine-tuning.
+- Audit retry `1102419` built the 50-row source-preserved manifest alone:
+  `46` train / `4` validation rows, zero split mismatches, and all 13 frozen
+  validation UUIDs retained in the registry for the final corpus. Report job
+  `1102422` regenerated the linked statistics and grids from this manifest.
+  The final 500-row builder will use the same authoritative source manifest.
