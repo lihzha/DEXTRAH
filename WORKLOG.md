@@ -17704,3 +17704,55 @@ Smoke follow-up:
 - Success criterion is strict settled bin placement; regardless of outcome,
   metrics and the complete dual-camera video must be fetched and inspected
   against baseline step 1,154,781 and v17 pilot step 6,806.
+
+## 2026-07-09T16:15:00Z First Pilot Eval And Exact Dual-Video Frame Count
+
+- Pilot checkpoint step 6,806 completed L40S quality eval `1102714` for all
+  4,800 uninterrupted dynamics steps. It achieved a stable grasp, lifted
+  `0.08478 m`, transported toward the bin, then released outside it and never
+  recovered (`0/1` strict success). The full scene+wrist video confirms no
+  reset, hidden target, blank frame, or eval/train observation mismatch.
+- Continued-v16 corrected-ground comparator `1102742` also finished `0/1`.
+  It lifted `0.15600 m` and briefly achieved oriented-footprint containment
+  for six steps, but the object bounced and settled with its projected
+  footprint `0.01865 m` beyond one inner wall. This is a genuine near miss,
+  not a conservative-radius metric artifact. Legacy no-ground eval `1102721`
+  was likewise `0/1` and is not a controlled corrected-domain comparator.
+- `ffprobe` found that MoviePy encoded 4,799 frames from 4,800 captured frames
+  and 119 from the 120-frame smoke. Commit `00eb6f85` appends one terminal
+  image to MoviePy's encoder schedule so every captured observation is
+  retained. L40S smoke `1102810` verified H.264, 512x256, 60 FPS, exactly
+  120 frames, and 2.000 seconds; first/middle/final pixels are nonblank and
+  correctly ordered scene-left/wrist-right. Mistyped-commit launch `1102807`
+  was canceled before execution and replaced immediately.
+- Deployed isolated eval worktree
+  `yam-v17-dualeval-00eb6f85-20260709`. Periodic monitor PID `3754547`
+  replaced PID `3682294` and resumed the same durable ledger at the 15k
+  threshold. The old monitor had already submitted step-10,682 eval `1102828`,
+  so that one retains the harmless one-terminal-frame omission; later evals
+  use the corrected encoder.
+
+## 2026-07-09T16:32:00Z Source-Preserved 250-Shard Audit And Recovery Provenance
+
+- Froze exactly 250 admitted shards under
+  `audits/live_0250_20260709T1612Z`. Source-split audit `1102785` accepted
+  `250/250` with zero rejects, 207,961 finite control steps, 234 train / 16
+  validation rows, the authoritative 13 validation UUID registry, and no
+  train/validation object overlap. All rows satisfy quality, dynamics, exact
+  visual, ground, strict placement, replay, and 60-step flow gates.
+- Report `1102791` found 69 objects, 23 floor textures, 20 table files, 115
+  dome files, 170 table+dome pairs, 182 object material overrides, and 250
+  robot material records. All scene views remain table-only. Inspection of
+  all 100 sampled initial/mid/final camera pairs found no fixed grid, room
+  background, blank frame, marker, label, hidden initial target, or failed
+  final placement.
+- The raw recovery fraction is 79/250 (`31.6%`). A provenance audit showed
+  155 nominal rows, 11 inherited recoveries, 68 new recovery backfills from
+  nominal sources, and 16 recovery sources replayed nominally. There are 203
+  unique source policy shards; 25 are reused, involving 72 rows, with maximum
+  reuse six. This is materially more precise than describing all 79 rows as
+  inherited DAgger data.
+- Commit `d710a0b9` adds recovery provenance, source-policy reuse, and missing
+  source-policy metadata to the generated audit. Rerun `1102888` reproduced
+  the one-off counts exactly with zero missing metadata. The collector was at
+  286 admitted rows and remained active without a device-loss failure.
