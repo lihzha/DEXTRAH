@@ -17492,3 +17492,21 @@ Smoke follow-up:
   resample flag. Compilation, Ruff, and 26 focused tests pass.
 - Next: deploy and rerun the one-step pure exact parity check. The full
   500-shard launch remains gated on this result.
+
+## 2026-07-09T14:15:00Z V17 Exact-Parity Gate Passed
+
+- Pure exact restore retry `1102250` completed cleanly in 52 seconds. It bound
+  the recorded robot and object materials in `recorded` mode, restored the
+  authoritative floor/table/HDR/camera paths and values with zero numeric
+  error, and restored all 24 robot-state values exactly.
+- Reset parity improved from `25.49/18.57 dB` to `34.10/33.30 dB` for
+  scene/wrist. Inspection of `exact_observation_parity_restored.png` shows the
+  reference and live frames visually matched; amplified residuals are confined
+  to mesh edges, shadows, and rasterization noise. This is consistent with the
+  previously accepted same-L40 quality parity envelope.
+- The corrected 500-shard pass is now cleared to launch from frozen v16's
+  strict curriculum, preserving its object-disjoint split and 45 recovery
+  trajectories while replacing the fixed grid ground with an independently
+  randomized 24-texture floor. Main, failed-source recovery, and object-diverse
+  replacement submitters will use ordinary jobs with explicit throttles; no
+  Slurm arrays are used.
