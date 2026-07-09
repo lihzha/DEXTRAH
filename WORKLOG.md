@@ -17688,3 +17688,19 @@ Smoke follow-up:
   an isolated `66abbc45` worktree. Pilot training remains pinned independently
   to `10c26560` and was at step 6,356 with finite loss. Corrected collection
   reached 200 admitted trajectories with no device-loss events.
+
+## 2026-07-09T16:02:00Z Corrected-Ground Continued-V16 Comparator Launch
+
+- The inherited v16 periodic monitor submitted checkpoint step 1,351,373 as
+  L40S job `1102721`, but its pinned `f928e60c` evaluator predates the textured
+  ground augmentation. It remains useful for longitudinal behavior, but is not
+  a controlled comparison against the v17 pilot.
+- Submitted L40S job `1102742` from isolated dual-eval commit `66abbc45` using
+  the same step-1,351,373 checkpoint, seed 42 scene randomization, corrected
+  floor/table/HDR/material domain, quality rendering, 4,800 uninterrupted
+  dynamics steps, action chunk 8, and full-rate 60 FPS scene+wrist video.
+  Run name:
+  `yam_rgb_dp_v17_baseline1351373_ground_s42_dual_20260709T1602Z`.
+- Success criterion is strict settled bin placement; regardless of outcome,
+  metrics and the complete dual-camera video must be fetched and inspected
+  against baseline step 1,154,781 and v17 pilot step 6,806.
