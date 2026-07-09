@@ -17304,3 +17304,21 @@ Smoke follow-up:
   `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1302165_repro_20260709T1028Z_seeds43-46_dual_sparse_grid.mp4`.
 - Continue the approved run toward the fresh 1.35M gate under training
   supervisor PID `3887635` and periodic-eval monitor PID `2722107`.
+
+## 2026-07-09T11:35:00Z V16 Grid-Plane Visual Audit Clarification
+
+- Re-inspected the initial, midpoint, and final 100-way scene+wrist grids at
+  native `2624x1324` resolution while answering the robot-state, L40S, DAgger,
+  and randomization audit. All sampled streams remain finite and visually
+  populated, and the external camera remains table-dominant without rendered
+  background walls.
+- The final-frame wrist views expose a repeated grid-pattern plane beyond the
+  table/bin in many trajectories. This is Isaac Lab's `GroundPlaneCfg`: v16
+  randomizes its per-trajectory color, but not the underlying grid appearance.
+  The 90 selected background texture families remain metadata-only because
+  background walls are disabled, so they do not diversify these pixels.
+- This is a concrete residual sim-to-real risk for wrist observations near
+  placement/retraction and should be corrected with ground/surround texture
+  variation in a future visual replay. The active 2M-step v16 run remains
+  unchanged as the behavioral baseline because changing rendered pixels now
+  would define a new frozen corpus and require retraining.
