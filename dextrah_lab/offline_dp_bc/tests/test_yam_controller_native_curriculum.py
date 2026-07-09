@@ -71,6 +71,7 @@ def _write_shard(
         recording["dataset_drop_open_trigger"] = {
             14: "contained_geometry_without_hidden_timeout",
             15: "contained_geometry_with_tcp_stall_recovery",
+            16: "contained_geometry_with_tcp_stall_recovery",
         }[controller_version]
         recording["episode_drop_settle_timed_out"] = [drop_settle_timed_out]
     metadata = {
@@ -232,6 +233,20 @@ class YamControllerNativeCurriculumValidationTest(unittest.TestCase):
             shard = _write_shard(
                 Path(directory),
                 controller_version=15,
+                descent_started=True,
+                controller_path="staged_descent",
+            )
+
+            record, reason = _validate_shard(shard)
+
+            self.assertIsNone(reason)
+            self.assertEqual(record["source_index"], 5)
+
+    def test_v16_accepts_tcp_stall_recovery_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shard = _write_shard(
+                Path(directory),
+                controller_version=16,
                 descent_started=True,
                 controller_path="staged_descent",
             )

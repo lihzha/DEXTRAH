@@ -17537,3 +17537,19 @@ Smoke follow-up:
   `http://localhost:8765/view?path=cluster_results/l401/yam_controller_stateobs_v17_ground_smoke_source000000_20260709T1405Z/source000000_scene_wrist.mp4`
   and
   `http://localhost:8765/view?path=cluster_results/l401/yam_controller_stateobs_v17_ground_smoke_source000000_20260709T1405Z/source000000_12frame_grid.png`.
+
+## 2026-07-09T14:22:00Z Live Audit Version-16 Gate Fix
+
+- CPU audit job `1102290` snapshotted the first 12 accepted shards and rejected
+  all 12 only as `unsupported_drop_open_trigger`. The RGB, dynamics, floor,
+  and trajectory records were not implicated.
+- Root cause: runtime controller version 16 intentionally retains version 15's
+  `contained_geometry_with_tcp_stall_recovery` observable release trigger, but
+  the post-hoc curriculum validator and existing-shard fast-path maps ended at
+  version 15. Added version 16 with the same trigger to both maps and a focused
+  v16 regression test. Shell syntax, Python compilation, Ruff, and all 14
+  curriculum tests pass.
+- Active collection remains pinned to `482b1b3c`; changing its deployed
+  worktree would violate future per-job commit checks. The validator fix will
+  be deployed to a separate audit worktree, leaving all main/recovery/replacement
+  jobs and submitters untouched.

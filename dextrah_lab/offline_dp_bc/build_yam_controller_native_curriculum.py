@@ -191,6 +191,7 @@ def _validate_shard(
         expected_open_trigger = {
             14: "contained_geometry_without_hidden_timeout",
             15: "contained_geometry_with_tcp_stall_recovery",
+            16: "contained_geometry_with_tcp_stall_recovery",
         }.get(controller_version)
         if str(recording.get("dataset_drop_open_trigger") or "") != expected_open_trigger:
             return None, "unsupported_drop_open_trigger"
