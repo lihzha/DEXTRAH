@@ -17371,3 +17371,24 @@ Smoke follow-up:
 - Next: commit/push, deploy the exact revision to an isolated L40S worktree, run
   one quality-render dynamics replay, and inspect both camera streams before
   scaling the corrected RGB replay.
+
+## 2026-07-09T13:18:00Z Textured-Ground L40S Smoke 1
+
+- Commit `11e3e64e` was pushed and deployed exactly to NFS worktree
+  `yam-ground-randomization-11e3e64e-20260709`. L40S job `1102238` replayed
+  accepted source row 22 in quality-render dynamics mode at `1024x1024`, with
+  both policy streams recorded at `256x256` every control step.
+- The job completed `825/825` steps and was accepted (`1/1`, zero failed rows).
+  The selected floor was `concrete_floor_worn_001_diff_1k.jpg`, tiling
+  `3.259576`, roughness `0.737620`; metadata records an enabled floor quad at
+  `z=-0.079 m`. Both streams are finite and nonblank.
+- Initial and midpoint views are correct. The final wrist frame no longer shows
+  Isaac's grid, but exposes the far edge of the `6x6 m` visual quad and black
+  world beyond it. This remains a visual-domain defect, so production replay
+  was not launched.
+- Increased only the visual overlay to `20x20 m` while preserving the original
+  collision plane. UV repetition now scales with overlay size relative to the
+  6 m reference, retaining the sampled physical texture density. Exact replay
+  records/restores this size; evaluation uses the same default. Static checks
+  and all 21 tests pass. Next: rerun the identical L40S row and inspect the
+  final wrist horizon.

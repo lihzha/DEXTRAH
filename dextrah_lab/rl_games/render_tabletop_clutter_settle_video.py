@@ -163,6 +163,7 @@ parser.add_argument(
     default=False,
     help="Cover Isaac Lab's grid ground with the sampled background texture without changing collisions.",
 )
+parser.add_argument("--yam_policy_ground_texture_size", type=float, nargs=2, default=(20.0, 20.0))
 parser.add_argument("--yam_policy_dome_light_texture_dir", type=str, default=None)
 parser.add_argument("--record_multicam_rgb", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--record_scene_rgb", action=argparse.BooleanOptionalAction, default=True)
@@ -841,6 +842,7 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
     setattr(env_cfg, "yam_policy_background_texture_path", background_texture_path)
     setattr(env_cfg, "yam_policy_background_texture_tiling", background_texture_tiling)
     setattr(env_cfg, "yam_policy_ground_texture_enabled", bool(args.yam_policy_ground_texture))
+    setattr(env_cfg, "yam_policy_ground_texture_size", tuple(float(v) for v in args.yam_policy_ground_texture_size))
     setattr(env_cfg, "yam_policy_dome_light_texture_path", dome_texture_path)
     setattr(env_cfg, "tabletop_goal_bin_floor_color", bin_floor_color)
     setattr(env_cfg, "tabletop_goal_bin_x_wall_color", x_wall_color)
@@ -913,7 +915,7 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
             "texture_path": background_texture_path or None,
             "texture_tiling": background_texture_tiling,
             "roughness": float(getattr(env_cfg, "yam_policy_background_wall_roughness")),
-            "size": [float(v) for v in getattr(env_cfg, "ground_plane_size", (6.0, 6.0))],
+            "size": [float(v) for v in args.yam_policy_ground_texture_size],
             "z": float(getattr(env_cfg, "ground_plane_z", 0.0)) + 0.001,
         },
         "lighting": {
@@ -2284,7 +2286,7 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
             raise RuntimeError("Ground texture overlay requested without a sampled texture path")
         if not Path(ground_texture_path).is_file():
             raise FileNotFoundError(ground_texture_path)
-        ground_size = tuple(float(v) for v in getattr(cfg, "ground_plane_size", (6.0, 6.0)))
+        ground_size = tuple(float(v) for v in getattr(cfg, "yam_policy_ground_texture_size", (20.0, 20.0)))
         if len(ground_size) != 2:
             raise ValueError(f"Expected two ground-plane dimensions, got {ground_size}")
         ground_tiling = float(getattr(cfg, "yam_policy_background_texture_tiling", 1.5))
@@ -2304,8 +2306,8 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
             )
             path = f"/World/envs/env_{env_id}/YAMPolicyGroundTexture"
             uv_scale = (
-                ground_tiling,
-                ground_tiling * max(0.1, ground_size[1] / max(ground_size[0], 1.0e-6)),
+                ground_tiling * ground_size[0] / 6.0,
+                ground_tiling * ground_size[1] / 6.0,
             )
             _usd_add_xy_quad(stage, path, center, ground_size, ground_mat, uv_scale=uv_scale)
             ground_texture_quads.append(

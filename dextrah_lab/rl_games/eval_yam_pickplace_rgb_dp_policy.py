@@ -211,6 +211,7 @@ parser.add_argument("--yam_policy_table_texture_dir", type=str, default="")
 parser.add_argument("--yam_policy_table_texture_tiling_range", type=float, nargs=2, default=(1.4, 3.8))
 parser.add_argument("--yam_policy_ground_texture_dir", type=str, default="")
 parser.add_argument("--yam_policy_ground_texture_tiling_range", type=float, nargs=2, default=(1.0, 2.2))
+parser.add_argument("--yam_policy_ground_texture_size", type=float, nargs=2, default=(20.0, 20.0))
 parser.add_argument("--yam_policy_dome_light_texture_dir", type=str, default="")
 parser.add_argument(
     "--yam_policy_robot_material_randomization",
@@ -1430,8 +1431,8 @@ def _apply_exact_demo_appearance(task_env: Any, exact_demo: dict[str, Any]) -> d
             ground_path = f"/World/envs/env_{env_id}/YAMPolicyGroundTexture"
             ground_tiling = float(cfg.exact_ground_texture_tiling)
             ground_uv_scale = (
-                ground_tiling,
-                ground_tiling * max(0.1, ground_size[1] / max(ground_size[0], 1.0e-6)),
+                ground_tiling * ground_size[0] / 6.0,
+                ground_tiling * ground_size[1] / 6.0,
             )
             _usd_add_xy_quad(
                 stage,
@@ -1558,7 +1559,7 @@ def _apply_eval_ground_texture(task_env: Any, rng: np.random.Generator) -> dict[
     UsdGeom.Xform.Define(stage, looks_root)
     mat = _usd_texture_material(stage, f"{looks_root}/ground_texture", texture_path, roughness=roughness)
     env_origins = task_env.scene.env_origins.detach().float().cpu().numpy()
-    size_xy = tuple(float(v) for v in getattr(cfg, "ground_plane_size", (6.0, 6.0)))
+    size_xy = tuple(float(v) for v in args_cli.yam_policy_ground_texture_size)
     if len(size_xy) != 2:
         raise ValueError(f"Expected two eval ground-plane dimensions, got {size_xy}")
     records: list[dict[str, Any]] = []
@@ -1568,7 +1569,7 @@ def _apply_eval_ground_texture(task_env: Any, rng: np.random.Generator) -> dict[
             float(origin[1]),
             float(origin[2]) + float(getattr(cfg, "ground_plane_z", 0.0)) + 0.001,
         )
-        uv_scale = (tiling, tiling * max(0.1, size_xy[1] / max(size_xy[0], 1.0e-6)))
+        uv_scale = (tiling * size_xy[0] / 6.0, tiling * size_xy[1] / 6.0)
         path = f"/World/envs/env_{env_id}/YAMPolicyEvalGroundTexture"
         _usd_add_xy_quad(stage, path, center, size_xy, mat, uv_scale=uv_scale)
         records.append(
