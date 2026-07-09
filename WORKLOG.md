@@ -17778,3 +17778,31 @@ Smoke follow-up:
   resumed loss returned to `0.001--0.004` with normal throughput. New detached
   supervisor PID is `1542927`; periodic L40S monitor PID `3754547` continues
   from the existing evaluation ledger.
+
+## 2026-07-09T17:18:00Z Material-Matched Policy Evaluation Restored
+
+- Audited the ordinary policy-eval appearance path and found that the previous
+  corrected-ground comparisons randomized table texture, ground texture, HDR,
+  and lights, but did not bind the requested robot/object material overrides.
+  Those `0/1` behavior results remain informative but were visually easier than
+  the full training distribution and must not be described as fully matched.
+- Commit `27addad2` factors the exact material-binding implementation into a
+  shared helper and applies it to ordinary randomized policy evaluation.
+  L40S smoke `1102948` records `mode=rng_eval`, randomized robot color,
+  metallic, and roughness, enabled object sampling, table/floor/HDR assets, and
+  120 dual-camera policy frames. Seed-43 smoke `1102990` additionally verifies
+  an applied object override with its bound object root and sampled color,
+  metallic, and roughness. Both jobs completed on L40S.
+- Exact-frame retry `1103003` ran from commit `34f9d910`, completed 120 policy
+  steps, and produced H.264 at 512x256, 60 FPS, exactly 120 decoded frames and
+  2.000 seconds. First/middle/final inspection shows table-only scene views,
+  visible target/bin/robot, and coherent wrist views with no blank frames.
+  Mistyped-commit attempt `1102995` failed before simulation and produced no
+  model result.
+- Replaced the obsolete material-unmatched monitor with the isolated
+  `27addad2` eval worktree. It submitted pilot checkpoint step 15,518 as L40S
+  job `1103020`: one uninterrupted 4,800-step episode, action chunk 8, quality
+  rendering, full-rate scene+wrist video, and all appearance randomizers.
+  Detached monitor PID `3837188` resumed the durable ledger at the 20k
+  threshold with `MAX_EVALS=4`, so it cannot duplicate the completed 6,806,
+  10,682, or 15,518 evaluations.
