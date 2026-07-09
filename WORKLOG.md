@@ -17322,3 +17322,23 @@ Smoke follow-up:
   variation in a future visual replay. The active 2M-step v16 run remains
   unchanged as the behavioral baseline because changing rendered pixels now
   would define a new frozen corpus and require retraining.
+
+## 2026-07-09T12:43:00Z Final N500 Forty-Third Handoff
+
+- Allocation `30019101` timed out normally after `03:50:26` at raw step
+  `1,321,968`. Its fresh epoch-224 checkpoint is durable at global step
+  `1,321,821` with validation loss `0.0300254`, leaving only 147 unsaved
+  updates.
+- Hardened supervisor PID `3887635` submitted exactly one successor, job
+  `30023228`, at `2026-07-09T12:39:11Z` on `batch-block5-01178`. It loaded the
+  durable checkpoint and passed the prior raw high-water at step `1,322,045`
+  with finite loss.
+- A process-lineage audit confirmed that occasional additional script-shaped
+  PIDs reported by broad `pgrep` calls are short-lived child subshells with
+  the established supervisor or monitor as their parent and the same process
+  group/session, not duplicate detached supervisors. The local watcher now
+  reports only `PPID=1`, `PID=PGID=SID` session leaders.
+- No duplicate allocation, checkpoint corruption, NaN, OOM, or model/data
+  configuration change occurred. Continue toward the fresh 1.35M L40S gate
+  under training supervisor PID `3887635` and periodic-eval monitor PID
+  `2722107`.
