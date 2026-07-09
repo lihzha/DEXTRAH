@@ -17626,3 +17626,40 @@ Smoke follow-up:
   validation UUIDs retained in the registry for the final corpus. Report job
   `1102422` regenerated the linked statistics and grids from this manifest.
   The final 500-row builder will use the same authoritative source manifest.
+
+## 2026-07-09T15:08:00Z Weight-Only Fine-Tuning Path Validated
+
+- The official workspace's resume path retains global step while reconstructing
+  a cosine scheduler from the new dataset length. On a smaller visual-replay
+  pilot this would put the scheduler beyond its intended horizon, so resume is
+  unsuitable for dataset adaptation.
+- Added an explicit weight-only initialization workspace and `INIT_MODE=weights`
+  launcher mode at commit `10c26560`. It strictly loads the selected
+  checkpoint's EMA state into both trainable and EMA models, leaves optimizer,
+  epoch, and global step fresh, and loads the baseline normalizer independently.
+  Interrupted jobs still use the existing full-resume path by default.
+- Shell syntax, Python compilation, Ruff, and the existing focused tests pass.
+  A two-batch 80 GB A100 smoke, job `30025866`, loaded step-1,154,781 EMA at
+  `global_step=0`, produced finite train/validation losses (`0.00495` /
+  `0.02309`), and wrote a valid 1.5 GB checkpoint in 66 seconds.
+
+## 2026-07-09T15:12:00Z Source-Preserved 100-Shard Pilot Launch
+
+- Froze exactly 100 admitted shards under `audits/live_0100_20260709T1505Z`.
+  Audit job `1102471` accepted `100/100` candidates with zero rejects,
+  `83,680` steps, 93 train / 7 validation rows, and zero split mismatches.
+  Report job `1102479` found 37 objects, 22 floor textures, 20 table files,
+  55 dome files, 67 table+dome pairs, 80 object material overrides, and 100
+  robot material records. Recovery fraction is 24%. All initial/mid/final
+  dual-camera grid cells passed visual inspection.
+- Launched fresh-scheduler 20k pilot
+  `yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z`
+  from behaviorally selected EMA checkpoint step 1,154,781. A100 job
+  `30025914`, supervisor PID `3260265`, uses batch 80, LR `1e-5`, 500-step
+  warmup, two 256x256 RGB streams, 24-D state, `n_obs_steps=1`, and no
+  phase/progress or privileged task state.
+- L40S periodic monitor PID `3643829` will evaluate quality-rendered randomized
+  ground/table/HDR/object/material scenes every 5k steps for 4,800 control
+  steps with action chunk 8. Baseline comparator job `1102493` uses the same
+  corrected environment and seed 42. Pilot step 216 was finite during the
+  first health check.
