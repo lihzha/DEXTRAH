@@ -17265,3 +17265,42 @@ Smoke follow-up:
 - No duplicate allocation, checkpoint recovery, NaN, OOM, or model/data
   setting change occurred. Continue toward the imminent fresh 1.30M L40S
   gate under periodic-eval monitor PID `2722107`.
+
+## 2026-07-09T10:55:00Z N500 Step-1.302M Eval And Reproducibility Matrix
+
+- The recovered periodic monitor crossed raw step 1,300,000, rejected the
+  older checkpoint, and selected the fresh epoch-220 checkpoint at global step
+  1,302,165 (`val_loss=0.0291277`). L40S job `1102197` evaluated immutable
+  snapshot `step_1302302.ckpt` with paired seed 42.
+- Job `1102197` completed cleanly in 17:42 with all 4,800 dynamics steps, no
+  reset, termination, truncation, renderer loss, malformed video, or runtime
+  exception. Strict settled-bin success was `0/1`.
+- Seed 42 grasped at step 176, crossed the physical-lift threshold at 473,
+  and reached `0.209302 m` maximum lift at step 814. Strict oriented XY
+  containment held for 40 steps from 909 through 948, but release near the bin
+  corner never produced a settled candidate. It finished with margins
+  `x=-0.013875 m`, `y=-0.011391 m` and settled speeds `0.000995 m/s`,
+  `0.004939 rad/s`.
+- Because the primary reached the bin, jobs `1102199`--`1102202` evaluated
+  paired seeds 43--46 with the identical quality renderer, 4,800-step dynamics
+  protocol, 100 DDPM inference steps, and action chunk eight. All four
+  completed cleanly in 17:30--18:41 with zero exit status.
+- Seed 43 never grasped or moved the object. Seed 44 physically lifted at step
+  346 and reached `0.113262 m` lift but released outside containment. Seed 45
+  activated grasp without a physical lift and peaked at `0.001356 m`. Seed 46
+  physically lifted at step 527, reached `0.140510 m` lift, delivered to the
+  bin, and remained in legacy radius containment from step 917 through 4,800,
+  but protruded `0.007119 m` beyond the strict X margin; its final Y margin was
+  positive at `0.018304 m`.
+- The checkpoint therefore scores strict `0/5`. Both-camera inspection agrees
+  with the metrics: seeds 42 and 46 place in the bin but settle against a wall,
+  while seeds 43--45 fail before a contained release. Keep global step
+  1,154,750 as the provisional preferred checkpoint at strict `2/5`.
+- Primary local evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z_periodic50k_20260704T0910Z_step1302302`.
+  Paired-seed evidence is under
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1302165_repro_20260709T1028Z_s{43,44,45,46}`;
+  the inspected comparison video is
+  `cluster_results/l401/yam_rgb_dp_stateobs_v16_n500_step1302165_repro_20260709T1028Z_seeds43-46_dual_sparse_grid.mp4`.
+- Continue the approved run toward the fresh 1.35M gate under training
+  supervisor PID `3887635` and periodic-eval monitor PID `2722107`.
