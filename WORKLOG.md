@@ -17392,3 +17392,26 @@ Smoke follow-up:
   records/restores this size; evaluation uses the same default. Static checks
   and all 21 tests pass. Next: rerun the identical L40S row and inspect the
   final wrist horizon.
+
+## 2026-07-09T13:40:00Z Textured-Ground L40S Smoke 2
+
+- Commit `773ac697` was pushed and deployed exactly to the isolated NFS
+  worktree. L40S job `1102240` replayed the same accepted source row 22 with
+  the same seed, object, table material, HDR, camera pose, and controller as
+  smoke 1; only the visual floor extent changed from `6x6 m` to `20x20 m`.
+- The quality-render dynamics replay completed and admitted `825/825` steps,
+  with `825` finite nonblank frames from each `256x256` policy camera, zero
+  failed rows, and exact-start numeric error zero. Metadata records the same
+  `concrete_floor_worn_001_diff_1k.jpg`, tiling `3.259576`, roughness
+  `0.737620`, and floor height `z=-0.079 m`, now with the `20x20 m` extent.
+- Initial and midpoint external observations remain table-dominant. The final
+  wrist observation no longer exposes a floor edge or Isaac grid. Its upper
+  dark region is the selected `studio_small_05_2k.hdr` primary-ray background,
+  not missing geometry; the lower field is the randomized concrete floor.
+  Both are valid randomized appearance rather than blank pixels.
+- Inspected evidence is under
+  `cluster_results/l401/yam_policy_rgb_ground_v17_smoke2_row22_20260709T1320Z`,
+  including initial/midpoint/final scene+wrist pairs, the full external video,
+  and `final_wrist_6m_vs_20m.png`. This source-replay path passes. Before
+  scaling, convert this record to a policy shard and run the independent exact
+  reset/dynamics path to verify authoritative floor restoration end to end.
