@@ -17140,8 +17140,8 @@ Smoke follow-up:
 ## 2026-07-09T01:26:00Z Final N500 Fortieth Handoff
 
 - Allocation `30003486` timed out normally after 3:51:43 at raw step
-  1,227,243. Its latest durable epoch-207 checkpoint was global step 1,223,543
-  with validation loss `0.029451`, leaving a 3,700-update unsaved tail.
+  1,227,243. Its latest durable epoch-207 checkpoint was global step 1,223,544
+  with validation loss `0.029451`, leaving a 3,699-update unsaved tail.
 - Hardened supervisor PID `3887635` stayed alive through the Slurm query
   outage, classified the adopted allocation as `TIMEOUT`, and submitted
   exactly one successor, job `30010722`, at `2026-07-09T01:01:11Z` on
