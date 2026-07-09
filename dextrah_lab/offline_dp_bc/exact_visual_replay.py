@@ -67,6 +67,19 @@ def authoritative_recorded_visual_asset(
     return str(fallback or "")
 
 
+def authoritative_recorded_visual_value(
+    *,
+    shard_metadata: Mapping[str, object],
+    key: str,
+    fallback: object,
+) -> object:
+    """Return a scalar or structured value persisted by a nested visual replay."""
+    replay = shard_metadata.get("exact_visual_replay")
+    if isinstance(replay, Mapping) and key in replay and replay[key] is not None:
+        return replay[key]
+    return fallback
+
+
 def recorded_surface_texture_tiling_range(
     *,
     background_metadata: Mapping[str, object],

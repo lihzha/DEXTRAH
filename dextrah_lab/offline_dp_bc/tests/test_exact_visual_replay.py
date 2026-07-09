@@ -2,6 +2,7 @@ import unittest
 
 from dextrah_lab.offline_dp_bc.exact_visual_replay import (
     authoritative_recorded_visual_asset,
+    authoritative_recorded_visual_value,
     recorded_surface_texture_tiling_range,
     select_exact_visual_asset,
     should_replay_resampled_assets,
@@ -88,6 +89,40 @@ class ExactVisualReplayTest(unittest.TestCase):
         )
 
         self.assertEqual(selected, "/textures/source.hdr")
+
+    def test_nested_recording_restores_ground_values(self):
+        shard_metadata = {
+            "exact_visual_replay": {
+                "ground_texture_enabled": True,
+                "ground_texture_size": [20.0, 20.0],
+                "background_texture_tiling": 3.25,
+            }
+        }
+
+        self.assertTrue(
+            authoritative_recorded_visual_value(
+                shard_metadata=shard_metadata,
+                key="ground_texture_enabled",
+                fallback=False,
+            )
+        )
+        self.assertEqual(
+            authoritative_recorded_visual_value(
+                shard_metadata=shard_metadata,
+                key="background_texture_tiling",
+                fallback=1.5,
+            ),
+            3.25,
+        )
+
+    def test_legacy_ground_value_uses_source_fallback(self):
+        value = authoritative_recorded_visual_value(
+            shard_metadata={},
+            key="ground_texture_enabled",
+            fallback=False,
+        )
+
+        self.assertFalse(value)
 
     def test_ground_tiling_uses_recorded_ground_range(self):
         value = recorded_surface_texture_tiling_range(

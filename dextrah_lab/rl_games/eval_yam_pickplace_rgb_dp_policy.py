@@ -22,6 +22,7 @@ from isaaclab.app import AppLauncher
 from dextrah_lab.offline_dp_bc.bin_containment import projected_box_half_extents
 from dextrah_lab.offline_dp_bc.exact_visual_replay import (
     authoritative_recorded_visual_asset,
+    authoritative_recorded_visual_value,
     recorded_surface_texture_tiling_range,
     select_exact_visual_asset,
     should_replay_resampled_assets,
@@ -890,6 +891,7 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         shard_recorded_visual_resample=bool(shard_recording.get("exact_visual_resample", False)),
         recording_output_requested=bool(args_cli.record_policy_shard),
     )
+    source_ground_enabled = bool(ground_texture.get("enabled", False))
 
     rng = np.random.default_rng(int(metadata["seed"]) + 1009)
     for _ in range(5):
@@ -921,20 +923,23 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
     )
     table_texture_tiling = float(rng.uniform(1.4, 3.8))
     background_roughness = float(rng.uniform(0.58, 0.95))
-    sampled_background_texture = _sample_texture_path(
+    source_sampled_background_texture = _sample_texture_path(
         rng,
         str(background.get("background_texture_dir") or ""),
         exts=SURFACE_TEXTURE_EXTS,
         exclude_tokens=("normal", "orm", "rough", "metal", "height"),
     )
-    background_texture_tiling_range = recorded_surface_texture_tiling_range(
+    source_background_texture_tiling_range = recorded_surface_texture_tiling_range(
         background_metadata=background,
         ground_metadata=ground_texture,
-        ground_enabled=bool(ground_texture.get("enabled", False)),
+        ground_enabled=source_ground_enabled,
         eval_ground_fallback=args_cli.yam_policy_ground_texture_tiling_range,
     )
-    background_texture_tiling = float(
-        rng.uniform(background_texture_tiling_range[0], background_texture_tiling_range[1])
+    source_background_texture_tiling = float(
+        rng.uniform(
+            source_background_texture_tiling_range[0],
+            source_background_texture_tiling_range[1],
+        )
     )
     dome_texture_roots = (
         args_cli.yam_policy_dome_light_texture_dir
@@ -975,7 +980,7 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         "tabletop_surround_color": _max_abs_error(surround_color, materials.get("tabletop_surround_color")),
         "table_texture_tiling": _max_abs_error(table_texture_tiling, table_texture.get("table_texture_tiling")),
         "background_texture_tiling": _max_abs_error(
-            background_texture_tiling, background.get("background_texture_tiling")
+            source_background_texture_tiling, background.get("background_texture_tiling")
         ),
         "dome_light_intensity": _max_abs_error(dome_light_intensity, lighting.get("dome_light_intensity")),
         "key_light_intensity": _max_abs_error(key_light_intensity, lighting.get("key_light_intensity")),
@@ -984,12 +989,75 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         "scene_target": _max_abs_error(scene_target, camera.get("target")),
         "shared_y_jitter": _max_abs_error(shared_y_jitter, camera.get("shared_y_jitter")),
     }
-    if bool(ground_texture.get("enabled", False)):
+    if source_ground_enabled:
         numeric_errors["ground_texture_tiling"] = _max_abs_error(
-            background_texture_tiling,
+            source_background_texture_tiling,
             ground_texture.get("texture_tiling"),
         )
     max_numeric_error = max(numeric_errors.values(), default=float("inf"))
+
+    recorded_ground_enabled = bool(
+        authoritative_recorded_visual_value(
+            shard_metadata=exact_demo["shard_metadata"],
+            key="ground_texture_enabled",
+            fallback=source_ground_enabled,
+        )
+    )
+    recorded_ground_tiling = float(
+        authoritative_recorded_visual_value(
+            shard_metadata=exact_demo["shard_metadata"],
+            key="background_texture_tiling",
+            fallback=source_background_texture_tiling,
+        )
+    )
+    recorded_ground_tiling_range = authoritative_recorded_visual_value(
+        shard_metadata=exact_demo["shard_metadata"],
+        key="background_texture_tiling_range",
+        fallback=source_background_texture_tiling_range,
+    )
+    recorded_ground_size = authoritative_recorded_visual_value(
+        shard_metadata=exact_demo["shard_metadata"],
+        key="ground_texture_size",
+        fallback=ground_texture.get("size", (6.0, 6.0)),
+    )
+    recorded_ground_z = float(
+        authoritative_recorded_visual_value(
+            shard_metadata=exact_demo["shard_metadata"],
+            key="ground_texture_z",
+            fallback=ground_texture.get("z", -0.079),
+        )
+    )
+    ground_augmentation_enabled = bool(
+        replay_resampled_assets and str(args_cli.yam_policy_ground_texture_dir or "").strip()
+    )
+    ground_augmentation_rng_seed = int(metadata["seed"]) + 3011
+    if ground_augmentation_enabled:
+        ground_rng = np.random.default_rng(ground_augmentation_rng_seed)
+        sampled_background_texture = _sample_texture_path(
+            ground_rng,
+            args_cli.yam_policy_ground_texture_dir,
+            exts=SURFACE_TEXTURE_EXTS,
+            include_tokens=("albedo", "diffuse", "diff", "basecolor", "color"),
+            exclude_tokens=("normal", "orm", "rough", "metal", "height"),
+        )
+        background_texture_tiling_range = _range_pair(
+            args_cli.yam_policy_ground_texture_tiling_range,
+            name="yam_policy_ground_texture_tiling_range",
+        )
+        background_texture_tiling = float(
+            ground_rng.uniform(
+                background_texture_tiling_range[0],
+                background_texture_tiling_range[1],
+            )
+        )
+        selected_ground_enabled = True
+        selected_ground_size = tuple(float(v) for v in args_cli.yam_policy_ground_texture_size)
+    else:
+        sampled_background_texture = source_sampled_background_texture
+        background_texture_tiling_range = tuple(float(v) for v in recorded_ground_tiling_range)
+        background_texture_tiling = recorded_ground_tiling
+        selected_ground_enabled = recorded_ground_enabled
+        selected_ground_size = tuple(float(v) for v in recorded_ground_size)
     paths = {
         "table_texture": select_exact_visual_asset(
             recorded=recorded_table_texture,
@@ -1030,6 +1098,10 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         )
     return {
         "rng_seed": int(metadata["seed"]) + 1009,
+        "ground_augmentation_rng_seed": (
+            ground_augmentation_rng_seed if ground_augmentation_enabled else None
+        ),
+        "ground_texture_augmentation": ground_augmentation_enabled,
         "visual_resample_enabled": bool(args_cli.exact_visual_resample),
         "shard_recorded_visual_resample": bool(shard_recording.get("exact_visual_resample", False)),
         "asset_selection_mode": "rng_resample" if replay_resampled_assets else "recorded",
@@ -1048,16 +1120,18 @@ def _replay_exact_visual_randomization(exact_demo: dict[str, Any]) -> dict[str, 
         "background_texture_tiling_range": [
             float(v) for v in background_texture_tiling_range
         ],
+        "source_background_texture_tiling": source_background_texture_tiling,
+        "source_background_texture_tiling_range": [
+            float(v) for v in source_background_texture_tiling_range
+        ],
         "bin_visual_roughness": bin_visual_roughness,
         "scene_eye": scene_eye,
         "scene_target": scene_target,
         "shared_y_jitter": shared_y_jitter,
         "background_color": background_color,
-        "ground_texture_enabled": bool(ground_texture.get("enabled", False)),
-        "ground_texture_size": [
-            float(v) for v in ground_texture.get("size", (6.0, 6.0))
-        ],
-        "ground_texture_z": float(ground_texture.get("z", -0.079)),
+        "ground_texture_enabled": selected_ground_enabled,
+        "ground_texture_size": [float(v) for v in selected_ground_size],
+        "ground_texture_z": recorded_ground_z,
     }
 
 
@@ -1068,7 +1142,6 @@ def _apply_exact_demo_env_cfg(env_cfg: Any, exact_demo: dict[str, Any]) -> dict[
     surround = scene["tabletop_surround"]
     table_texture = scene["tabletop_texture"]
     background = scene["background_walls"]
-    ground_texture = scene.get("ground_texture") if isinstance(scene.get("ground_texture"), dict) else {}
     lighting = scene["lighting"]
     stable_scene = exact_demo["stable_scene"]
     bins = stable_scene.get("bins") if isinstance(stable_scene.get("bins"), dict) else {}
@@ -1136,7 +1209,7 @@ def _apply_exact_demo_env_cfg(env_cfg: Any, exact_demo: dict[str, Any]) -> dict[
     env_cfg.exact_table_texture_path = selected_table_texture
     env_cfg.exact_table_texture_tiling = float(visual_replay["table_texture_tiling"])
     env_cfg.exact_table_texture_roughness = float(visual_replay["table_texture_roughness"])
-    env_cfg.exact_ground_texture_enabled = bool(ground_texture.get("enabled", False))
+    env_cfg.exact_ground_texture_enabled = bool(visual_replay["ground_texture_enabled"])
     env_cfg.exact_ground_texture_path = str(
         visual_replay["paths"]["background_texture"]["selected"] or ""
     )

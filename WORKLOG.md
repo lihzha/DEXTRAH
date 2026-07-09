@@ -17435,3 +17435,33 @@ Smoke follow-up:
 - Python compilation, Ruff, and 24 focused exact-visual/curriculum tests pass,
   including new recorded-range, early-ground-shard, and legacy-v16 cases.
   Next: commit, deploy, and rerun the same exact action-replay gate.
+
+## 2026-07-09T14:00:00Z Exact Replay Pass And Curated-Corpus Pivot
+
+- Commit `b5bce5c1` exact action-replay retry `1102244` passed the appearance
+  reconstruction gate with zero numeric error, restored all 24 robot-state
+  values exactly, and reached reset parity of `43.07 dB` scene / `37.47 dB`
+  wrist. It spawned the recorded `20x20 m` concrete floor at the exact tiling,
+  roughness, height, table/HDR assets, and camera pose.
+- The derived action-only rollout then drifted from the reference and was
+  correctly rejected for no physical success after all 776 dynamics steps.
+  This does not invalidate appearance replay; production collection uses the
+  closed-loop dataset pose-target controller plus an independent recorded-action
+  dynamics gate, as in the frozen v16 corpus.
+- Scaling a new replay directly from the original nominal 500 source plans
+  would discard v16's 45 curated recovery trajectories. The more efficient and
+  behaviorally faithful route is a third visual pass over frozen v16's strict
+  500-shard curriculum: exact dynamic reset, pose-target correction, fresh
+  table/HDR/material appearance, and a new independent floor augmentation.
+- Added nested-replay ground augmentation using a dedicated RNG stream, so
+  selecting among the 24 floor assets and `[2.0, 5.0]` tiling range cannot
+  disturb the source RNG sequence used to verify lights, camera, and geometry.
+  The selected floor path, tiling, range, size, height, and augmentation seed
+  are persisted as authoritative metadata; pure exact evaluation restores
+  those nested values even when the ancestral v16 source had no floor overlay.
+- Controller submitter and per-shard wrapper now record and explicitly forward
+  floor pool/range/size. Python compilation, Ruff, shell syntax, and 26 focused
+  exact-visual/curriculum tests pass. The local pytest-dependent recovery suite
+  remains unavailable in this host Python, unchanged from prior validation.
+  Next: deploy and replay one frozen v16 shard with the production pose-target
+  controller before launching the 500-shard pass.
