@@ -17579,3 +17579,27 @@ Smoke follow-up:
   `recorded_action_replay_gate_failed`); no `ERROR_DEVICE_LOST` events occurred.
   Next: freeze and inspect a 50-shard milestone while the three ordinary-job
   submitters continue backfilling rejects.
+
+## 2026-07-09T14:42:00Z Fifty-Shard Visual And Admission Gate Passed
+
+- Froze exactly 50 completed shard directories under
+  `audits/live_0050_20260709T1439Z` while production collection continued.
+  CPU audit job `1102371` accepted all `50/50` candidates with zero rejects,
+  `42,453` control steps, 45 train / 5 validation trajectories, and four
+  validation object identities. Every shard passed the 60-step flow bound,
+  exact visual and ground replay checks, strict dynamics success, and the
+  action replay gate.
+- Randomization report job `1102374` found 27 unique target objects, 18 floor
+  textures, 16 table textures, 32 dome files (31 families), 37 distinct
+  table+dome family pairs, 40 object material overrides, and 50 robot material
+  records. All 50 ground overlays are enabled; background walls remain disabled
+  and train/validation object overlap is zero. Twelve trajectories (`24%`) are
+  recovery samples at this early milestone.
+- Inspected all 50 initial, midpoint, and final dual-camera cells. Initial scene
+  frames retain both target and bin, scene framing remains table-only, wrist
+  frames track the target/gripper/bin through the task, and no frame contains
+  the fixed Isaac ground grid, blank pixels, debug markers, or labels.
+- Local viewer artifacts are under
+  `cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_live50`.
+  Production collection had advanced to 57 admitted trajectories by the end of
+  inspection, with all three detached submitters still active.
