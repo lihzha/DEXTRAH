@@ -1,0 +1,203 @@
+{
+  "artifact_manifest_version": 1,
+  "generated_at": "2026-07-10T10:45:00-07:00",
+  "github_remote": "git@github.com:lihzha/DEXTRAH.git",
+  "branch": "codex/yam-ground-randomization-20260709",
+  "pre_handoff_commit": "32d368ad4289060643ad004b619666930eebb904",
+  "production_collection_commit": "482b1b3c4c2ce856e4ddb0570757e63c03ff1d89",
+  "finalizer_commit": "876edb2f",
+  "material_eval_fix_commit": "27addad2",
+  "dual_video_frame_fix_commit": "00eb6f85",
+  "data_collection": {
+    "run_name": "yam_controller_stateobs_v17_ground500_visual_20260709T1418Z",
+    "host": "l401",
+    "remote_root": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z",
+    "source_manifest": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/replacement_source_manifest_500.json",
+    "latest_replacement_manifest": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/replacement_source_manifest_711.json",
+    "records_root": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/records",
+    "accepted_metadata_count": 500,
+    "accepted_candidate_count": 500,
+    "final_freeze": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z",
+    "final_selection": {
+      "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/selection.json",
+      "size_bytes": 293778,
+      "sha256": "3a3e7c8e0aa210fc27da281c482b404bb3606c7a37e62e6e5222c769565f1e1e",
+      "selected_count": 500,
+      "selected_original_count": 342,
+      "selected_replacement_count": 158,
+      "discarded_duplicate_count": 0,
+      "unique_target_uuid_count": 74,
+      "unique_source_policy_shard_count": 342,
+      "reused_source_policy_shard_count": 47,
+      "rows_on_reused_source_policy_shards": 205,
+      "max_source_policy_shard_reuse": 8
+    },
+    "final_curriculum": {
+      "manifest_0500": {
+        "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/curriculum_source_split/manifest_0500.json",
+        "size_bytes": 502246,
+        "sha256": "630d7a86e8ede013c3271a9501ab923051277034da77580ddb4cfd42cce7157a",
+        "num_shards": 500,
+        "num_steps": 403360,
+        "num_train_shards": 456,
+        "num_val_shards": 44,
+        "object_disjoint_split": true
+      },
+      "curriculum": {
+        "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/curriculum_source_split/curriculum.json",
+        "size_bytes": 145981,
+        "sha256": "6267bd2c7224cd142d7cf80d73bf07c27e43c3f9fed58036ee6abb38ddcbf567",
+        "stages": [
+          {"size": 100, "num_train_shards": 93, "num_val_shards": 7, "num_steps": 84728},
+          {"size": 250, "num_train_shards": 234, "num_val_shards": 16, "num_steps": 210817},
+          {"size": 500, "num_train_shards": 456, "num_val_shards": 44, "num_steps": 403360}
+        ]
+      },
+      "validation_audit": {
+        "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/curriculum_source_split/validation_audit.json",
+        "size_bytes": 418,
+        "sha256": "acf678ab0e9e032b7bdcba84208673c0e66d827f1efec81f848db797fb9a9622",
+        "accepted_count": 500,
+        "candidate_count": 500,
+        "rejected_count": 0
+      }
+    },
+    "final_randomization_report": {
+      "report": {
+        "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/visualization_source_split/randomization_report.md",
+        "local_path": "/home/lzha/code/cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_final500/visualization_source_split/randomization_report.md",
+        "viewer_url": "http://localhost:8765/view?path=cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_final500/visualization_source_split/randomization_report.md",
+        "size_bytes": 9189,
+        "sha256": "c244f335abe6120e06b2d1a8432244760e5ba51356db740a0e0081ff040c058d"
+      },
+      "stats": {
+        "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/visualization_source_split/randomization_stats.json",
+        "size_bytes": 500680,
+        "sha256": "953e89710676f3288e689154c565344c0080da7537e441f41b611840c74b74ec",
+        "num_trajectories": 500,
+        "num_steps": 403360,
+        "num_train_trajectories": 456,
+        "num_val_trajectories": 44,
+        "unique_target_objects": 74,
+        "unique_table_textures": 20,
+        "unique_background_textures": 23,
+        "unique_dome_textures": 118,
+        "unique_table_dome_pairs": 179,
+        "object_material_overrides_applied": 393,
+        "robot_material_records": 500,
+        "recovery_trajectories": 213,
+        "recovery_fraction": 0.426,
+        "train_val_target_overlap": 0,
+        "rendered_background_wall_trajectories": 0,
+        "rendered_ground_texture_trajectories": 500
+      },
+      "png_grids": [
+        {
+          "name": "initial_scene_wrist",
+          "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/visualization_source_split/randomization_grid_initial_scene_wrist.png",
+          "sha256": "e06b66f614d5b97fc6142cbf74fb353141c25f87049c51728baade4dd7316528",
+          "size_bytes": 9209915
+        },
+        {
+          "name": "midpoint_scene_wrist",
+          "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/visualization_source_split/randomization_grid_midpoint_scene_wrist.png",
+          "sha256": "dc83d23b0e157f3cf0f85892dd123043f05633355ee88cfefb2dcb512b28777d",
+          "size_bytes": 8902093
+        },
+        {
+          "name": "final_scene_wrist",
+          "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/visualization_source_split/randomization_grid_final_scene_wrist.png",
+          "sha256": "324332aa3ddcaf483d66519c3de867b2dbaa23e08801199085b66799b3432801",
+          "size_bytes": 8341248
+        }
+      ]
+    },
+    "local_selection_copy": {
+      "path": "/home/lzha/code/cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_final500/selection.json",
+      "sha256": "3a3e7c8e0aa210fc27da281c482b404bb3606c7a37e62e6e5222c769565f1e1e"
+    }
+  },
+  "training_runs": {
+    "v16_n500_long": {
+      "host": "a1001",
+      "run_name": "yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z",
+      "remote_root": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z",
+      "latest_checkpoint": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z/official_dp_train/checkpoints/latest.ckpt",
+      "latest_checkpoint_size_bytes": 1606334243,
+      "latest_checkpoint_sha256_at_2026_07_10_1029": "544d2ad5a811405e7905b80ce3b854f829231cb23cf1332f31e9ac7149b388fe",
+      "latest_observed_step": 1548028,
+      "latest_observed_epoch": 263,
+      "active_job_at_handoff": "30082522"
+    },
+    "v17_live100_pilot": {
+      "host": "a1001",
+      "run_name": "yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z",
+      "remote_root": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z",
+      "latest_checkpoint": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z/official_dp_train/checkpoints/latest.ckpt",
+      "latest_checkpoint_size_bytes": 1606334691,
+      "latest_checkpoint_sha256": "6109549640602f61b2c9b77fdf9014145881c2cd86fed0ee6c8be2f0191d2633",
+      "latest_observed_step": 52204,
+      "latest_observed_epoch": 52
+    }
+  },
+  "evals": {
+    "v17_live100_step15518_material_seed42": {
+      "host": "l401",
+      "remote_root": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z_periodic5k_dual_20260709T1550Z_step0015518",
+      "local_root": "/home/lzha/code/cluster_results/l401/yam_rgb_dp_v17_pilot_step15518_material_s42_20260709T1716Z",
+      "metrics": {
+        "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z_periodic5k_dual_20260709T1550Z_step0015518/metrics.json",
+        "size_bytes": 9993279,
+        "sha256": "3a3c456bc192e4024f6faab7b4079a5929a12eb8738d3fb54f6dd555d6983213"
+      },
+      "result": {
+        "steps_completed": 4800,
+        "episode_success_rate": 0.0,
+        "success": false,
+        "max_lift_height_m": 0.0008232593536376953,
+        "action_chunk_steps": 8,
+        "num_inference_steps": 100,
+        "phase_progress_in_policy": false,
+        "privileged_object_state_in_policy": false,
+        "obs_schema": {
+          "robot_state": 24,
+          "scene_rgb": [3, 256, 256],
+          "wrist_rgb": [3, 256, 256]
+        }
+      },
+      "videos": [
+        {
+          "name": "dual_scene_wrist_policy_observation",
+          "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z_periodic5k_dual_20260709T1550Z_step0015518/videos/yam-pickplace-rgb-dp-eval-scene-wrist.mp4",
+          "local_path": "/home/lzha/code/cluster_results/l401/yam_rgb_dp_v17_pilot_step15518_material_s42_20260709T1716Z/videos/yam-pickplace-rgb-dp-eval-scene-wrist.mp4",
+          "viewer_url": "http://localhost:8765/view?path=cluster_results/l401/yam_rgb_dp_v17_pilot_step15518_material_s42_20260709T1716Z/videos/yam-pickplace-rgb-dp-eval-scene-wrist.mp4",
+          "size_bytes": 4137107,
+          "sha256": "f2a6b3c818ef87c3f3ef64933c7361b09bd39f0ecf9a76c7e505b0e06e9782a9",
+          "width": 512,
+          "height": 256,
+          "fps": 60,
+          "frames": 4800,
+          "duration_seconds": 80.0
+        },
+        {
+          "name": "gym_scene_video",
+          "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z_periodic5k_dual_20260709T1550Z_step0015518/videos/yam-pickplace-rgb-dp-eval-step-0.mp4",
+          "local_path": "/home/lzha/code/cluster_results/l401/yam_rgb_dp_v17_pilot_step15518_material_s42_20260709T1716Z/videos/yam-pickplace-rgb-dp-eval-step-0.mp4",
+          "size_bytes": 5549263,
+          "sha256": "6734bd09f90422b2fe9ee9c25a90f0ad288449e63232e9e896af4ffb845e35eb",
+          "width": 1280,
+          "height": 720,
+          "fps": 60,
+          "frames": 4799,
+          "duration_seconds": 79.983333
+        }
+      ]
+    }
+  },
+  "fetch_commands": {
+    "final_freeze": "rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/ /home/lzha/code/cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_final500/",
+    "step15518_eval": "rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z_periodic5k_dual_20260709T1550Z_step0015518/ /home/lzha/code/cluster_results/l401/yam_rgb_dp_v17_pilot_step15518_material_s42_20260709T1716Z/",
+    "v16_latest_checkpoint": "rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z/official_dp_train/checkpoints/latest.ckpt /home/lzha/code/cluster_results/a1001/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest.ckpt",
+    "v17_pilot_latest_checkpoint": "rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z/official_dp_train/checkpoints/latest.ckpt /home/lzha/code/cluster_results/a1001/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest.ckpt"
+  }
+}

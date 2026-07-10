@@ -17806,3 +17806,41 @@ Smoke follow-up:
   Detached monitor PID `3837188` resumed the durable ledger at the 20k
   threshold with `MAX_EVALS=4`, so it cannot duplicate the completed 6,806,
   10,682, or 15,518 evaluations.
+
+## 2026-07-10T10:45:00-07:00 GitHub Reproduction Handoff
+
+- Finalized the corrected v17 collection handoff for GitHub. The L40S
+  collection root
+  `yam_controller_stateobs_v17_ground500_visual_20260709T1418Z` now has
+  exactly `500` accepted metadata records. The deterministic freeze
+  `audits/final_0500_20260710T1032Z` selected `342` original rows and `158`
+  replacement rows with zero discarded duplicates, `74` unique target objects,
+  `342` unique source policy shards, and maximum source reuse eight.
+- Built the final source-preserved curriculum at
+  `audits/final_0500_20260710T1032Z/curriculum_source_split`. Validation
+  accepted `500/500` rows with zero rejects. `manifest_0500.json` contains
+  `403360` control steps, a `456/44` train/validation split, and no
+  train/validation target overlap.
+- Generated and fetched the final randomization report under
+  `cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_final500`.
+  The report found `74` objects, `20` table textures, `23` selected floor
+  texture families, `118` dome textures, `179` table+dome pairs, `393` object
+  material overrides, `500` robot material records, and no rendered background
+  walls. Converted the generated PPM grids to PNG and synced them back so the
+  Markdown report links resolve.
+- Fetched the material-matched step-15,518 pilot eval videos and metrics under
+  `cluster_results/l401/yam_rgb_dp_v17_pilot_step15518_material_s42_20260709T1716Z`.
+  The dual scene+wrist video is 512x256, 60 FPS, exactly 4,800 frames and 80
+  seconds. The eval remains `0/1`; it completed all 4,800 dynamics steps with
+  no reset and maximum lift `0.000823 m`.
+- Added `docs/yam_rgb_pickplace_reproduction_20260710.md` and
+  `docs/yam_rgb_pickplace_artifacts_20260710.json`. These record the pinned
+  production collection commit `482b1b3c`, finalizer/eval commits, exact
+  collection/recovery/replacement commands, freeze/audit/train/eval commands,
+  remote artifact paths, local mirrors, checksums, and `viz-open` URLs. Large
+  `.ckpt`, `.mp4`, `.npy`, and `.npz` artifacts are intentionally not committed
+  to Git; the docs contain explicit `rsync` commands and SHA-256 values.
+- Active external state at handoff: L40S queue had no YAM jobs. A100 job
+  `30082522` (`yv16final_n500`) was still running and healthy at roughly
+  global step `1.55M`; the latest checkpoint checksum recorded in the artifact
+  manifest is a point-in-time hash and will change if that run keeps training.
