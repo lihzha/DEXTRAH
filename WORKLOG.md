@@ -17840,7 +17840,13 @@ Smoke follow-up:
   remote artifact paths, local mirrors, checksums, and `viz-open` URLs. Large
   `.ckpt`, `.mp4`, `.npy`, and `.npz` artifacts are intentionally not committed
   to Git; the docs contain explicit `rsync` commands and SHA-256 values.
+- Created immutable A100 checkpoint snapshots under
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_rgb_pickplace_handoff_20260710`.
+  The v16 n500 snapshot hashes to
+  `544d2ad5a811405e7905b80ce3b854f829231cb23cf1332f31e9ac7149b388fe`;
+  the v17 live100 pilot snapshot hashes to
+  `6109549640602f61b2c9b77fdf9014145881c2cd86fed0ee6c8be2f0191d2633`.
 - Active external state at handoff: L40S queue had no YAM jobs. A100 job
   `30082522` (`yv16final_n500`) was still running and healthy at roughly
-  global step `1.55M`; the latest checkpoint checksum recorded in the artifact
-  manifest is a point-in-time hash and will change if that run keeps training.
+  global step `1.55M`; the moving `latest.ckpt` may keep changing, but the
+  handoff snapshot paths above are stable.

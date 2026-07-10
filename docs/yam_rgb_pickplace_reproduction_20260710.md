@@ -308,12 +308,19 @@ rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_r
 Large checkpoints are intentionally not tracked in Git. Fetch them explicitly:
 
 ```bash
-rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z/official_dp_train/checkpoints/latest.ckpt \
-  cluster_results/a1001/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest.ckpt
+rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_rgb_pickplace_handoff_20260710/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt \
+  cluster_results/a1001/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt
 
-rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z/official_dp_train/checkpoints/latest.ckpt \
-  cluster_results/a1001/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest.ckpt
+rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_rgb_pickplace_handoff_20260710/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest_handoff_20260710.ckpt \
+  cluster_results/a1001/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest_handoff_20260710.ckpt
 ```
+
+Snapshot hashes:
+
+- v16 n500 latest handoff checkpoint:
+  `544d2ad5a811405e7905b80ce3b854f829231cb23cf1332f31e9ac7149b388fe`
+- v17 live100 pilot latest handoff checkpoint:
+  `6109549640602f61b2c9b77fdf9014145881c2cd86fed0ee6c8be2f0191d2633`
 
 Open local artifacts with:
 

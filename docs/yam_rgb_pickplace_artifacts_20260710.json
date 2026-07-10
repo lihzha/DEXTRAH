@@ -123,8 +123,9 @@
       "run_name": "yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z",
       "remote_root": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z",
       "latest_checkpoint": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z/official_dp_train/checkpoints/latest.ckpt",
+      "handoff_checkpoint_snapshot": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_rgb_pickplace_handoff_20260710/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt",
       "latest_checkpoint_size_bytes": 1606334243,
-      "latest_checkpoint_sha256_at_2026_07_10_1029": "544d2ad5a811405e7905b80ce3b854f829231cb23cf1332f31e9ac7149b388fe",
+      "handoff_checkpoint_sha256": "544d2ad5a811405e7905b80ce3b854f829231cb23cf1332f31e9ac7149b388fe",
       "latest_observed_step": 1548028,
       "latest_observed_epoch": 263,
       "active_job_at_handoff": "30082522"
@@ -134,8 +135,9 @@
       "run_name": "yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z",
       "remote_root": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z",
       "latest_checkpoint": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z/official_dp_train/checkpoints/latest.ckpt",
+      "handoff_checkpoint_snapshot": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_rgb_pickplace_handoff_20260710/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest_handoff_20260710.ckpt",
       "latest_checkpoint_size_bytes": 1606334691,
-      "latest_checkpoint_sha256": "6109549640602f61b2c9b77fdf9014145881c2cd86fed0ee6c8be2f0191d2633",
+      "handoff_checkpoint_sha256": "6109549640602f61b2c9b77fdf9014145881c2cd86fed0ee6c8be2f0191d2633",
       "latest_observed_step": 52204,
       "latest_observed_epoch": 52
     }
@@ -197,7 +199,7 @@
   "fetch_commands": {
     "final_freeze": "rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/ /home/lzha/code/cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_final500/",
     "step15518_eval": "rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z_periodic5k_dual_20260709T1550Z_step0015518/ /home/lzha/code/cluster_results/l401/yam_rgb_dp_v17_pilot_step15518_material_s42_20260709T1716Z/",
-    "v16_latest_checkpoint": "rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z/official_dp_train/checkpoints/latest.ckpt /home/lzha/code/cluster_results/a1001/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest.ckpt",
-    "v17_pilot_latest_checkpoint": "rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z/official_dp_train/checkpoints/latest.ckpt /home/lzha/code/cluster_results/a1001/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest.ckpt"
+    "v16_latest_checkpoint": "rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_rgb_pickplace_handoff_20260710/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt /home/lzha/code/cluster_results/a1001/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt",
+    "v17_pilot_latest_checkpoint": "rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_rgb_pickplace_handoff_20260710/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest_handoff_20260710.ckpt /home/lzha/code/cluster_results/a1001/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest_handoff_20260710.ckpt"
   }
 }
