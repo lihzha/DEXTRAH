@@ -3,6 +3,38 @@
   "generated_at": "2026-07-10T10:45:00-07:00",
   "github_remote": "git@github.com:lihzha/DEXTRAH.git",
   "branch": "codex/yam-ground-randomization-20260709",
+  "github_release": {
+    "tag": "yam-rgb-pickplace-handoff-20260710",
+    "url": "https://github.com/lihzha/DEXTRAH/releases/tag/yam-rgb-pickplace-handoff-20260710",
+    "assets": {
+      "runbook": {
+        "url": "https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_pickplace_reproduction_20260710.md"
+      },
+      "artifact_manifest": {
+        "url": "https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_pickplace_artifacts_20260710.json"
+      },
+      "final500_reports": {
+        "url": "https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_pickplace_final500_reports_20260710.tar.gz",
+        "size_bytes": 62875364,
+        "sha256": "d475892844440579fae1534633883abfa0690eb1b4cd6665fc8a572e7dfd1a7a"
+      },
+      "step15518_eval_videos": {
+        "url": "https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_pickplace_step15518_eval_videos_20260710.tar.gz",
+        "size_bytes": 10821584,
+        "sha256": "ac1e9ba84876d926e0aae7894c31c8d02f61a3a4b1938d44dfaf3e345dd142de"
+      },
+      "v16_n500_handoff_checkpoint": {
+        "url": "https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt",
+        "size_bytes": 1606334243,
+        "sha256": "544d2ad5a811405e7905b80ce3b854f829231cb23cf1332f31e9ac7149b388fe"
+      },
+      "v17_live100_pilot_handoff_checkpoint": {
+        "url": "https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest_handoff_20260710.ckpt",
+        "size_bytes": 1606334691,
+        "sha256": "6109549640602f61b2c9b77fdf9014145881c2cd86fed0ee6c8be2f0191d2633"
+      }
+    }
+  },
   "pre_handoff_commit": "32d368ad4289060643ad004b619666930eebb904",
   "production_collection_commit": "482b1b3c4c2ce856e4ddb0570757e63c03ff1d89",
   "finalizer_commit": "876edb2f",
@@ -63,6 +95,11 @@
       }
     },
     "final_randomization_report": {
+      "github_release_bundle": {
+        "url": "https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_pickplace_final500_reports_20260710.tar.gz",
+        "size_bytes": 62875364,
+        "sha256": "d475892844440579fae1534633883abfa0690eb1b4cd6665fc8a572e7dfd1a7a"
+      },
       "report": {
         "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/visualization_source_split/randomization_report.md",
         "local_path": "/home/lzha/code/cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_final500/visualization_source_split/randomization_report.md",
@@ -124,6 +161,7 @@
       "remote_root": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z",
       "latest_checkpoint": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v16_n500_bs80_2m_20260702T050018Z/official_dp_train/checkpoints/latest.ckpt",
       "handoff_checkpoint_snapshot": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_rgb_pickplace_handoff_20260710/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt",
+      "handoff_checkpoint_release_url": "https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt",
       "latest_checkpoint_size_bytes": 1606334243,
       "handoff_checkpoint_sha256": "544d2ad5a811405e7905b80ce3b854f829231cb23cf1332f31e9ac7149b388fe",
       "latest_observed_step": 1548028,
@@ -136,6 +174,7 @@
       "remote_root": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z",
       "latest_checkpoint": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z/official_dp_train/checkpoints/latest.ckpt",
       "handoff_checkpoint_snapshot": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_rgb_pickplace_handoff_20260710/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest_handoff_20260710.ckpt",
+      "handoff_checkpoint_release_url": "https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest_handoff_20260710.ckpt",
       "latest_checkpoint_size_bytes": 1606334691,
       "handoff_checkpoint_sha256": "6109549640602f61b2c9b77fdf9014145881c2cd86fed0ee6c8be2f0191d2633",
       "latest_observed_step": 52204,
@@ -147,6 +186,11 @@
       "host": "l401",
       "remote_root": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z_periodic5k_dual_20260709T1550Z_step0015518",
       "local_root": "/home/lzha/code/cluster_results/l401/yam_rgb_dp_v17_pilot_step15518_material_s42_20260709T1716Z",
+      "github_release_video_bundle": {
+        "url": "https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_pickplace_step15518_eval_videos_20260710.tar.gz",
+        "size_bytes": 10821584,
+        "sha256": "ac1e9ba84876d926e0aae7894c31c8d02f61a3a4b1938d44dfaf3e345dd142de"
+      },
       "metrics": {
         "path": "/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z_periodic5k_dual_20260709T1550Z_step0015518/metrics.json",
         "size_bytes": 9993279,
@@ -197,6 +241,7 @@
     }
   },
   "fetch_commands": {
+    "github_release_all": "gh release download yam-rgb-pickplace-handoff-20260710 --repo lihzha/DEXTRAH --dir /home/lzha/code/github_release_assets/yam-rgb-pickplace-handoff-20260710 --clobber",
     "final_freeze": "rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z/audits/final_0500_20260710T1032Z/ /home/lzha/code/cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_final500/",
     "step15518_eval": "rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_20260709T1510Z_periodic5k_dual_20260709T1550Z_step0015518/ /home/lzha/code/cluster_results/l401/yam_rgb_dp_v17_pilot_step15518_material_s42_20260709T1716Z/",
     "v16_latest_checkpoint": "rsync -av a1001:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_rgb_pickplace_handoff_20260710/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt /home/lzha/code/cluster_results/a1001/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt",

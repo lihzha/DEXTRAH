@@ -17850,3 +17850,10 @@ Smoke follow-up:
   `30082522` (`yv16final_n500`) was still running and healthy at roughly
   global step `1.55M`; the moving `latest.ckpt` may keep changing, but the
   handoff snapshot paths above are stable.
+- Published the immutable handoff assets on GitHub Release
+  `yam-rgb-pickplace-handoff-20260710`:
+  `https://github.com/lihzha/DEXTRAH/releases/tag/yam-rgb-pickplace-handoff-20260710`.
+  The release includes the final runbook and JSON manifest, the final 500-row
+  randomization/report bundle, the step-15,518 dual-camera eval video bundle,
+  and both 1.5 GB checkpoint snapshots. The tracked docs now name both the
+  cluster `rsync` paths and the direct release asset URLs.

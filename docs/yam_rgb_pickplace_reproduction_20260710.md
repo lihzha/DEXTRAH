@@ -10,6 +10,9 @@ the relevant checkpoints and videos.
 
 - GitHub remote: `git@github.com:lihzha/DEXTRAH.git`
 - Branch: `codex/yam-ground-randomization-20260709`
+- Release tag: `yam-rgb-pickplace-handoff-20260710`
+- GitHub release:
+  `https://github.com/lihzha/DEXTRAH/releases/tag/yam-rgb-pickplace-handoff-20260710`
 - Pre-handoff source commit: `32d368ad4289060643ad004b619666930eebb904`
 - Production collection commit: `482b1b3c4c2ce856e4ddb0570757e63c03ff1d89`
 - Finalizer commit used for the 500-row freeze: `876edb2f`
@@ -293,6 +296,32 @@ Viewer URL observed during handoff:
 
 ## Fetch Artifacts
 
+The GitHub release mirrors the handoff docs, lightweight visual artifacts,
+step-15,518 eval videos, and immutable checkpoint snapshots:
+
+```bash
+mkdir -p github_release_assets/yam-rgb-pickplace-handoff-20260710
+gh release download yam-rgb-pickplace-handoff-20260710 \
+  --repo lihzha/DEXTRAH \
+  --dir github_release_assets/yam-rgb-pickplace-handoff-20260710 \
+  --clobber
+```
+
+Direct asset URLs:
+
+- runbook:
+  `https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_pickplace_reproduction_20260710.md`
+- machine-readable artifact manifest:
+  `https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_pickplace_artifacts_20260710.json`
+- final 500-row reports/grid bundle:
+  `https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_pickplace_final500_reports_20260710.tar.gz`
+- step-15,518 eval video bundle:
+  `https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_pickplace_step15518_eval_videos_20260710.tar.gz`
+- v16 n500 handoff checkpoint snapshot:
+  `https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_dp_stateobs_v16_n500_bs80_2m_latest_handoff_20260710.ckpt`
+- v17 live100 pilot handoff checkpoint snapshot:
+  `https://github.com/lihzha/DEXTRAH/releases/download/yam-rgb-pickplace-handoff-20260710/yam_rgb_dp_stateobs_v17_live100_ftema1154781_bs80_20k_latest_handoff_20260710.ckpt`
+
 Lightweight reports and eval videos can be mirrored locally:
 
 ```bash
@@ -321,10 +350,14 @@ Snapshot hashes:
   `544d2ad5a811405e7905b80ce3b854f829231cb23cf1332f31e9ac7149b388fe`
 - v17 live100 pilot latest handoff checkpoint:
   `6109549640602f61b2c9b77fdf9014145881c2cd86fed0ee6c8be2f0191d2633`
+- final 500-row reports/grid bundle:
+  `d475892844440579fae1534633883abfa0690eb1b4cd6665fc8a572e7dfd1a7a`
+- step-15,518 eval video bundle:
+  `ac1e9ba84876d926e0aae7894c31c8d02f61a3a4b1938d44dfaf3e345dd142de`
 
 Open local artifacts with:
 
 ```bash
 viz-open /home/lzha/code/cluster_results/l401/yam_rgb_dp_v17_pilot_step15518_material_s42_20260709T1716Z/videos/yam-pickplace-rgb-dp-eval-scene-wrist.mp4
-viz-open /home/lzha/code/cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_live250/randomization_report.md
+viz-open /home/lzha/code/cluster_results/l401/yam_controller_stateobs_v17_ground500_visual_20260709T1418Z_final500/visualization_source_split/randomization_report.md
 ```
